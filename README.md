@@ -15,4 +15,5 @@ Both tools are built on ath9k driver.
 * New Kconfig file and makefile
 * Solve the kernel version issue: 4.15(displayed as 4.1.10+) for Atheros CSI Tool and 3.13 for RT-WiFi project
 
-
+## Branch introduction
+This branch is based on the Atheros CSI tool and we try to merge the RT-WiFi code into the driver.
