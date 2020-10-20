@@ -101,7 +101,7 @@ bool rt_wifi_authorized_sta(u8 *addr);
 inline bool rt_wifi_dst_sta(u8 *addr, u8 sta_id);
 void ath9k_gen_timer_stop(struct ath_hw *ah, struct ath_gen_timer *timer);
 /* existing functions not in rt-wifi*/
-static bool bf_is_ampdu_not_probing(struct ath_buf *bf);
+bool bf_is_ampdu_not_probing(struct ath_buf *bf);
 
 /* other marco */
 #define WLAN_GET_SEQ_SEQ(seq) (((seq) & IEEE80211_SCTL_SEQ) >> 4 )

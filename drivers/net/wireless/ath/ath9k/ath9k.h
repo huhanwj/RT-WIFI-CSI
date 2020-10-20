@@ -800,7 +800,7 @@ enum bt_op_flags {
 };
 
 struct ath_btcoex {
-	//bool hw_timer_enabled;
+	bool hw_timer_enabled;
 	spinlock_t btcoex_lock;
 	struct timer_list period_timer; /* Timer for BT period */
 	struct timer_list no_stomp_timer;

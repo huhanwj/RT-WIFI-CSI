@@ -168,6 +168,37 @@ static void ath_detect_bt_priority(struct ath_softc *sc)
 	}
 }
 
+static void ath9k_gen_timer_start(struct ath_hw *ah,
+				  struct ath_gen_timer *timer,
+				  u32 trig_timeout,
+				  u32 timer_period)
+{
+	ath9k_hw_gen_timer_start(ah, timer, trig_timeout, timer_period);
+
+	if ((ah->imask & ATH9K_INT_GENTIMER) == 0) {
+		ath9k_hw_disable_interrupts(ah);
+		ah->imask |= ATH9K_INT_GENTIMER;
+		ath9k_hw_set_interrupts(ah);
+		ath9k_hw_enable_interrupts(ah);
+	}
+}
+
+/* rt-wifi static void ath9k_gen_timer_stop(struct ath_hw *ah, struct ath_gen_timer *timer) */
+void ath9k_gen_timer_stop(struct ath_hw *ah, struct ath_gen_timer *timer)
+{
+	struct ath_gen_timer_table *timer_table = &ah->hw_gen_timers;
+
+	ath9k_hw_gen_timer_stop(ah, timer);
+
+	/* if no timer is enabled, turn off interrupt mask */
+	if (timer_table->timer_mask.val == 0) {
+		ath9k_hw_disable_interrupts(ah);
+		ah->imask &= ~ATH9K_INT_GENTIMER;
+		ath9k_hw_set_interrupts(ah);
+		ath9k_hw_enable_interrupts(ah);
+	}
+}
+
 static void ath_mci_ftp_adjust(struct ath_softc *sc)
 {
 	struct ath_btcoex *btcoex = &sc->btcoex;
