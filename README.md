@@ -21,6 +21,7 @@ This branch is based on the Atheros CSI tool and we try to merge the RT-WiFi cod
 * Net configuration has redefinition problems and variable confliction. *Fix try by discarding all RT-WiFi files.*
 * Lots of missing members in RT-WiFi struct. *Forget to merge two* **ath9k.h** *.*
 ### To do after first build
-* Discarding all RT-WiFi files in network API configuration part.
-* Merging **ath9k.h** and try again.
+* ~~Discarding all RT-WiFi files in network API configuration part.~~
+* ~~Merging **ath9k.h** and try again.~~
+* Fixing bugs brought by new *ath9k* driver.
 
