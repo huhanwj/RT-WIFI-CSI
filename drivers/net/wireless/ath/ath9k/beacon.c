@@ -121,6 +121,9 @@ static struct ath_buf *ath9k_beacon_generate(struct ieee80211_hw *hw,
 	struct ieee80211_tx_info *info;
 	struct ieee80211_mgmt *mgmt_hdr;
 	int cabq_depth;
+#ifdef CONFIG_RT_WIFI
+	unsigned char *tmp, *src;
+#endif
 
 	if (avp->av_bcbuf == NULL)
 		return NULL;

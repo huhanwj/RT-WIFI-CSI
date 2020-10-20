@@ -738,7 +738,7 @@ struct ath_beacon {
 };
 
 void ath9k_beacon_tasklet(unsigned long data);
-bool ath9k_allow_beacon_config(struct ath_softc *sc, struct ieee80211_vif *vif);
+// bool ath9k_allow_beacon_config(struct ath_softc *sc, struct ieee80211_vif *vif);
 void ath9k_beacon_config(struct ath_softc *sc, struct ieee80211_vif *vif,
 			 u32 changed);
 void ath9k_beacon_assign_slot(struct ath_softc *sc, struct ieee80211_vif *vif);
