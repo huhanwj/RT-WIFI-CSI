@@ -1137,6 +1137,10 @@ void ar9002_hw_load_ani_reg(struct ath_hw *ah, struct ath9k_channel *chan);
 
 void ath9k_ani_reset(struct ath_hw *ah, bool is_scanning);
 void ath9k_hw_ani_monitor(struct ath_hw *ah, struct ath9k_channel *chan);
+void ath9k_hw_gen_timer_start_absolute(struct ath_hw *ah,
+			      struct ath_gen_timer *timer,
+			      u32 trig_timeout,
+			      u32 timer_period);
 
 void ath9k_hw_set_ack_timeout(struct ath_hw *ah, u32 us);
 void ath9k_hw_set_cts_timeout(struct ath_hw *ah, u32 us);
