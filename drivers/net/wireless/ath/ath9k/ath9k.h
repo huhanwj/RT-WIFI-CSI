@@ -800,9 +800,10 @@ enum bt_op_flags {
 };
 
 struct ath_btcoex {
-	bool hw_timer_enabled;
+	//bool hw_timer_enabled;
 	spinlock_t btcoex_lock;
 	struct timer_list period_timer; /* Timer for BT period */
+	struct timer_list no_stomp_timer;
 	u32 bt_priority_cnt;
 	unsigned long bt_priority_time;
 	unsigned long op_flags;
@@ -813,7 +814,7 @@ struct ath_btcoex {
 	u32 duty_cycle;
 	u32 bt_wait_time;
 	int rssi_count;
-	struct ath_gen_timer *no_stomp_timer; /* Timer for no BT stomping */
+	//struct ath_gen_timer *no_stomp_timer; /* Timer for no BT stomping */
 	struct ath_mci_profile mci;
 	u8 stomp_audio;
 };
@@ -1171,21 +1172,13 @@ struct ath_softc {
 	u32 rt_wifi_beacon_bfaddr;
 	u32 rt_wifi_beacon_bc;
 #endif
-};
 
-#define SPECTRAL_SCAN_BITMASK		0x10
 
-#define SPECTRAL_HT20_NUM_BINS		56
-
-#define SPECTRAL_HT20_TOTAL_DATA_LEN	(sizeof(struct ath_ht20_fft_packet))
-
-#define SPECTRAL_HT20_40_NUM_BINS		128
-
-#define SPECTRAL_HT20_40_TOTAL_DATA_LEN	(sizeof(struct ath_ht20_40_fft_packet))
 #ifdef CONFIG_ATH9K_WOW
 	u32 wow_intr_before_sleep;
 	bool force_wow;
 #endif
+};
 
 /********/
 /* TX99 */
