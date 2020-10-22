@@ -24,4 +24,8 @@ This branch is based on the Atheros CSI tool and we try to merge the RT-WiFi cod
 * ~~Discarding all RT-WiFi files in network API configuration part.~~
 * ~~Merging **ath9k.h** and try again.~~
 * Fixing bugs brought by new *ath9k* driver.
+### Second Build
+* Reference problems related to the source codes.
+* Solve the difference between the two tools and now `make -j6` will not report error.
+
 
