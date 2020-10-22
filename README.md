@@ -27,5 +27,8 @@ This branch is based on the Atheros CSI tool and we try to merge the RT-WiFi cod
 ### Second Build
 * Reference problems related to the source codes.
 * Solve the difference between the two tools and now `make -j6` will not report error.
-
+## Notice
+Do NOT put the folder under some folder with space in its name like *Untitled folder*, it will result in a **make error** during the `sudo make modules_install`.
+## Current Progress
+**Build Succeeded!** with `uname -r` displaying *4.1.10+*. Functionality test needed.
 
