@@ -552,7 +552,10 @@ struct ath_gen_timer {
 
 struct ath_gen_timer_table {
 	struct ath_gen_timer *timers[ATH_MAX_GEN_TIMER];
-	u16 timer_mask;
+	union {
+		unsigned long timer_bits;
+		u16 val;
+	} timer_mask;
 	bool tsf2_enabled;
 };
 

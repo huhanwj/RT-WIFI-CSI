@@ -3044,8 +3044,18 @@ void ath9k_hw_gen_timer_start(struct ath_hw *ah,
 	struct ath_gen_timer_table *timer_table = &ah->hw_gen_timers;
 	u32 mask = 0;
 
-	timer_table->timer_mask |= BIT(timer->index);
+	//timer_table->timer_mask |= BIT(timer->index);
+	BUG_ON(!timer_period);
 
+	set_bit(timer->index, &timer_table->timer_mask.timer_bits);
+
+	// tsf = ath9k_hw_gettsf32(ah);
+
+	// timer_next = tsf + trig_timeout;
+
+	// ath_dbg(ath9k_hw_common(ah), BTCOEX,
+	// 	"current tsf %x period %x timer_next %x\n",
+	// 	tsf, timer_period, timer_next);
 	/*
 	 * Program generic timer registers
 	 */
@@ -3156,9 +3166,10 @@ void ath9k_hw_gen_timer_stop(struct ath_hw *ah, struct ath_gen_timer *timer)
 		(SM(AR_GENTMR_BIT(timer->index), AR_IMR_S5_GENTIMER_THRESH) |
 		SM(AR_GENTMR_BIT(timer->index), AR_IMR_S5_GENTIMER_TRIG)));
 
-	timer_table->timer_mask &= ~BIT(timer->index);
+	//timer_table->timer_mask &= ~BIT(timer->index);
+	clear_bit(timer->index, &timer_table->timer_mask.timer_bits);
 
-	if (timer_table->timer_mask == 0) {
+	if (timer_table->timer_mask.val == 0) {
 		ah->imask &= ~ATH9K_INT_GENTIMER;
 		ath9k_hw_set_interrupts(ah);
 	}
@@ -3188,8 +3199,8 @@ void ath_gen_timer_isr(struct ath_hw *ah)
 	/* get hardware generic timer interrupt status */
 	trigger_mask = ah->intr_gen_timer_trigger;
 	thresh_mask = ah->intr_gen_timer_thresh;
-	trigger_mask &= timer_table->timer_mask;
-	thresh_mask &= timer_table->timer_mask;
+	trigger_mask &= timer_table->timer_mask.val;
+	thresh_mask &= timer_table->timer_mask.val;
 
 	for_each_set_bit(index, &thresh_mask, ARRAY_SIZE(timer_table->timers)) {
 		timer = timer_table->timers[index];
