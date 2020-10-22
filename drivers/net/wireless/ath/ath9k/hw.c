@@ -3049,13 +3049,13 @@ void ath9k_hw_gen_timer_start(struct ath_hw *ah,
 
 	set_bit(timer->index, &timer_table->timer_mask.timer_bits);
 
-	tsf = ath9k_hw_gettsf32(ah);
+	// tsf = ath9k_hw_gettsf32(ah);
 
-	timer_next = tsf + trig_timeout;
+	// timer_next = tsf + trig_timeout;
 
-	ath_dbg(ath9k_hw_common(ah), BTCOEX,
-		"current tsf %x period %x timer_next %x\n",
-		tsf, timer_period, timer_next);
+	// ath_dbg(ath9k_hw_common(ah), BTCOEX,
+	// 	"current tsf %x period %x timer_next %x\n",
+	// 	tsf, timer_period, timer_next);
 	/*
 	 * Program generic timer registers
 	 */
