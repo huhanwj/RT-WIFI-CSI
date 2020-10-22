@@ -1,0 +1,1678 @@
+  CHK     include/config/kernel.release
+  CHK     include/generated/uapi/linux/version.h
+  CHK     include/generated/utsrelease.h
+  CHK     include/generated/bounds.h
+  CHK     include/generated/asm-offsets.h
+  CALL    scripts/checksyscalls.sh
+  CHK     include/generated/compile.h
+  CC [M]  net/mac802154/monitor.o
+  CC [M]  net/mac80211/rc80211_pid_debugfs.o
+  CC [M]  net/mac802154/wpan.o
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:62:0: warning: "IEEE802154_FC_SECEN" redefined [enabled by default]
+ #define IEEE802154_FC_SECEN  (1 << IEEE802154_FC_SECEN_SHIFT)
+ ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:45:0: note: this is the location of the previous definition
+ #define IEEE802154_FC_SECEN  (1 << 3)
+ ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:64:0: warning: "IEEE802154_FC_FRPEND" redefined [enabled by default]
+ #define IEEE802154_FC_FRPEND  (1 << IEEE802154_FC_FRPEND_SHIFT)
+ ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:46:0: note: this is the location of the previous definition
+ #define IEEE802154_FC_FRPEND  (1 << 4)
+ ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:66:0: warning: "IEEE802154_FC_ACK_REQ" redefined [enabled by default]
+ #define IEEE802154_FC_ACK_REQ  (1 << IEEE802154_FC_ACK_REQ_SHIFT)
+ ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:47:0: note: this is the location of the previous definition
+ #define IEEE802154_FC_ACK_REQ  (1 << 5)
+ ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:68:0: warning: "IEEE802154_FC_INTRA_PAN" redefined [enabled by default]
+ #define IEEE802154_FC_INTRA_PAN  (1 << IEEE802154_FC_INTRA_PAN_SHIFT)
+ ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:48:0: note: this is the location of the previous definition
+ #define IEEE802154_FC_INTRA_PAN  (1 << 6)
+ ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:130:2: error: redeclaration of enumerator ‘IEEE802154_SUCCESS’
+  IEEE802154_SUCCESS = 0x0,
+  ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:85:2: note: previous definition of ‘IEEE802154_SUCCESS’ was here
+  IEEE802154_SUCCESS = 0x0,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:133:2: error: redeclaration of enumerator ‘IEEE802154_BEACON_LOSS’
+  IEEE802154_BEACON_LOSS = 0xe0,
+  ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:88:2: note: previous definition of ‘IEEE802154_BEACON_LOSS’ was here
+  IEEE802154_BEACON_LOSS = 0xe0,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:138:2: error: redeclaration of enumerator ‘IEEE802154_CHNL_ACCESS_FAIL’
+  IEEE802154_CHNL_ACCESS_FAIL = 0xe1,
+  ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:93:2: note: previous definition of ‘IEEE802154_CHNL_ACCESS_FAIL’ was here
+  IEEE802154_CHNL_ACCESS_FAIL = 0xe1,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:140:2: error: redeclaration of enumerator ‘IEEE802154_DENINED’
+  IEEE802154_DENINED = 0xe2,
+  ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:95:2: note: previous definition of ‘IEEE802154_DENINED’ was here
+  IEEE802154_DENINED = 0xe2,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:142:2: error: redeclaration of enumerator ‘IEEE802154_DISABLE_TRX_FAIL’
+  IEEE802154_DISABLE_TRX_FAIL = 0xe3,
+  ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:97:2: note: previous definition of ‘IEEE802154_DISABLE_TRX_FAIL’ was here
+  IEEE802154_DISABLE_TRX_FAIL = 0xe3,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:147:2: error: redeclaration of enumerator ‘IEEE802154_FAILED_SECURITY_CHECK’
+  IEEE802154_FAILED_SECURITY_CHECK = 0xe4,
+  ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:102:2: note: previous definition of ‘IEEE802154_FAILED_SECURITY_CHECK’ was here
+  IEEE802154_FAILED_SECURITY_CHECK = 0xe4,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:152:2: error: redeclaration of enumerator ‘IEEE802154_FRAME_TOO_LONG’
+  IEEE802154_FRAME_TOO_LONG = 0xe5,
+  ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:107:2: note: previous definition of ‘IEEE802154_FRAME_TOO_LONG’ was here
+  IEEE802154_FRAME_TOO_LONG = 0xe5,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:157:2: error: redeclaration of enumerator ‘IEEE802154_INVALID_GTS’
+  IEEE802154_INVALID_GTS = 0xe6,
+  ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:112:2: note: previous definition of ‘IEEE802154_INVALID_GTS’ was here
+  IEEE802154_INVALID_GTS = 0xe6,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:162:2: error: redeclaration of enumerator ‘IEEE802154_INVALID_HANDLE’
+  IEEE802154_INVALID_HANDLE = 0xe7,
+  ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:117:2: note: previous definition of ‘IEEE802154_INVALID_HANDLE’ was here
+  IEEE802154_INVALID_HANDLE = 0xe7,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:164:2: error: redeclaration of enumerator ‘IEEE802154_INVALID_PARAMETER’
+  IEEE802154_INVALID_PARAMETER = 0xe8,
+  ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:119:2: note: previous definition of ‘IEEE802154_INVALID_PARAMETER’ was here
+  IEEE802154_INVALID_PARAMETER = 0xe8,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:166:2: error: redeclaration of enumerator ‘IEEE802154_NO_ACK’
+  IEEE802154_NO_ACK = 0xe9,
+  ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:121:2: note: previous definition of ‘IEEE802154_NO_ACK’ was here
+  IEEE802154_NO_ACK = 0xe9,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:168:2: error: redeclaration of enumerator ‘IEEE802154_NO_BEACON’
+  IEEE802154_NO_BEACON = 0xea,
+  ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:123:2: note: previous definition of ‘IEEE802154_NO_BEACON’ was here
+  IEEE802154_NO_BEACON = 0xea,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:170:2: error: redeclaration of enumerator ‘IEEE802154_NO_DATA’
+  IEEE802154_NO_DATA = 0xeb,
+  ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:125:2: note: previous definition of ‘IEEE802154_NO_DATA’ was here
+  IEEE802154_NO_DATA = 0xeb,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:172:2: error: redeclaration of enumerator ‘IEEE802154_NO_SHORT_ADDRESS’
+  IEEE802154_NO_SHORT_ADDRESS = 0xec,
+  ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:127:2: note: previous definition of ‘IEEE802154_NO_SHORT_ADDRESS’ was here
+  IEEE802154_NO_SHORT_ADDRESS = 0xec,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:177:2: error: redeclaration of enumerator ‘IEEE802154_OUT_OF_CAP’
+  IEEE802154_OUT_OF_CAP = 0xed,
+  ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:132:2: note: previous definition of ‘IEEE802154_OUT_OF_CAP’ was here
+  IEEE802154_OUT_OF_CAP = 0xed,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:182:2: error: redeclaration of enumerator ‘IEEE802154_PANID_CONFLICT’
+  IEEE802154_PANID_CONFLICT = 0xee,
+  ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:137:2: note: previous definition of ‘IEEE802154_PANID_CONFLICT’ was here
+  IEEE802154_PANID_CONFLICT = 0xee,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:184:2: error: redeclaration of enumerator ‘IEEE802154_REALIGMENT’
+  IEEE802154_REALIGMENT = 0xef,
+  ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:139:2: note: previous definition of ‘IEEE802154_REALIGMENT’ was here
+  IEEE802154_REALIGMENT = 0xef,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:186:2: error: redeclaration of enumerator ‘IEEE802154_TRANSACTION_EXPIRED’
+  IEEE802154_TRANSACTION_EXPIRED = 0xf0,
+  ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:141:2: note: previous definition of ‘IEEE802154_TRANSACTION_EXPIRED’ was here
+  IEEE802154_TRANSACTION_EXPIRED = 0xf0,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:188:2: error: redeclaration of enumerator ‘IEEE802154_TRANSACTION_OVERFLOW’
+  IEEE802154_TRANSACTION_OVERFLOW = 0xf1,
+  ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:143:2: note: previous definition of ‘IEEE802154_TRANSACTION_OVERFLOW’ was here
+  IEEE802154_TRANSACTION_OVERFLOW = 0xf1,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:193:2: error: redeclaration of enumerator ‘IEEE802154_TX_ACTIVE’
+  IEEE802154_TX_ACTIVE = 0xf2,
+  ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:148:2: note: previous definition of ‘IEEE802154_TX_ACTIVE’ was here
+  IEEE802154_TX_ACTIVE = 0xf2,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:195:2: error: redeclaration of enumerator ‘IEEE802154_UNAVAILABLE_KEY’
+  IEEE802154_UNAVAILABLE_KEY = 0xf3,
+  ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:150:2: note: previous definition of ‘IEEE802154_UNAVAILABLE_KEY’ was here
+  IEEE802154_UNAVAILABLE_KEY = 0xf3,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:200:2: error: redeclaration of enumerator ‘IEEE802154_UNSUPPORTED_ATTR’
+  IEEE802154_UNSUPPORTED_ATTR = 0xf4,
+  ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:155:2: note: previous definition of ‘IEEE802154_UNSUPPORTED_ATTR’ was here
+  IEEE802154_UNSUPPORTED_ATTR = 0xf4,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/monitor.c:30:
+include/linux/ieee802154.h:205:2: error: redeclaration of enumerator ‘IEEE802154_SCAN_IN_PROGRESS’
+  IEEE802154_SCAN_IN_PROGRESS = 0xfc,
+  ^
+In file included from net/mac802154/monitor.c:29:0:
+include/net/ieee802154.h:160:2: note: previous definition of ‘IEEE802154_SCAN_IN_PROGRESS’ was here
+  IEEE802154_SCAN_IN_PROGRESS = 0xfc,
+  ^
+In file included from net/mac802154/monitor.c:32:0:
+include/net/wpan-phy.h:36:8: error: redefinition of ‘struct wpan_phy’
+ struct wpan_phy {
+        ^
+In file included from include/net/mac802154.h:24:0,
+                 from net/mac802154/monitor.c:30:
+include/net/cfg802154.h:27:8: note: originally defined here
+ struct wpan_phy;
+        ^
+In file included from net/mac802154/monitor.c:32:0:
+include/net/wpan-phy.h:63:20: error: conflicting types for ‘wpan_phy_set_dev’
+ static inline void wpan_phy_set_dev(struct wpan_phy *phy, struct device *dev)
+                    ^
+In file included from include/net/mac802154.h:24:0,
+                 from net/mac802154/monitor.c:30:
+include/net/cfg802154.h:142:20: note: previous definition of ‘wpan_phy_set_dev’ was here
+ static inline void wpan_phy_set_dev(struct wpan_phy *phy, struct device *dev)
+                    ^
+In file included from net/mac802154/monitor.c:32:0:
+include/net/wpan-phy.h:67:5: error: conflicting types for ‘wpan_phy_register’
+ int wpan_phy_register(struct wpan_phy *phy);
+     ^
+In file included from include/net/mac802154.h:24:0,
+                 from net/mac802154/monitor.c:30:
+include/net/cfg802154.h:147:5: note: previous declaration of ‘wpan_phy_register’ was here
+ int wpan_phy_register(struct wpan_phy *phy);
+     ^
+In file included from net/mac802154/monitor.c:32:0:
+include/net/wpan-phy.h:68:6: error: conflicting types for ‘wpan_phy_unregister’
+ void wpan_phy_unregister(struct wpan_phy *phy);
+      ^
+In file included from include/net/mac802154.h:24:0,
+                 from net/mac802154/monitor.c:30:
+include/net/cfg802154.h:148:6: note: previous declaration of ‘wpan_phy_unregister’ was here
+ void wpan_phy_unregister(struct wpan_phy *phy);
+      ^
+In file included from net/mac802154/monitor.c:32:0:
+include/net/wpan-phy.h:69:6: error: conflicting types for ‘wpan_phy_free’
+ void wpan_phy_free(struct wpan_phy *phy);
+      ^
+In file included from include/net/mac802154.h:24:0,
+                 from net/mac802154/monitor.c:30:
+include/net/cfg802154.h:149:6: note: previous declaration of ‘wpan_phy_free’ was here
+ void wpan_phy_free(struct wpan_phy *phy);
+      ^
+In file included from net/mac802154/monitor.c:32:0:
+include/net/wpan-phy.h:71:5: error: conflicting types for ‘wpan_phy_for_each’
+ int wpan_phy_for_each(int (*fn)(struct wpan_phy *phy, void *data), void *data);
+     ^
+In file included from include/net/mac802154.h:24:0,
+                 from net/mac802154/monitor.c:30:
+include/net/cfg802154.h:151:5: note: previous declaration of ‘wpan_phy_for_each’ was here
+ int wpan_phy_for_each(int (*fn)(struct wpan_phy *phy, void *data), void *data);
+     ^
+In file included from net/mac802154/monitor.c:32:0:
+include/net/wpan-phy.h:73:21: error: conflicting types for ‘wpan_phy_priv’
+ static inline void *wpan_phy_priv(struct wpan_phy *phy)
+                     ^
+In file included from include/net/mac802154.h:24:0,
+                 from net/mac802154/monitor.c:30:
+include/net/cfg802154.h:153:21: note: previous definition of ‘wpan_phy_priv’ was here
+ static inline void *wpan_phy_priv(struct wpan_phy *phy)
+                     ^
+In file included from net/mac802154/monitor.c:32:0:
+include/net/wpan-phy.h:79:18: error: conflicting types for ‘wpan_phy_find’
+ struct wpan_phy *wpan_phy_find(const char *str);
+                  ^
+In file included from include/net/mac802154.h:24:0,
+                 from net/mac802154/monitor.c:30:
+include/net/cfg802154.h:159:18: note: previous declaration of ‘wpan_phy_find’ was here
+ struct wpan_phy *wpan_phy_find(const char *str);
+                  ^
+In file included from net/mac802154/monitor.c:32:0:
+include/net/wpan-phy.h:81:20: error: conflicting types for ‘wpan_phy_put’
+ static inline void wpan_phy_put(struct wpan_phy *phy)
+                    ^
+In file included from include/net/mac802154.h:24:0,
+                 from net/mac802154/monitor.c:30:
+include/net/cfg802154.h:161:20: note: previous definition of ‘wpan_phy_put’ was here
+ static inline void wpan_phy_put(struct wpan_phy *phy)
+                    ^
+In file included from net/mac802154/monitor.c:32:0:
+include/net/wpan-phy.h:86:27: error: conflicting types for ‘wpan_phy_name’
+ static inline const char *wpan_phy_name(struct wpan_phy *phy)
+                           ^
+In file included from include/net/mac802154.h:24:0,
+                 from net/mac802154/monitor.c:30:
+include/net/cfg802154.h:166:27: note: previous definition of ‘wpan_phy_name’ was here
+ static inline const char *wpan_phy_name(struct wpan_phy *phy)
+                           ^
+net/mac802154/monitor.c:35:23: fatal error: mac802154.h: No such file or directory
+ #include "mac802154.h"
+                       ^
+compilation terminated.
+net/mac80211/rc80211_pid_debugfs.c: In function ‘rate_control_pid_events_open’:
+net/mac80211/rc80211_pid_debugfs.c:90:45: error: ‘struct rc_pid_sta_info’ has no member named ‘events’
+  struct rc_pid_event_buffer *events = &sinfo->events;
+                                             ^
+net/mac80211/rc80211_pid_debugfs.c: In function ‘rate_control_pid_add_sta_debugfs’:
+net/mac80211/rc80211_pid_debugfs.c:218:8: error: ‘struct rc_pid_sta_info’ has no member named ‘events_entry’
+  spinfo->events_entry = debugfs_create_file("rc_pid_events", S_IRUGO,
+        ^
+net/mac80211/rc80211_pid_debugfs.c: In function ‘rate_control_pid_remove_sta_debugfs’:
+net/mac80211/rc80211_pid_debugfs.c:227:23: error: ‘struct rc_pid_sta_info’ has no member named ‘events_entry’
+  debugfs_remove(spinfo->events_entry);
+                       ^
+make[2]: *** [net/mac80211/rc80211_pid_debugfs.o] Error 1
+make[1]: *** [net/mac80211] Error 2
+make[1]: *** Waiting for unfinished jobs....
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:45:0: warning: "IEEE802154_FC_SECEN" redefined [enabled by default]
+ #define IEEE802154_FC_SECEN  (1 << 3)
+ ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:62:0: note: this is the location of the previous definition
+ #define IEEE802154_FC_SECEN  (1 << IEEE802154_FC_SECEN_SHIFT)
+ ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:46:0: warning: "IEEE802154_FC_FRPEND" redefined [enabled by default]
+ #define IEEE802154_FC_FRPEND  (1 << 4)
+ ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:64:0: note: this is the location of the previous definition
+ #define IEEE802154_FC_FRPEND  (1 << IEEE802154_FC_FRPEND_SHIFT)
+ ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:47:0: warning: "IEEE802154_FC_ACK_REQ" redefined [enabled by default]
+ #define IEEE802154_FC_ACK_REQ  (1 << 5)
+ ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:66:0: note: this is the location of the previous definition
+ #define IEEE802154_FC_ACK_REQ  (1 << IEEE802154_FC_ACK_REQ_SHIFT)
+ ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:48:0: warning: "IEEE802154_FC_INTRA_PAN" redefined [enabled by default]
+ #define IEEE802154_FC_INTRA_PAN  (1 << 6)
+ ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:68:0: note: this is the location of the previous definition
+ #define IEEE802154_FC_INTRA_PAN  (1 << IEEE802154_FC_INTRA_PAN_SHIFT)
+ ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:85:2: error: redeclaration of enumerator ‘IEEE802154_SUCCESS’
+  IEEE802154_SUCCESS = 0x0,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:130:2: note: previous definition of ‘IEEE802154_SUCCESS’ was here
+  IEEE802154_SUCCESS = 0x0,
+  ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:88:2: error: redeclaration of enumerator ‘IEEE802154_BEACON_LOSS’
+  IEEE802154_BEACON_LOSS = 0xe0,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:133:2: note: previous definition of ‘IEEE802154_BEACON_LOSS’ was here
+  IEEE802154_BEACON_LOSS = 0xe0,
+  ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:93:2: error: redeclaration of enumerator ‘IEEE802154_CHNL_ACCESS_FAIL’
+  IEEE802154_CHNL_ACCESS_FAIL = 0xe1,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:138:2: note: previous definition of ‘IEEE802154_CHNL_ACCESS_FAIL’ was here
+  IEEE802154_CHNL_ACCESS_FAIL = 0xe1,
+  ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:95:2: error: redeclaration of enumerator ‘IEEE802154_DENINED’
+  IEEE802154_DENINED = 0xe2,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:140:2: note: previous definition of ‘IEEE802154_DENINED’ was here
+  IEEE802154_DENINED = 0xe2,
+  ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:97:2: error: redeclaration of enumerator ‘IEEE802154_DISABLE_TRX_FAIL’
+  IEEE802154_DISABLE_TRX_FAIL = 0xe3,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:142:2: note: previous definition of ‘IEEE802154_DISABLE_TRX_FAIL’ was here
+  IEEE802154_DISABLE_TRX_FAIL = 0xe3,
+  ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:102:2: error: redeclaration of enumerator ‘IEEE802154_FAILED_SECURITY_CHECK’
+  IEEE802154_FAILED_SECURITY_CHECK = 0xe4,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:147:2: note: previous definition of ‘IEEE802154_FAILED_SECURITY_CHECK’ was here
+  IEEE802154_FAILED_SECURITY_CHECK = 0xe4,
+  ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:107:2: error: redeclaration of enumerator ‘IEEE802154_FRAME_TOO_LONG’
+  IEEE802154_FRAME_TOO_LONG = 0xe5,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:152:2: note: previous definition of ‘IEEE802154_FRAME_TOO_LONG’ was here
+  IEEE802154_FRAME_TOO_LONG = 0xe5,
+  ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:112:2: error: redeclaration of enumerator ‘IEEE802154_INVALID_GTS’
+  IEEE802154_INVALID_GTS = 0xe6,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:157:2: note: previous definition of ‘IEEE802154_INVALID_GTS’ was here
+  IEEE802154_INVALID_GTS = 0xe6,
+  ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:117:2: error: redeclaration of enumerator ‘IEEE802154_INVALID_HANDLE’
+  IEEE802154_INVALID_HANDLE = 0xe7,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:162:2: note: previous definition of ‘IEEE802154_INVALID_HANDLE’ was here
+  IEEE802154_INVALID_HANDLE = 0xe7,
+  ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:119:2: error: redeclaration of enumerator ‘IEEE802154_INVALID_PARAMETER’
+  IEEE802154_INVALID_PARAMETER = 0xe8,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:164:2: note: previous definition of ‘IEEE802154_INVALID_PARAMETER’ was here
+  IEEE802154_INVALID_PARAMETER = 0xe8,
+  ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:121:2: error: redeclaration of enumerator ‘IEEE802154_NO_ACK’
+  IEEE802154_NO_ACK = 0xe9,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:166:2: note: previous definition of ‘IEEE802154_NO_ACK’ was here
+  IEEE802154_NO_ACK = 0xe9,
+  ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:123:2: error: redeclaration of enumerator ‘IEEE802154_NO_BEACON’
+  IEEE802154_NO_BEACON = 0xea,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:168:2: note: previous definition of ‘IEEE802154_NO_BEACON’ was here
+  IEEE802154_NO_BEACON = 0xea,
+  ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:125:2: error: redeclaration of enumerator ‘IEEE802154_NO_DATA’
+  IEEE802154_NO_DATA = 0xeb,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:170:2: note: previous definition of ‘IEEE802154_NO_DATA’ was here
+  IEEE802154_NO_DATA = 0xeb,
+  ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:127:2: error: redeclaration of enumerator ‘IEEE802154_NO_SHORT_ADDRESS’
+  IEEE802154_NO_SHORT_ADDRESS = 0xec,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:172:2: note: previous definition of ‘IEEE802154_NO_SHORT_ADDRESS’ was here
+  IEEE802154_NO_SHORT_ADDRESS = 0xec,
+  ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:132:2: error: redeclaration of enumerator ‘IEEE802154_OUT_OF_CAP’
+  IEEE802154_OUT_OF_CAP = 0xed,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:177:2: note: previous definition of ‘IEEE802154_OUT_OF_CAP’ was here
+  IEEE802154_OUT_OF_CAP = 0xed,
+  ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:137:2: error: redeclaration of enumerator ‘IEEE802154_PANID_CONFLICT’
+  IEEE802154_PANID_CONFLICT = 0xee,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:182:2: note: previous definition of ‘IEEE802154_PANID_CONFLICT’ was here
+  IEEE802154_PANID_CONFLICT = 0xee,
+  ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:139:2: error: redeclaration of enumerator ‘IEEE802154_REALIGMENT’
+  IEEE802154_REALIGMENT = 0xef,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:184:2: note: previous definition of ‘IEEE802154_REALIGMENT’ was here
+  IEEE802154_REALIGMENT = 0xef,
+  ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:141:2: error: redeclaration of enumerator ‘IEEE802154_TRANSACTION_EXPIRED’
+  IEEE802154_TRANSACTION_EXPIRED = 0xf0,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:186:2: note: previous definition of ‘IEEE802154_TRANSACTION_EXPIRED’ was here
+  IEEE802154_TRANSACTION_EXPIRED = 0xf0,
+  ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:143:2: error: redeclaration of enumerator ‘IEEE802154_TRANSACTION_OVERFLOW’
+  IEEE802154_TRANSACTION_OVERFLOW = 0xf1,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:188:2: note: previous definition of ‘IEEE802154_TRANSACTION_OVERFLOW’ was here
+  IEEE802154_TRANSACTION_OVERFLOW = 0xf1,
+  ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:148:2: error: redeclaration of enumerator ‘IEEE802154_TX_ACTIVE’
+  IEEE802154_TX_ACTIVE = 0xf2,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:193:2: note: previous definition of ‘IEEE802154_TX_ACTIVE’ was here
+  IEEE802154_TX_ACTIVE = 0xf2,
+  ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:150:2: error: redeclaration of enumerator ‘IEEE802154_UNAVAILABLE_KEY’
+  IEEE802154_UNAVAILABLE_KEY = 0xf3,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:195:2: note: previous definition of ‘IEEE802154_UNAVAILABLE_KEY’ was here
+  IEEE802154_UNAVAILABLE_KEY = 0xf3,
+  ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:155:2: error: redeclaration of enumerator ‘IEEE802154_UNSUPPORTED_ATTR’
+  IEEE802154_UNSUPPORTED_ATTR = 0xf4,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:200:2: note: previous definition of ‘IEEE802154_UNSUPPORTED_ATTR’ was here
+  IEEE802154_UNSUPPORTED_ATTR = 0xf4,
+  ^
+In file included from net/mac802154/wpan.c:33:0:
+include/net/ieee802154.h:160:2: error: redeclaration of enumerator ‘IEEE802154_SCAN_IN_PROGRESS’
+  IEEE802154_SCAN_IN_PROGRESS = 0xfc,
+  ^
+In file included from include/net/mac802154.h:20:0,
+                 from net/mac802154/wpan.c:31:
+include/linux/ieee802154.h:205:2: note: previous definition of ‘IEEE802154_SCAN_IN_PROGRESS’ was here
+  IEEE802154_SCAN_IN_PROGRESS = 0xfc,
+  ^
+In file included from net/mac802154/wpan.c:34:0:
+include/net/wpan-phy.h:36:8: error: redefinition of ‘struct wpan_phy’
+ struct wpan_phy {
+        ^
+In file included from include/net/mac802154.h:24:0,
+                 from net/mac802154/wpan.c:31:
+include/net/cfg802154.h:27:8: note: originally defined here
+ struct wpan_phy;
+        ^
+In file included from net/mac802154/wpan.c:34:0:
+include/net/wpan-phy.h:63:20: error: conflicting types for ‘wpan_phy_set_dev’
+ static inline void wpan_phy_set_dev(struct wpan_phy *phy, struct device *dev)
+                    ^
+In file included from include/net/mac802154.h:24:0,
+                 from net/mac802154/wpan.c:31:
+include/net/cfg802154.h:142:20: note: previous definition of ‘wpan_phy_set_dev’ was here
+ static inline void wpan_phy_set_dev(struct wpan_phy *phy, struct device *dev)
+                    ^
+In file included from net/mac802154/wpan.c:34:0:
+include/net/wpan-phy.h:67:5: error: conflicting types for ‘wpan_phy_register’
+ int wpan_phy_register(struct wpan_phy *phy);
+     ^
+In file included from include/net/mac802154.h:24:0,
+                 from net/mac802154/wpan.c:31:
+include/net/cfg802154.h:147:5: note: previous declaration of ‘wpan_phy_register’ was here
+ int wpan_phy_register(struct wpan_phy *phy);
+     ^
+In file included from net/mac802154/wpan.c:34:0:
+include/net/wpan-phy.h:68:6: error: conflicting types for ‘wpan_phy_unregister’
+ void wpan_phy_unregister(struct wpan_phy *phy);
+      ^
+In file included from include/net/mac802154.h:24:0,
+                 from net/mac802154/wpan.c:31:
+include/net/cfg802154.h:148:6: note: previous declaration of ‘wpan_phy_unregister’ was here
+ void wpan_phy_unregister(struct wpan_phy *phy);
+      ^
+In file included from net/mac802154/wpan.c:34:0:
+include/net/wpan-phy.h:69:6: error: conflicting types for ‘wpan_phy_free’
+ void wpan_phy_free(struct wpan_phy *phy);
+      ^
+In file included from include/net/mac802154.h:24:0,
+                 from net/mac802154/wpan.c:31:
+include/net/cfg802154.h:149:6: note: previous declaration of ‘wpan_phy_free’ was here
+ void wpan_phy_free(struct wpan_phy *phy);
+      ^
+In file included from net/mac802154/wpan.c:34:0:
+include/net/wpan-phy.h:71:5: error: conflicting types for ‘wpan_phy_for_each’
+ int wpan_phy_for_each(int (*fn)(struct wpan_phy *phy, void *data), void *data);
+     ^
+In file included from include/net/mac802154.h:24:0,
+                 from net/mac802154/wpan.c:31:
+include/net/cfg802154.h:151:5: note: previous declaration of ‘wpan_phy_for_each’ was here
+ int wpan_phy_for_each(int (*fn)(struct wpan_phy *phy, void *data), void *data);
+     ^
+In file included from net/mac802154/wpan.c:34:0:
+include/net/wpan-phy.h:73:21: error: conflicting types for ‘wpan_phy_priv’
+ static inline void *wpan_phy_priv(struct wpan_phy *phy)
+                     ^
+In file included from include/net/mac802154.h:24:0,
+                 from net/mac802154/wpan.c:31:
+include/net/cfg802154.h:153:21: note: previous definition of ‘wpan_phy_priv’ was here
+ static inline void *wpan_phy_priv(struct wpan_phy *phy)
+                     ^
+In file included from net/mac802154/wpan.c:34:0:
+include/net/wpan-phy.h:79:18: error: conflicting types for ‘wpan_phy_find’
+ struct wpan_phy *wpan_phy_find(const char *str);
+                  ^
+In file included from include/net/mac802154.h:24:0,
+                 from net/mac802154/wpan.c:31:
+include/net/cfg802154.h:159:18: note: previous declaration of ‘wpan_phy_find’ was here
+ struct wpan_phy *wpan_phy_find(const char *str);
+                  ^
+In file included from net/mac802154/wpan.c:34:0:
+include/net/wpan-phy.h:81:20: error: conflicting types for ‘wpan_phy_put’
+ static inline void wpan_phy_put(struct wpan_phy *phy)
+                    ^
+In file included from include/net/mac802154.h:24:0,
+                 from net/mac802154/wpan.c:31:
+include/net/cfg802154.h:161:20: note: previous definition of ‘wpan_phy_put’ was here
+ static inline void wpan_phy_put(struct wpan_phy *phy)
+                    ^
+In file included from net/mac802154/wpan.c:34:0:
+include/net/wpan-phy.h:86:27: error: conflicting types for ‘wpan_phy_name’
+ static inline const char *wpan_phy_name(struct wpan_phy *phy)
+                           ^
+In file included from include/net/mac802154.h:24:0,
+                 from net/mac802154/wpan.c:31:
+include/net/cfg802154.h:166:27: note: previous definition of ‘wpan_phy_name’ was here
+ static inline const char *wpan_phy_name(struct wpan_phy *phy)
+                           ^
+net/mac802154/wpan.c:36:23: fatal error: mac802154.h: No such file or directory
+ #include "mac802154.h"
+                       ^
+compilation terminated.
+  CC [M]  net/mac802154/iface.o
+make[2]: *** [net/mac802154/monitor.o] Error 1
+make[2]: *** Waiting for unfinished jobs....
+make[2]: *** [net/mac802154/wpan.o] Error 1
+make[1]: *** [net/mac802154] Error 2
+make: *** [net] Error 2
+make: *** Waiting for unfinished jobs....
+  CC [M]  drivers/net/wireless/ath/ath9k/rt-wifi.o
+  LD      drivers/net/wireless/ath/wcn36xx/built-in.o
+  CC [M]  drivers/net/wireless/ath/wcn36xx/main.o
+  CC [M]  drivers/net/wireless/ath/wcn36xx/dxe.o
+  CC [M]  drivers/net/wireless/ath/wcn36xx/txrx.o
+drivers/net/wireless/ath/ath9k/rt-wifi.c: In function ‘rt_wifi_config_superframe’:
+drivers/net/wireless/ath/ath9k/rt-wifi.c:65:4: error: ‘struct ath_softc’ has no member named ‘rt_wifi_superframe’
+  sc->rt_wifi_superframe = kmalloc(
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:66:36: error: ‘struct ath_softc’ has no member named ‘rt_wifi_superframe_size’
+   sizeof(struct rt_wifi_sched) * sc->rt_wifi_superframe_size,
+                                    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:69:9: error: ‘struct ath_softc’ has no member named ‘rt_wifi_superframe’
+  if (!sc->rt_wifi_superframe) {
+         ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:74:24: error: ‘struct ath_softc’ has no member named ‘rt_wifi_superframe_size’
+  for (idx = 0; idx < sc->rt_wifi_superframe_size; ++idx) {
+                        ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:75:5: error: ‘struct ath_softc’ has no member named ‘rt_wifi_superframe’
+   sc->rt_wifi_superframe[idx].type = RT_WIFI_SHARED;
+     ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:79:48: error: ‘struct ath_softc’ has no member named ‘rt_wifi_superframe_size’
+   if (RT_WIFI_PRE_CONFIG_SCHED[idx].offset < sc->rt_wifi_superframe_size) {
+                                                ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:80:6: error: ‘struct ath_softc’ has no member named ‘rt_wifi_superframe’
+    sc->rt_wifi_superframe[RT_WIFI_PRE_CONFIG_SCHED[idx].offset].type = RT_WIFI_PRE_CONFIG_SCHED[idx].type;
+      ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:81:6: error: ‘struct ath_softc’ has no member named ‘rt_wifi_superframe’
+    sc->rt_wifi_superframe[RT_WIFI_PRE_CONFIG_SCHED[idx].offset].sta_id = RT_WIFI_PRE_CONFIG_SCHED[idx].sta_id;
+      ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c: In function ‘ath_rt_wifi_ap_start_timer’:
+drivers/net/wireless/ath/ath9k/rt-wifi.c:98:4: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_slot_len = rt_wifi_get_slot_len(RT_WIFI_TIME_SLOT_LEN);
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:99:4: error: ‘struct ath_softc’ has no member named ‘rt_wifi_superframe_size’
+  sc->rt_wifi_superframe_size = ARRAY_SIZE(RT_WIFI_PRE_CONFIG_SCHED);
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:105:2: error: implicit declaration of function ‘ath9k_hw_gen_timer_start_absolute’ [-Werror=implicit-function-declaration]
+  ath9k_hw_gen_timer_start_absolute(sc->sc_ah, sc->rt_wifi_timer, next_timer, sc->rt_wifi_slot_len);
+  ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:105:49: error: ‘struct ath_softc’ has no member named ‘rt_wifi_timer’
+  ath9k_hw_gen_timer_start_absolute(sc->sc_ah, sc->rt_wifi_timer, next_timer, sc->rt_wifi_slot_len);
+                                                 ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:105:80: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  ath9k_hw_gen_timer_start_absolute(sc->sc_ah, sc->rt_wifi_timer, next_timer, sc->rt_wifi_slot_len);
+                                                                                ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:115:4: error: ‘struct ath_softc’ has no member named ‘rt_wifi_virt_start_tsf’
+  sc->rt_wifi_virt_start_tsf = 0;
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:116:4: error: ‘struct ath_softc’ has no member named ‘rt_wifi_asn’
+  sc->rt_wifi_asn = (nexttbtt/sc->rt_wifi_slot_len) - 1;
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:116:32: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = (nexttbtt/sc->rt_wifi_slot_len) - 1;
+                                ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:117:4: error: ‘struct ath_softc’ has no member named ‘rt_wifi_bc_tsf’
+  sc->rt_wifi_bc_tsf = 0;
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:118:4: error: ‘struct ath_softc’ has no member named ‘rt_wifi_bc_asn’
+  sc->rt_wifi_bc_asn = 0;
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c: In function ‘ath_rt_wifi_sta_start_timer’:
+drivers/net/wireless/ath/ath9k/rt-wifi.c:128:4: error: ‘struct ath_softc’ has no member named ‘rt_wifi_virt_start_tsf’
+  sc->rt_wifi_virt_start_tsf = RT_WIFI_BEACON_DELAY_OFFSET;
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:130:15: error: ‘struct ath_softc’ has no member named ‘rt_wifi_cur_tsf’
+  next_tsf = sc->rt_wifi_cur_tsf + RT_WIFI_BEACON_INTVAL - RT_WIFI_TIMER_OFFSET + RT_WIFI_BEACON_DELAY_OFFSET;
+               ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:133:49: error: ‘struct ath_softc’ has no member named ‘rt_wifi_timer’
+  ath9k_hw_gen_timer_start_absolute(sc->sc_ah, sc->rt_wifi_timer, next_timer, sc->rt_wifi_slot_len);
+                                                 ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:133:80: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  ath9k_hw_gen_timer_start_absolute(sc->sc_ah, sc->rt_wifi_timer, next_timer, sc->rt_wifi_slot_len);
+                                                                                ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:143:4: error: ‘struct ath_softc’ has no member named ‘rt_wifi_asn’
+  sc->rt_wifi_asn = sc->rt_wifi_asn + (RT_WIFI_BEACON_INTVAL / sc->rt_wifi_slot_len)  - 1;
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:143:22: error: ‘struct ath_softc’ has no member named ‘rt_wifi_asn’
+  sc->rt_wifi_asn = sc->rt_wifi_asn + (RT_WIFI_BEACON_INTVAL / sc->rt_wifi_slot_len)  - 1;
+                      ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:143:65: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = sc->rt_wifi_asn + (RT_WIFI_BEACON_INTVAL / sc->rt_wifi_slot_len)  - 1;
+                                                                 ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c: In function ‘ath_rt_wifi_get_buf_from_queue’:
+drivers/net/wireless/ath/ath9k/rt-wifi.c:152:15: error: ‘struct ath_softc’ has no member named ‘rt_wifi_q_lock’
+  spin_lock(&sc->rt_wifi_q_lock);
+               ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:153:21: error: ‘struct ath_softc’ has no member named ‘rt_wifi_q’
+  if (!list_empty(&sc->rt_wifi_q)) {
+                     ^
+In file included from include/linux/list.h:8:0,
+                 from include/linux/preempt.h:10,
+                 from include/linux/spinlock.h:50,
+                 from include/linux/mmzone.h:7,
+                 from include/linux/gfp.h:5,
+                 from include/linux/slab.h:14,
+                 from drivers/net/wireless/ath/ath9k/rt-wifi.c:28:
+drivers/net/wireless/ath/ath9k/rt-wifi.c:154:34: error: ‘struct ath_softc’ has no member named ‘rt_wifi_q’
+   list_for_each_entry(bf_itr, &sc->rt_wifi_q, list) {
+                                  ^
+include/linux/kernel.h:812:49: note: in definition of macro ‘container_of’
+  const typeof( ((type *)0)->member ) *__mptr = (ptr); \
+                                                 ^
+include/linux/list.h:363:2: note: in expansion of macro ‘list_entry’
+  list_entry((ptr)->next, type, member)
+  ^
+include/linux/list.h:447:13: note: in expansion of macro ‘list_first_entry’
+  for (pos = list_first_entry(head, typeof(*pos), member); \
+             ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:154:3: note: in expansion of macro ‘list_for_each_entry’
+   list_for_each_entry(bf_itr, &sc->rt_wifi_q, list) {
+   ^
+In file included from include/linux/preempt.h:10:0,
+                 from include/linux/spinlock.h:50,
+                 from include/linux/mmzone.h:7,
+                 from include/linux/gfp.h:5,
+                 from include/linux/slab.h:14,
+                 from drivers/net/wireless/ath/ath9k/rt-wifi.c:28:
+drivers/net/wireless/ath/ath9k/rt-wifi.c:154:34: error: ‘struct ath_softc’ has no member named ‘rt_wifi_q’
+   list_for_each_entry(bf_itr, &sc->rt_wifi_q, list) {
+                                  ^
+include/linux/list.h:448:24: note: in definition of macro ‘list_for_each_entry’
+       &pos->member != (head);     \
+                        ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:166:17: error: ‘struct ath_softc’ has no member named ‘rt_wifi_q_lock’
+  spin_unlock(&sc->rt_wifi_q_lock);
+                 ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c: In function ‘ath_rt_wifi_get_buf_sta’:
+drivers/net/wireless/ath/ath9k/rt-wifi.c:175:2: error: implicit declaration of function ‘kfifo_len’ [-Werror=implicit-function-declaration]
+  if (kfifo_len(&sc->rt_wifi_fifo) >= sizeof(struct ath_buf*)) {
+  ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:175:19: error: ‘struct ath_softc’ has no member named ‘rt_wifi_fifo’
+  if (kfifo_len(&sc->rt_wifi_fifo) >= sizeof(struct ath_buf*)) {
+                   ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:176:3: error: implicit declaration of function ‘kfifo_out’ [-Werror=implicit-function-declaration]
+   kfifo_out(&sc->rt_wifi_fifo, &bf_tmp, sizeof(struct ath_buf*));
+   ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:176:16: error: ‘struct ath_softc’ has no member named ‘rt_wifi_fifo’
+   kfifo_out(&sc->rt_wifi_fifo, &bf_tmp, sizeof(struct ath_buf*));
+                ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c: In function ‘ath_rt_wifi_get_buf_ap_tx’:
+drivers/net/wireless/ath/ath9k/rt-wifi.c:191:22: error: ‘struct ath_softc’ has no member named ‘rt_wifi_fifo’
+  while (kfifo_len(&sc->rt_wifi_fifo) >= sizeof(struct ath_buf*)) {
+                      ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:192:16: error: ‘struct ath_softc’ has no member named ‘rt_wifi_fifo’
+   kfifo_out(&sc->rt_wifi_fifo, &bf_itr, sizeof(struct ath_buf*));
+                ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:199:17: error: ‘struct ath_softc’ has no member named ‘rt_wifi_q_lock’
+    spin_lock(&sc->rt_wifi_q_lock);
+                 ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:200:36: error: ‘struct ath_softc’ has no member named ‘rt_wifi_q’
+    list_add_tail(&bf_itr->list, &sc->rt_wifi_q);
+                                    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:201:19: error: ‘struct ath_softc’ has no member named ‘rt_wifi_q_lock’
+    spin_unlock(&sc->rt_wifi_q_lock);
+                   ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c: In function ‘ath_rt_wifi_get_buf_ap_shared’:
+drivers/net/wireless/ath/ath9k/rt-wifi.c:216:15: error: ‘struct ath_softc’ has no member named ‘rt_wifi_q_lock’
+  spin_lock(&sc->rt_wifi_q_lock);
+               ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:217:21: error: ‘struct ath_softc’ has no member named ‘rt_wifi_q’
+  if (!list_empty(&sc->rt_wifi_q)) {
+                     ^
+In file included from include/linux/list.h:8:0,
+                 from include/linux/preempt.h:10,
+                 from include/linux/spinlock.h:50,
+                 from include/linux/mmzone.h:7,
+                 from include/linux/gfp.h:5,
+                 from include/linux/slab.h:14,
+                 from drivers/net/wireless/ath/ath9k/rt-wifi.c:28:
+drivers/net/wireless/ath/ath9k/rt-wifi.c:218:32: error: ‘struct ath_softc’ has no member named ‘rt_wifi_q’
+   bf_tmp = list_first_entry(&sc->rt_wifi_q, struct ath_buf, list);
+                                ^
+include/linux/kernel.h:812:49: note: in definition of macro ‘container_of’
+  const typeof( ((type *)0)->member ) *__mptr = (ptr); \
+                                                 ^
+include/linux/list.h:363:2: note: in expansion of macro ‘list_entry’
+  list_entry((ptr)->next, type, member)
+  ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:218:12: note: in expansion of macro ‘list_first_entry’
+   bf_tmp = list_first_entry(&sc->rt_wifi_q, struct ath_buf, list);
+            ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:220:26: error: ‘struct ath_softc’ has no member named ‘rt_wifi_fifo’
+  } else if (kfifo_len(&sc->rt_wifi_fifo) >= sizeof(struct ath_buf*)) {
+                          ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:221:16: error: ‘struct ath_softc’ has no member named ‘rt_wifi_fifo’
+   kfifo_out(&sc->rt_wifi_fifo, &bf_tmp, sizeof(struct ath_buf*));
+                ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:223:17: error: ‘struct ath_softc’ has no member named ‘rt_wifi_q_lock’
+  spin_unlock(&sc->rt_wifi_q_lock);
+                 ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c: In function ‘ath_rt_wifi_tx’:
+drivers/net/wireless/ath/ath9k/rt-wifi.c:250:28: error: ‘struct ath_buf’ has no member named ‘qnum’
+  txq = &(sc->tx.txq[new_buf->qnum]);
+                            ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c: In function ‘ath_rt_wifi_tasklet’:
+drivers/net/wireless/ath/ath9k/rt-wifi.c:319:8: error: ‘struct ath_softc’ has no member named ‘rt_wifi_enable’
+  if (sc->rt_wifi_enable == 0) {
+        ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:321:6: error: ‘struct ath_softc’ has no member named ‘rt_wifi_enable’
+    sc->rt_wifi_enable = 1;
+      ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:329:4: error: ‘struct ath_softc’ has no member named ‘rt_wifi_asn’
+  sc->rt_wifi_asn++; 
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:332:30: error: ‘struct ath_softc’ has no member named ‘rt_wifi_virt_start_tsf’
+  cur_hw_tsf = cur_hw_tsf - sc->rt_wifi_virt_start_tsf + (RT_WIFI_TIMER_OFFSET * 2);
+                              ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:4: error: ‘struct ath_softc’ has no member named ‘rt_wifi_asn’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+    ^
+In file included from include/linux/kernel.h:11:0,
+                 from include/linux/list.h:8,
+                 from include/linux/preempt.h:10,
+                 from include/linux/spinlock.h:50,
+                 from include/linux/mmzone.h:7,
+                 from include/linux/gfp.h:5,
+                 from include/linux/slab.h:14,
+                 from drivers/net/wireless/ath/ath9k/rt-wifi.c:28:
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:87:23: note: in definition of macro ‘ilog2’
+  __builtin_constant_p(n) ? (  \
+                       ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:88:4: note: in definition of macro ‘ilog2’
+   (n) < 1 ? ____ilog2_NaN() : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:89:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 63) ? 63 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:90:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 62) ? 62 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:91:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 61) ? 61 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:92:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 60) ? 60 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:93:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 59) ? 59 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:94:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 58) ? 58 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:95:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 57) ? 57 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:96:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 56) ? 56 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:97:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 55) ? 55 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:98:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 54) ? 54 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:99:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 53) ? 53 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:100:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 52) ? 52 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:101:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 51) ? 51 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:102:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 50) ? 50 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:103:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 49) ? 49 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:104:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 48) ? 48 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:105:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 47) ? 47 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:106:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 46) ? 46 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:107:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 45) ? 45 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:108:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 44) ? 44 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:109:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 43) ? 43 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:110:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 42) ? 42 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:111:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 41) ? 41 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:112:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 40) ? 40 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:113:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 39) ? 39 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:114:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 38) ? 38 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:115:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 37) ? 37 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:116:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 36) ? 36 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:117:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 35) ? 35 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:118:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 34) ? 34 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:119:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 33) ? 33 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:120:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 32) ? 32 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:121:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 31) ? 31 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:122:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 30) ? 30 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:123:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 29) ? 29 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:124:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 28) ? 28 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:125:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 27) ? 27 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:126:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 26) ? 26 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:127:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 25) ? 25 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:128:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 24) ? 24 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:129:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 23) ? 23 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:130:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 22) ? 22 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:131:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 21) ? 21 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:132:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 20) ? 20 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:133:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 19) ? 19 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:134:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 18) ? 18 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:135:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 17) ? 17 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:136:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 16) ? 16 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:137:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 15) ? 15 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:138:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 14) ? 14 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:139:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 13) ? 13 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:140:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 12) ? 12 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:141:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 11) ? 11 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:142:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL << 10) ? 10 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:143:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL <<  9) ?  9 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:144:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL <<  8) ?  8 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:145:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL <<  7) ?  7 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:146:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL <<  6) ?  6 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:147:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL <<  5) ?  5 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:148:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL <<  4) ?  4 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:149:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL <<  3) ?  3 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:150:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL <<  2) ?  2 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:151:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL <<  1) ?  1 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:152:4: note: in definition of macro ‘ilog2’
+   (n) & (1ULL <<  0) ?  0 : \
+    ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:155:10: note: in definition of macro ‘ilog2’
+  (sizeof(n) <= 4) ?   \
+          ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:156:14: note: in definition of macro ‘ilog2’
+  __ilog2_u32(n) :   \
+              ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:333:43: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+  sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
+                                           ^
+include/linux/log2.h:157:14: note: in definition of macro ‘ilog2’
+  __ilog2_u64(n)    \
+              ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:335:19: error: ‘struct ath_softc’ has no member named ‘rt_wifi_asn’
+  sched_offset = sc->rt_wifi_asn % sc->rt_wifi_superframe_size;
+                   ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:335:37: error: ‘struct ath_softc’ has no member named ‘rt_wifi_superframe_size’
+  sched_offset = sc->rt_wifi_asn % sc->rt_wifi_superframe_size;
+                                     ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:337:9: error: ‘struct ath_softc’ has no member named ‘rt_wifi_superframe’
+   if (sc->rt_wifi_superframe[sched_offset].type == RT_WIFI_RX) {
+         ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:340:8: error: ‘struct ath_softc’ has no member named ‘rt_wifi_superframe’
+      sc->rt_wifi_superframe[sched_offset].sta_id);
+        ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:341:16: error: ‘struct ath_softc’ has no member named ‘rt_wifi_superframe’
+   } else if (sc->rt_wifi_superframe[sched_offset].type == RT_WIFI_SHARED) {
+                ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:346:9: error: ‘struct ath_softc’ has no member named ‘rt_wifi_superframe’
+   if (sc->rt_wifi_superframe[sched_offset].type == RT_WIFI_TX
+         ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:347:8: error: ‘struct ath_softc’ has no member named ‘rt_wifi_superframe’
+   && sc->rt_wifi_superframe[sched_offset].sta_id == RT_WIFI_LOCAL_ID) {
+        ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c: In function ‘ath_rt_wifi_rx_beacon’:
+drivers/net/wireless/ath/ath9k/rt-wifi.c:412:30: error: ‘struct ath_softc’ has no member named ‘rt_wifi_cur_tsf’
+   memcpy((unsigned char*)(&sc->rt_wifi_cur_tsf), (data+6), sizeof(u64));
+                              ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:416:22: error: ‘struct ath_softc’ has no member named ‘rt_wifi_cur_tsf’
+   if(local_tsf >= (sc->rt_wifi_cur_tsf - RT_WIFI_TSF_SYNC_OFFSET)) {
+                      ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:418:31: error: ‘struct ath_softc’ has no member named ‘rt_wifi_asn’
+    memcpy((unsigned char*)(&sc->rt_wifi_asn), (data+2), sizeof(int));
+                               ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:422:6: error: ‘struct ath_softc’ has no member named ‘rt_wifi_slot_len’
+    sc->rt_wifi_slot_len = rt_wifi_get_slot_len(slot_size);
+      ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:425:31: error: ‘struct ath_softc’ has no member named ‘rt_wifi_superframe_size’
+    memcpy((unsigned char*)(&sc->rt_wifi_superframe_size), (data+15), sizeof(u16));
+                               ^
+drivers/net/wireless/ath/ath9k/rt-wifi.c:431:6: error: ‘struct ath_softc’ has no member named ‘rt_wifi_enable’
+    sc->rt_wifi_enable = 1;
+      ^
+cc1: some warnings being treated as errors
+make[5]: *** [drivers/net/wireless/ath/ath9k/rt-wifi.o] Error 1
+make[4]: *** [drivers/net/wireless/ath/ath9k] Error 2
+make[4]: *** Waiting for unfinished jobs....
+  CC [M]  drivers/net/wireless/ath/wcn36xx/smd.o
+  CC [M]  drivers/net/wireless/ath/wcn36xx/pmc.o
+  LD      drivers/net/wireless/b43legacy/built-in.o
+  CC [M]  drivers/net/wireless/b43legacy/main.o
+  LD      drivers/net/wireless/brcm80211/built-in.o
+  LD      drivers/net/wireless/brcm80211/brcmfmac/built-in.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmfmac/cfg80211.o
+  CC [M]  drivers/net/wireless/ath/wcn36xx/debug.o
+  CC [M]  drivers/net/wireless/b43legacy/ilt.o
+  LD [M]  drivers/net/wireless/ath/wcn36xx/wcn36xx.o
+make[3]: *** [drivers/net/wireless/ath] Error 2
+make[3]: *** Waiting for unfinished jobs....
+  CC [M]  drivers/net/wireless/b43legacy/phy.o
+  CC [M]  drivers/net/wireless/b43legacy/radio.o
+  CC [M]  drivers/net/wireless/b43legacy/sysfs.o
+  CC [M]  drivers/net/wireless/b43legacy/xmit.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmfmac/chip.o
+  CC [M]  drivers/net/wireless/b43legacy/rfkill.o
+  LD      drivers/net/wireless/brcm80211/brcmsmac/built-in.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmsmac/mac80211_if.o
+  CC [M]  drivers/net/wireless/b43legacy/leds.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmsmac/ucode_loader.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmfmac/fwil.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmfmac/fweh.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmfmac/fwsignal.o
+  CC [M]  drivers/net/wireless/b43legacy/dma.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmsmac/ampdu.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmfmac/p2p.o
+  CC [M]  drivers/net/wireless/b43legacy/pio.o
+  LD      drivers/net/wireless/brcm80211/brcmutil/built-in.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmutil/utils.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmfmac/proto.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmsmac/antsel.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmfmac/common.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmfmac/core.o
+  LD [M]  drivers/net/wireless/b43legacy/b43legacy.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmsmac/channel.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmutil/d11.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmsmac/main.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmfmac/firmware.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmfmac/feature.o
+  LD [M]  drivers/net/wireless/brcm80211/brcmutil/brcmutil.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmfmac/btcoex.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmsmac/phy_shim.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmsmac/pmu.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmfmac/vendor.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmsmac/rate.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmsmac/stf.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmfmac/bcdc.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmfmac/sdio.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmsmac/aiutils.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmfmac/bcmsdh.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmfmac/usb.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmsmac/phy/phy_cmn.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmsmac/phy/phy_lcn.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmfmac/tracepoint.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmsmac/phy/phy_n.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmsmac/phy/phytbl_lcn.o
+  LD [M]  drivers/net/wireless/brcm80211/brcmfmac/brcmfmac.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmsmac/phy/phytbl_n.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmsmac/phy/phy_qmath.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmsmac/dma.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmsmac/brcms_trace_events.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmsmac/debug.o
+  CC [M]  drivers/net/wireless/brcm80211/brcmsmac/led.o
+  LD      drivers/vhost/built-in.o
+  CC [M]  drivers/vhost/net.o
+  CC      drivers/video/hdmi.o
+  CC [M]  drivers/vhost/scsi.o
+  CC [M]  drivers/vhost/vringh.o
+  CC [M]  drivers/vhost/vhost.o
+  LD [M]  drivers/vhost/vhost_net.o
+  LD      drivers/video/fbdev/intelfb/built-in.o
+  CC [M]  drivers/video/fbdev/intelfb/intelfbdrv.o
+  CC      drivers/video/backlight/backlight.o
+  CC [M]  drivers/video/fbdev/intelfb/intelfbhw.o
+  CC [M]  drivers/video/backlight/ams369fg06.o
+  LD [M]  drivers/vhost/vhost_scsi.o
+  CC [M]  drivers/video/backlight/lcd.o
+  CC [M]  drivers/net/sungem_phy.o
+  CC [M]  drivers/net/ntb_netdev.o
+  CC [M]  drivers/video/backlight/hx8357.o
+  LD [M]  drivers/video/fbdev/intelfb/intelfb.o
+  CC      drivers/video/console/dummycon.o
+  LD      drivers/video/fbdev/aty/built-in.o
+  CC [M]  drivers/video/fbdev/aty/atyfb_base.o
+  CC [M]  drivers/video/fbdev/aty/mach64_accel.o
+  CC [M]  drivers/video/backlight/ili922x.o
+  CC [M]  drivers/video/backlight/ili9320.o
+  CC      drivers/video/console/vgacon.o
+  CC [M]  drivers/video/fbdev/aty/mach64_cursor.o
+  CC [M]  drivers/video/backlight/l4f00242t03.o
+  CC [M]  drivers/video/fbdev/aty/mach64_gx.o
+  CC [M]  drivers/video/fbdev/aty/mach64_ct.o
+  CC [M]  drivers/video/vgastate.o
+  LD [M]  drivers/net/wireless/brcm80211/brcmsmac/brcmsmac.o
+  CC [M]  drivers/video/backlight/ld9040.o
+make[2]: *** [drivers/net/wireless] Error 2
+make[1]: *** [drivers/net] Error 2
+make[1]: *** Waiting for unfinished jobs....
+  CC [M]  drivers/video/backlight/lms283gf05.o
+  CC      drivers/video/console/fbcon.o
+  CC [M]  drivers/video/fbdev/aty/aty128fb.o
+  CC      drivers/video/console/bitblit.o
+  CC [M]  drivers/video/backlight/lms501kf03.o
+  CC [M]  drivers/video/backlight/ltv350qv.o
+  CC      drivers/video/console/softcursor.o
+  CC [M]  drivers/video/backlight/platform_lcd.o
+  CC [M]  drivers/video/backlight/s6e63m0.o
+  CC      drivers/video/console/tileblit.o
+  CC [M]  drivers/video/fbdev/aty/radeon_base.o
+  CC [M]  drivers/video/fbdev/aty/radeon_pm.o
+  CC      drivers/video/console/fbcon_rotate.o
+  CC [M]  drivers/video/backlight/tdo24m.o
+  CC      drivers/video/console/fbcon_cw.o
+  CC      drivers/video/console/fbcon_ud.o
+  CC [M]  drivers/video/backlight/vgg2432a4.o
+  CC      drivers/video/console/fbcon_ccw.o
+  CC [M]  drivers/video/backlight/88pm860x_bl.o
+  CC [M]  drivers/video/backlight/aat2870_bl.o
+  CC [M]  drivers/video/backlight/adp5520_bl.o
+  CC [M]  drivers/video/backlight/adp8860_bl.o
+  CC [M]  drivers/video/fbdev/aty/radeon_monitor.o
+  CC [M]  drivers/video/backlight/adp8870_bl.o
+  CC [M]  drivers/video/fbdev/aty/radeon_accel.o
+  LD      drivers/video/console/built-in.o
+  CC [M]  drivers/video/fbdev/aty/radeon_i2c.o
+  CC [M]  drivers/video/backlight/apple_bl.o
+  CC [M]  drivers/video/backlight/as3711_bl.o
+  CC [M]  drivers/video/fbdev/aty/radeon_backlight.o
+  CC [M]  drivers/video/backlight/bd6107.o
+  CC [M]  drivers/video/backlight/cr_bllcd.o
+  CC [M]  drivers/video/backlight/da903x_bl.o
+  CC [M]  drivers/video/backlight/da9052_bl.o
+  CC [M]  drivers/video/backlight/generic_bl.o
+  CC [M]  drivers/video/backlight/gpio_backlight.o
+  CC [M]  drivers/video/backlight/lm3533_bl.o
+  LD [M]  drivers/video/fbdev/aty/atyfb.o
+  LD [M]  drivers/video/fbdev/aty/radeonfb.o
+  CC [M]  drivers/video/backlight/lm3630a_bl.o
+  CC      drivers/video/fbdev/core/fb_notify.o
+  CC [M]  drivers/video/backlight/lm3639_bl.o
+  CC [M]  drivers/video/backlight/lp855x_bl.o
+  CC [M]  drivers/video/backlight/lp8788_bl.o
+  CC [M]  drivers/video/backlight/lv5207lp.o
+  CC      drivers/video/fbdev/core/fb_cmdline.o
+  CC      drivers/video/fbdev/core/fbmem.o
+  CC [M]  drivers/video/backlight/max8925_bl.o
+  LD      drivers/video/fbdev/kyro/built-in.o
+  CC [M]  drivers/video/fbdev/kyro/STG4000Ramdac.o
+  CC [M]  drivers/video/fbdev/kyro/STG4000VTG.o
+  CC [M]  drivers/video/fbdev/kyro/STG4000OverlayDevice.o
+  CC [M]  drivers/video/backlight/pcf50633-backlight.o
+  CC      drivers/video/fbdev/core/fbmon.o
+  LD      drivers/video/fbdev/matrox/built-in.o
+  CC [M]  drivers/video/fbdev/matrox/matroxfb_base.o
+  CC [M]  drivers/video/fbdev/kyro/STG4000InitDevice.o
+  CC [M]  drivers/video/fbdev/kyro/fbdev.o
+  CC [M]  drivers/video/backlight/pwm_bl.o
+  CC [M]  drivers/video/fbdev/matrox/matroxfb_accel.o
+  CC      drivers/video/fbdev/core/fbcmap.o
+  LD [M]  drivers/video/fbdev/kyro/kyrofb.o
+  LD      drivers/video/fbdev/mb862xx/built-in.o
+  CC [M]  drivers/video/fbdev/mb862xx/mb862xxfbdrv.o
+  CC [M]  drivers/video/backlight/kb3886_bl.o
+  CC [M]  drivers/video/backlight/tps65217_bl.o
+  CC [M]  drivers/video/fbdev/matrox/matroxfb_DAC1064.o
+  CC      drivers/video/fbdev/core/fbsysfs.o
+  CC [M]  drivers/video/fbdev/matrox/matroxfb_Ti3026.o
+  CC [M]  drivers/video/fbdev/matrox/matroxfb_misc.o
+  CC [M]  drivers/video/fbdev/mb862xx/mb862xxfb_accel.o
+  CC [M]  drivers/video/backlight/wm831x_bl.o
+  LD      drivers/video/backlight/built-in.o
+  CC [M]  drivers/video/fbdev/matrox/g450_pll.o
+  CC      drivers/video/fbdev/core/modedb.o
+  CC [M]  drivers/video/fbdev/mb862xx/mb862xx-i2c.o
+  CC [M]  drivers/video/fbdev/matrox/matroxfb_g450.o
+  LD      drivers/video/fbdev/nvidia/built-in.o
+  CC [M]  drivers/video/fbdev/nvidia/nvidia.o
+  LD      drivers/video/fbdev/omap2/displays-new/built-in.o
+  LD      drivers/video/fbdev/omap2/dss/built-in.o
+  LD      drivers/video/fbdev/omap2/built-in.o
+  LD      drivers/video/fbdev/riva/built-in.o
+  CC [M]  drivers/video/fbdev/riva/fbdev.o
+  LD [M]  drivers/video/fbdev/mb862xx/mb862xxfb.o
+  CC [M]  drivers/video/fbdev/riva/riva_hw.o
+  CC [M]  drivers/video/fbdev/matrox/matroxfb_crtc2.o
+  CC      drivers/video/fbdev/core/fbcvt.o
+  CC [M]  drivers/video/fbdev/matrox/i2c-matroxfb.o
+  CC [M]  drivers/video/fbdev/nvidia/nv_hw.o
+  CC      drivers/video/fbdev/core/cfbfillrect.o
+  CC      drivers/video/fbdev/core/cfbcopyarea.o
+  CC [M]  drivers/video/fbdev/riva/nv_driver.o
+  CC [M]  drivers/video/fbdev/matrox/matroxfb_maven.o
+  CC [M]  drivers/video/fbdev/nvidia/nv_setup.o
+  CC [M]  drivers/video/fbdev/nvidia/nv_accel.o
+  CC [M]  drivers/video/fbdev/riva/rivafb-i2c.o
+  CC [M]  drivers/video/fbdev/nvidia/nv_of.o
+  CC      drivers/video/fbdev/core/cfbimgblt.o
+  CC [M]  drivers/video/fbdev/nvidia/nv_i2c.o
+  LD      drivers/video/fbdev/sis/built-in.o
+  CC [M]  drivers/video/fbdev/sis/sis_main.o
+  LD      drivers/video/fbdev/savage/built-in.o
+  CC [M]  drivers/video/fbdev/nvidia/nv_backlight.o
+  CC [M]  drivers/video/fbdev/savage/savagefb_driver.o
+  LD [M]  drivers/video/fbdev/riva/rivafb.o
+  LD      drivers/video/fbdev/vermilion/built-in.o
+  CC [M]  drivers/video/fbdev/vermilion/vermilion.o
+  CC      drivers/video/fbdev/core/fb_defio.o
+  CC [M]  drivers/video/fbdev/savage/savagefb-i2c.o
+  LD [M]  drivers/video/fbdev/nvidia/nvidiafb.o
+  LD      drivers/video/fbdev/via/built-in.o
+  CC [M]  drivers/video/fbdev/via/viafbdev.o
+  CC [M]  drivers/video/fbdev/via/hw.o
+  CC [M]  drivers/video/fbdev/core/sysfillrect.o
+  CC [M]  drivers/video/fbdev/vermilion/cr_pll.o
+  LD [M]  drivers/video/fbdev/savage/savagefb.o
+  CC      drivers/video/fbdev/imsttfb.o
+  CC      drivers/video/fbdev/asiliantfb.o
+  LD [M]  drivers/video/fbdev/vermilion/vmlfb.o
+  LD [M]  drivers/video/fbdev/vermilion/crvml.o
+  CC [M]  drivers/video/fbdev/via/via_i2c.o
+  CC [M]  drivers/video/fbdev/core/syscopyarea.o
+  CC [M]  drivers/video/fbdev/via/dvi.o
+  CC      drivers/video/fbdev/vesafb.o
+  CC      drivers/video/fbdev/efifb.o
+  CC [M]  drivers/video/fbdev/core/sysimgblt.o
+  CC [M]  drivers/video/fbdev/sis/sis_accel.o
+  CC [M]  drivers/video/fbdev/via/lcd.o
+  CC      drivers/video/fbdev/simplefb.o
+  CC [M]  drivers/video/fbdev/arcfb.o
+  CC [M]  drivers/video/fbdev/cyber2000fb.o
+  CC [M]  drivers/video/fbdev/via/ioctl.o
+  CC [M]  drivers/video/fbdev/core/fb_sys_fops.o
+  CC [M]  drivers/video/fbdev/sis/init.o
+  CC [M]  drivers/video/fbdev/core/svgalib.o
+  CC [M]  drivers/video/fbdev/pm2fb.o
+  CC [M]  drivers/video/fbdev/via/accel.o
+  CC [M]  drivers/video/fbdev/core/fb_ddc.o
+  CC [M]  drivers/video/fbdev/via/via_utility.o
+  CC [M]  drivers/video/fbdev/pm3fb.o
+  LD      drivers/video/fbdev/core/fb.o
+  CC [M]  drivers/video/fbdev/sis/init301.o
+  LD      drivers/video/fbdev/core/built-in.o
+  CC [M]  drivers/video/fbdev/i740fb.o
+  CC [M]  drivers/video/fbdev/macmodes.o
+  CC [M]  drivers/video/fbdev/via/vt1636.o
+  CC [M]  drivers/video/fbdev/via/global.o
+  CC [M]  drivers/video/fbdev/neofb.o
+  CC [M]  drivers/video/fbdev/tdfxfb.o
+  CC [M]  drivers/video/fbdev/vt8623fb.o
+  CC [M]  drivers/video/fbdev/sis/initextlfb.o
+  CC [M]  drivers/video/fbdev/via/tblDPASetting.o
+  CC [M]  drivers/video/fbdev/tridentfb.o
+  CC [M]  drivers/video/fbdev/via/viamode.o
+  CC [M]  drivers/video/fbdev/s3fb.o
+  CC [M]  drivers/video/fbdev/via/via-core.o
+  CC [M]  drivers/video/fbdev/arkfb.o
+  CC [M]  drivers/video/fbdev/via/via-gpio.o
+  CC [M]  drivers/video/fbdev/hecubafb.o
+  CC [M]  drivers/video/fbdev/via/via_modesetting.o
+  CC [M]  drivers/video/fbdev/n411.o
+  CC [M]  drivers/video/fbdev/hgafb.o
+  CC [M]  drivers/video/fbdev/sstfb.o
+  CC [M]  drivers/video/fbdev/via/via_clock.o
+  CC [M]  drivers/video/fbdev/via/via_aux.o
+  CC [M]  drivers/video/fbdev/cirrusfb.o
+  CC [M]  drivers/video/fbdev/metronomefb.o
+  CC [M]  drivers/video/fbdev/broadsheetfb.o
+  CC [M]  drivers/video/fbdev/via/via_aux_edid.o
+  CC [M]  drivers/video/fbdev/via/via_aux_vt1636.o
+  CC [M]  drivers/video/fbdev/auo_k190x.o
+  CC [M]  drivers/video/fbdev/auo_k1900fb.o
+  LD [M]  drivers/video/fbdev/sis/sisfb.o
+  CC [M]  drivers/video/fbdev/auo_k1901fb.o
+  CC [M]  drivers/video/fbdev/via/via_aux_vt1632.o
+  CC [M]  drivers/video/fbdev/via/via_aux_vt1631.o
+  CC [M]  drivers/video/fbdev/via/via_aux_vt1625.o
+  CC [M]  drivers/video/fbdev/s1d13xxxfb.o
+  CC [M]  drivers/video/fbdev/via/via_aux_vt1622.o
+  CC [M]  drivers/video/fbdev/sm501fb.o
+  CC [M]  drivers/video/fbdev/via/via_aux_vt1621.o
+  CC [M]  drivers/video/fbdev/via/via_aux_sii164.o
+  CC [M]  drivers/video/fbdev/udlfb.o
+  CC [M]  drivers/video/fbdev/via/via_aux_ch7301.o
+  CC [M]  drivers/video/fbdev/smscufx.o
+  CC [M]  drivers/video/fbdev/xen-fbfront.o
+  CC [M]  drivers/video/fbdev/carminefb.o
+  LD [M]  drivers/video/fbdev/via/viafb.o
+  CC [M]  drivers/video/fbdev/hyperv_fb.o
+  CC [M]  drivers/video/fbdev/uvesafb.o
+  CC [M]  drivers/video/fbdev/vga16fb.o
+  LD      drivers/video/fbdev/built-in.o
+  LD      drivers/video/built-in.o
+make: *** [drivers] Error 2
