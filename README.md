@@ -30,5 +30,7 @@ This branch is based on the Atheros CSI tool and we try to merge the RT-WiFi cod
 ## Notice
 Do NOT put the folder under some folder with space in its name like *Untitled folder*, it will result in a **make error** during the `sudo make modules_install`.
 ## Current Progress
-**Build Succeeded!** with `uname -r` displaying *4.1.10+*. Functionality test needed.
+**Build Succeeded!** with `uname -r` displaying *4.1.10+*.
+* CSI Tool works fine, can correctly collect and readable CSI packets.
+* RT-WiFi test is scheduled tomorrow.
 
