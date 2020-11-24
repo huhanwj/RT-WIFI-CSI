@@ -32,5 +32,6 @@ Do NOT put the folder under some folder with space in its name like *Untitled fo
 ## Current Progress
 **Build Succeeded!** with `uname -r` displaying *4.1.10+*.
 * CSI Tool works fine, can correctly collect and readable CSI packets.
-* RT-WiFi test is scheduled tomorrow.
+* ~~RT-WiFi test is scheduled tomorrow.~~
+* RT-WiFi functionality will conflict with CSI receiving, fix needed.
 
