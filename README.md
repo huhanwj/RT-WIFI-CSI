@@ -13,6 +13,8 @@ This branch is based on the Atheros CSI tool and we try to merge the RT-WiFi cod
 
 *Manual for RT-WiFi Project*: https://www.cs.utexas.edu/users/cps/rt-wifi/RT-WiFi%20user%20guide%20v0.1.pdf
 
+**UserTool for Atheros CSI Tool**: https://github.com/xieyaxiongfly/Atheros-CSI-Tool-UserSpace-APP
+* Note: To correctly analyze the CSI, you need to use *mex* provided by MATLAB to compile the C source code (tested under ubuntu 14.04/20.04, Windows 10 Pro 2004/20H2, macOS Catalina 10.15.6/BigSur 11.1, diff os will output diff mex output files) to use the *read_csi* function.
 ## Problems to solve
 * New Kconfig file and makefile
 * Solve the kernel version issue: 4.15(displayed as 4.1.10+) for Atheros CSI Tool and 3.13 for RT-WiFi project
