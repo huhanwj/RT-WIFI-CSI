@@ -1,6 +1,8 @@
 # RT-WIFI-CSI
 This project aims to merge Atheros CSI Tool with RT-WiFi project.
 
+**Read the Issues and README first before starting coding.**
+
 Both tools are built on ath9k driver.
 ## Branch introduction
 This branch is based on the Atheros CSI tool and we try to merge the RT-WiFi code into the driver.
