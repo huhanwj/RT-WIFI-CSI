@@ -6,18 +6,25 @@ This project aims to merge Atheros CSI Tool with RT-WiFi project.
 Both tools are built on ath9k driver.
 ### Notice for downloading this repository
 Do NOT try to clone or download the ZIP file and unzip it under Windows Environment (Chinese Lang.), it will raise an directory error (unclear about the detailed reason but I guess is related to encoding schemes as I am using a Chinese lang version of Windows).
+
 ## Branch introduction
 This branch is based on the Atheros CSI tool and we try to merge the RT-WiFi code into the driver.
 
 This also integrates three userspace tools for CSI collection and analysis.
 Namely,
     1. **UserTool for Atheros CSI Tool**: https://github.com/xieyaxiongfly/Atheros-CSI-Tool-UserSpace-APP
+    
         * Note: To correctly analyze the CSI, you need to use *mex* provided by MATLAB to compile the C source code (tested under ubuntu 14.04/20.04, Windows 10 Pro 2004/20H2, macOS Catalina 10.15.6/BigSur 11.1, diff os will output diff mex output files) to use the *read_csi* function.
+        
         * Change the "ieee-be" to "ieee-le" in Line 46 of *read_log_file.m* if you cannot read the packets correctly. 
     2. **csi-server-openwrt**: https://github.com/putterer/csi-server-openwrt
+    
         * A server for shipping channel state information obtained using the Atheros CSI Tool via UDP in real time. 
+        
         * Note: The author is somehow uncertain about the functionality of the server side under x86 systems as no tests are conducted.
+        
     3. **csiread**: https://github.com/citysu/csiread
+    
         * Parse channel state information from raw CSI data file in Python.
 ## Source of this project
 **Atheros CSI Tool**: https://github.com/xieyaxiongfly/Atheros-CSI-Tool
