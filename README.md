@@ -10,6 +10,32 @@ Both tools are built on ath9k driver.
 
 Do NOT try to clone or download the ZIP file and unzip it under Windows Environment (Chinese Lang.), it will raise an directory error (unclear about the detailed reason but I guess is related to encoding schemes as I am using a Chinese lang version of Windows).
 
+All of our testing is done on x86 platforms, we don't know whether this is compatible with ARM chips.
+## Installation
+### System Requirements
+Same as Atheros CSI Tool, i.e. Ubuntu 14.04 with kernel version lower than or equal to 4.1.10.
+### Installation of required packages
+Some packages are need for successful running of "makemenuconfig"
+
+`sudo apt-get install libncurses5-dev libncursesw5-dev`
+
+Install some packages for compiling the Hostapd
+
+`sudo apt-get install libnl-dev libssl-dev`
+
+Then, run the following command in this folder
+`make menuconfig`
+
+The default config is configured installing both RT-WiFi and CSI Tool, you may check it manually.
+
+Next compile the kernel modules
+```
+make -j4
+make modules
+sudo make modules_install
+sudo make install
+```
+Note here that the "-j4" is used for accelerating the compiling process. The number "4" is select according to the number of threads that your CPU have. If your CPU has hyperthreading technology (HT), the number should be 2 times your CPU cores (e.g. most Intel Core i7 CPUs, Intel Xeon CPUs and AMD Ryzen CPUs). For CPUs not supporting such technology, which normally depends on the settings of chip manufacturer (e.g. i7-9700K does not support HT but i7-8700K does), just put in the number of your CPU cores (e.g. the CPUs used for my testing, which are Intel Core i5-4590T and Intel Core i5-9600K).
 ## Branch introduction
 
 This branch is based on the Atheros CSI tool and we try to merge the RT-WiFi code into the driver.
