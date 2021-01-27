@@ -1099,14 +1099,14 @@ static int ath_process_fft(struct ath_softc *sc, struct ieee80211_hdr *hdr,
 		fft_sample_40.channel_type = chan_type;
 
 		if (chan_type == NL80211_CHAN_HT40PLUS) {
-			lower_rssi = fix_rssi_inv_only(rs->rs_rssi_ctl0);
-			upper_rssi = fix_rssi_inv_only(rs->rs_rssi_ext0);
+			lower_rssi = fix_rssi_inv_only(rs->rs_rssi_ctl[0]);
+			upper_rssi = fix_rssi_inv_only(rs->rs_rssi_ext[0]);
 
 			fft_sample_40.lower_noise = ah->noise;
 			fft_sample_40.upper_noise = ext_nf;
 		} else {
-			lower_rssi = fix_rssi_inv_only(rs->rs_rssi_ext0);
-			upper_rssi = fix_rssi_inv_only(rs->rs_rssi_ctl0);
+			lower_rssi = fix_rssi_inv_only(rs->rs_rssi_ext[0]);
+			upper_rssi = fix_rssi_inv_only(rs->rs_rssi_ctl[0]);
 
 			fft_sample_40.lower_noise = ext_nf;
 			fft_sample_40.upper_noise = ah->noise;
@@ -1142,7 +1142,7 @@ static int ath_process_fft(struct ath_softc *sc, struct ieee80211_hdr *hdr,
 		fft_sample_20.tlv.length = __cpu_to_be16(length);
 		fft_sample_20.freq = __cpu_to_be16(freq);
 
-		fft_sample_20.rssi = fix_rssi_inv_only(rs->rs_rssi_ctl0);
+		fft_sample_20.rssi = fix_rssi_inv_only(rs->rs_rssi_ctl[0]);
 		fft_sample_20.noise = ah->noise;
 
 		mag_info = ((struct ath_ht20_mag_info *)radar_info) - 1;

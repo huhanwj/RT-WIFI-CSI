@@ -18,6 +18,7 @@
 #define DEBUG_H
 
 #include "hw.h"
+#include "rc.h"
 #include "dfs_debug.h"
 
 struct ath_txq;
@@ -133,7 +134,6 @@ struct ath_interrupt_stats {
 	u32 mac_asleep;
 	u32 mac_sleep_access;
 };
-
 
 /**
  * struct ath_tx_stats - Statistics about TX
@@ -266,6 +266,8 @@ void ath9k_sta_add_debugfs(struct ieee80211_hw *hw,
 			   struct ieee80211_vif *vif,
 			   struct ieee80211_sta *sta,
 			   struct dentry *dir);
+void ath_debug_send_fft_sample(struct ath_softc *sc,
+			       struct fft_sample_tlv *fft_sample);
 void ath9k_debug_stat_ant(struct ath_softc *sc,
 			  struct ath_hw_antcomb_conf *div_ant_conf,
 			  int main_rssi_avg, int alt_rssi_avg);
