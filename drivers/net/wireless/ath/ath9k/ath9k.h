@@ -202,10 +202,7 @@ int ath_descdma_setup(struct ath_softc *sc, struct ath_descdma *dd,
 #define IS_OFDM_RATE(rate) ((rate >= 0x8) && (rate <= 0xf))
 
 #define ATH_TX_COMPLETE_POLL_INT	1000
-enum {
-       WLAN_RC_PHY_OFDM,
-       WLAN_RC_PHY_CCK,
-};
+
 
 #define ATH_TXFIFO_DEPTH 8
 struct ath_txq {
