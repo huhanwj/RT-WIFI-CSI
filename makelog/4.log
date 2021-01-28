@@ -1,0 +1,246 @@
+arch/x86/kernel/cpu/microcode/intel_early.c: In function ‘get_matching_model_microcode.isra.3.constprop.9’:
+arch/x86/kernel/cpu/microcode/intel_early.c:349:1: warning: the frame size of 1064 bytes is larger than 1024 bytes [-Wframe-larger-than=]
+ }
+ ^
+drivers/iio/magnetometer/ak8975.c: In function ‘ak8975_probe’:
+drivers/iio/magnetometer/ak8975.c:788:14: warning: ‘chipset’ may be used uninitialized in this function [-Wmaybe-uninitialized]
+  data->def = &ak_def_array[chipset];
+              ^
+drivers/isdn/hardware/eicon/diddfunc.c: In function ‘connect_didd’:
+drivers/isdn/hardware/eicon/diddfunc.c:77:1: warning: the frame size of 1136 bytes is larger than 1024 bytes [-Wframe-larger-than=]
+ }
+ ^
+drivers/isdn/hardware/eicon/divasfunc.c: In function ‘connect_didd’:
+drivers/isdn/hardware/eicon/divasfunc.c:192:1: warning: the frame size of 1136 bytes is larger than 1024 bytes [-Wframe-larger-than=]
+ }
+ ^
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxgm204.c: In function ‘gm204_grctx_generate_405b60’:
+drivers/gpu/drm/nouveau/nvkm/engine/gr/ctxgm204.c:975:1: warning: the frame size of 1184 bytes is larger than 1024 bytes [-Wframe-larger-than=]
+ }
+ ^
+drivers/isdn/hardware/eicon/mntfunc.c: In function ‘connect_didd’:
+drivers/isdn/hardware/eicon/mntfunc.c:112:1: warning: the frame size of 1136 bytes is larger than 1024 bytes [-Wframe-larger-than=]
+ }
+ ^
+drivers/isdn/hardware/eicon/idifunc.c: In function ‘connect_didd’:
+drivers/isdn/hardware/eicon/idifunc.c:223:1: warning: the frame size of 1136 bytes is larger than 1024 bytes [-Wframe-larger-than=]
+ }
+ ^
+drivers/isdn/hardware/eicon/capifunc.c: In function ‘divacapi_connect_didd’:
+drivers/isdn/hardware/eicon/capifunc.c:1094:1: warning: the frame size of 1136 bytes is larger than 1024 bytes [-Wframe-larger-than=]
+ }
+ ^
+drivers/isdn/hardware/eicon/message.c: In function ‘sig_ind’:
+drivers/isdn/hardware/eicon/message.c:6115:1: warning: the frame size of 1188 bytes is larger than 1024 bytes [-Wframe-larger-than=]
+ }
+ ^
+drivers/net/fddi/defxx.c: In function ‘dfx_pci_register’:
+drivers/net/fddi/defxx.c:586:10: warning: ‘bar_len’ may be used uninitialized in this function [-Wmaybe-uninitialized]
+   region = request_region(bar_start[0], bar_len[0], print_name);
+          ^
+drivers/net/fddi/defxx.c:537:18: note: ‘bar_len’ was declared here
+  resource_size_t bar_len[3];  /* resource length */
+                  ^
+drivers/net/fddi/defxx.c:586:10: warning: ‘bar_start’ may be used uninitialized in this function [-Wmaybe-uninitialized]
+   region = request_region(bar_start[0], bar_len[0], print_name);
+          ^
+drivers/net/fddi/defxx.c:536:18: note: ‘bar_start’ was declared here
+  resource_size_t bar_start[3];  /* pointers to ports */
+                  ^
+drivers/net/fddi/defxx.c: In function ‘dfx_pci_unregister’:
+drivers/net/fddi/defxx.c:3720:5: warning: ‘*((void *)&bar_start+16)’ may be used uninitialized in this function [-Wmaybe-uninitialized]
+  if (bar_start[2] != 0)
+     ^
+drivers/net/fddi/defxx.c:3700:18: note: ‘*((void *)&bar_start+16)’ was declared here
+  resource_size_t bar_start[3];  /* pointers to ports */
+                  ^
+In file included from include/linux/device.h:16:0,
+                 from include/linux/dma-mapping.h:5,
+                 from drivers/net/fddi/defxx.c:206:
+include/linux/ioport.h:198:49: warning: ‘*((void *)&bar_len+16)’ may be used uninitialized in this function [-Wmaybe-uninitialized]
+ #define release_region(start,n) __release_region(&ioport_resource, (start), (n))
+                                                 ^
+drivers/net/fddi/defxx.c:3701:18: note: ‘*((void *)&bar_len+16)’ was declared here
+  resource_size_t bar_len[3];  /* resource lengths */
+                  ^
+In file included from include/linux/device.h:16:0,
+                 from include/linux/dma-mapping.h:5,
+                 from drivers/net/fddi/defxx.c:206:
+include/linux/ioport.h:198:49: warning: ‘bar_start’ may be used uninitialized in this function [-Wmaybe-uninitialized]
+ #define release_region(start,n) __release_region(&ioport_resource, (start), (n))
+                                                 ^
+drivers/net/fddi/defxx.c:3700:18: note: ‘bar_start’ was declared here
+  resource_size_t bar_start[3];  /* pointers to ports */
+                  ^
+In file included from include/linux/device.h:16:0,
+                 from include/linux/dma-mapping.h:5,
+                 from drivers/net/fddi/defxx.c:206:
+include/linux/ioport.h:198:49: warning: ‘bar_len’ may be used uninitialized in this function [-Wmaybe-uninitialized]
+ #define release_region(start,n) __release_region(&ioport_resource, (start), (n))
+                                                 ^
+drivers/net/fddi/defxx.c:3701:18: note: ‘bar_len’ was declared here
+  resource_size_t bar_len[3];  /* resource lengths */
+                  ^
+In file included from drivers/net/ethernet/cadence/macb.c:12:0:
+drivers/net/ethernet/cadence/macb.c: In function ‘macb_probe’:
+include/linux/clk.h:471:15: warning: ‘tx_clk’ may be used uninitialized in this function [-Wmaybe-uninitialized]
+  clk_unprepare(clk);
+               ^
+drivers/net/ethernet/cadence/macb.c:2737:28: note: ‘tx_clk’ was declared here
+  struct clk *pclk, *hclk, *tx_clk;
+                            ^
+In file included from drivers/net/ethernet/cadence/macb.c:12:0:
+include/linux/clk.h:471:15: warning: ‘hclk’ may be used uninitialized in this function [-Wmaybe-uninitialized]
+  clk_unprepare(clk);
+               ^
+drivers/net/ethernet/cadence/macb.c:2737:21: note: ‘hclk’ was declared here
+  struct clk *pclk, *hclk, *tx_clk;
+                     ^
+drivers/net/ethernet/neterion/vxge/vxge-main.c: In function ‘VXGE_COMPLETE_VPATH_TX.isra.35’:
+drivers/net/ethernet/neterion/vxge/vxge-main.c:119:1: warning: the frame size of 1040 bytes is larger than 1024 bytes [-Wframe-larger-than=]
+ }
+ ^
+drivers/scsi/aic94xx/aic94xx_sds.c: In function ‘asd_process_ctrl_a_user’:
+drivers/scsi/aic94xx/aic94xx_sds.c:597:21: warning: ‘offs’ may be used uninitialized in this function [-Wmaybe-uninitialized]
+  asd_read_reg_string(asd_ha, buffer, asd_ha->hw_prof.flash.bar+offs,
+                     ^
+drivers/scsi/aic94xx/aic94xx_sds.c:985:6: note: ‘offs’ was declared here
+  u32 offs, size;
+      ^
+drivers/net/wireless/ath/ath9k/gpio.c:171:13: warning: ‘ath9k_gen_timer_start’ defined but not used [-Wunused-function]
+ static void ath9k_gen_timer_start(struct ath_hw *ah,
+             ^
+drivers/net/wireless/ath/ath9k/recv.c:791:13: warning: ‘ath9k_rx_accept’ defined but not used [-Wunused-function]
+ static bool ath9k_rx_accept(struct ath_common *common,
+             ^
+drivers/net/wireless/ath/ath9k/recv.c:876:12: warning: ‘ath9k_process_rate’ defined but not used [-Wunused-function]
+ static int ath9k_process_rate(struct ath_common *common,
+            ^
+drivers/net/wireless/ath/ath9k/recv.c:926:13: warning: ‘ath9k_process_rssi’ defined but not used [-Wunused-function]
+ static void ath9k_process_rssi(struct ath_common *common,
+             ^
+drivers/net/wireless/ath/ath9k/recv.c:999:12: warning: ‘ath_process_fft’ defined but not used [-Wunused-function]
+ static int ath_process_fft(struct ath_softc *sc, struct ieee80211_hdr *hdr,
+            ^
+drivers/net/wireless/ath/ath9k/recv.c:1169:13: warning: ‘ath9k_is_mybeacon’ defined but not used [-Wunused-function]
+ static bool ath9k_is_mybeacon(struct ath_softc *sc, struct ieee80211_hdr *hdr)
+             ^
+drivers/net/wireless/ath/ath9k/debug.c:476:2: warning: initialization from incompatible pointer type [enabled by default]
+  .read = read_file_dma,
+  ^
+drivers/net/wireless/ath/ath9k/debug.c:476:2: warning: (near initialization for ‘fops_dma.read’) [enabled by default]
+drivers/net/wireless/ath/ath9k/debug.c:601:2: warning: initialization from incompatible pointer type [enabled by default]
+  .read = read_file_interrupt,
+  ^
+drivers/net/wireless/ath/ath9k/debug.c:601:2: warning: (near initialization for ‘fops_interrupt.read’) [enabled by default]
+drivers/net/wireless/ath/ath9k/debug.c:970:21: error: ‘create_buf_file_handler’ undeclared here (not in a function)
+  .create_buf_file = create_buf_file_handler,
+                     ^
+drivers/net/wireless/ath/ath9k/debug.c:971:21: error: ‘remove_buf_file_handler’ undeclared here (not in a function)
+  .remove_buf_file = remove_buf_file_handler,
+                     ^
+drivers/net/wireless/ath/ath9k/debug.c: In function ‘ath9k_sta_add_debugfs’:
+drivers/net/wireless/ath/ath9k/debug.c:1477:16: error: invalid storage class for function ‘read_file_tpc’
+ static ssize_t read_file_tpc(struct file *file, char __user *user_buf,
+                ^
+drivers/net/wireless/ath/ath9k/debug.c:1477:1: warning: ISO C90 forbids mixed declarations and code [-Wdeclaration-after-statement]
+ static ssize_t read_file_tpc(struct file *file, char __user *user_buf,
+ ^
+drivers/net/wireless/ath/ath9k/debug.c:1502:16: error: invalid storage class for function ‘write_file_tpc’
+ static ssize_t write_file_tpc(struct file *file, const char __user *user_buf,
+                ^
+drivers/net/wireless/ath/ath9k/debug.c:1537:2: error: initializer element is not constant
+  .read = read_file_tpc,
+  ^
+drivers/net/wireless/ath/ath9k/debug.c:1537:2: error: (near initialization for ‘fops_tpc.read’)
+drivers/net/wireless/ath/ath9k/debug.c:1538:2: error: initializer element is not constant
+  .write = write_file_tpc,
+  ^
+drivers/net/wireless/ath/ath9k/debug.c:1538:2: error: (near initialization for ‘fops_tpc.write’)
+drivers/net/wireless/ath/ath9k/debug.c: In function ‘ath9k_deinit_debug’:
+drivers/net/wireless/ath/ath9k/debug.c:1669:16: error: invalid storage class for function ‘read_file_tx99’
+ static ssize_t read_file_tx99(struct file *file, char __user *user_buf,
+                ^
+drivers/net/wireless/ath/ath9k/debug.c:1669:1: warning: ISO C90 forbids mixed declarations and code [-Wdeclaration-after-statement]
+ static ssize_t read_file_tx99(struct file *file, char __user *user_buf,
+ ^
+drivers/net/wireless/ath/ath9k/debug.c:1680:16: error: invalid storage class for function ‘write_file_tx99’
+ static ssize_t write_file_tx99(struct file *file, const char __user *user_buf,
+                ^
+drivers/net/wireless/ath/ath9k/debug.c: In function ‘write_file_tx99’:
+drivers/net/wireless/ath/ath9k/debug.c:1704:3: error: implicit declaration of function ‘ath9k_tx99_deinit’ [-Werror=implicit-function-declaration]
+   ath9k_tx99_deinit(sc);
+   ^
+drivers/net/wireless/ath/ath9k/debug.c:1712:2: error: implicit declaration of function ‘ath9k_tx99_init’ [-Werror=implicit-function-declaration]
+  r = ath9k_tx99_init(sc);
+  ^
+drivers/net/wireless/ath/ath9k/debug.c: In function ‘ath9k_deinit_debug’:
+drivers/net/wireless/ath/ath9k/debug.c:1720:2: error: initializer element is not constant
+  .read = read_file_tx99,
+  ^
+drivers/net/wireless/ath/ath9k/debug.c:1720:2: error: (near initialization for ‘fops_tx99.read’)
+drivers/net/wireless/ath/ath9k/debug.c:1721:2: error: initializer element is not constant
+  .write = write_file_tx99,
+  ^
+drivers/net/wireless/ath/ath9k/debug.c:1721:2: error: (near initialization for ‘fops_tx99.write’)
+drivers/net/wireless/ath/ath9k/debug.c:1727:16: error: invalid storage class for function ‘read_file_tx99_power’
+ static ssize_t read_file_tx99_power(struct file *file,
+                ^
+drivers/net/wireless/ath/ath9k/debug.c:1742:16: error: invalid storage class for function ‘write_file_tx99_power’
+ static ssize_t write_file_tx99_power(struct file *file,
+                ^
+drivers/net/wireless/ath/ath9k/debug.c:1767:2: error: initializer element is not constant
+  .read = read_file_tx99_power,
+  ^
+drivers/net/wireless/ath/ath9k/debug.c:1767:2: error: (near initialization for ‘fops_tx99_power.read’)
+drivers/net/wireless/ath/ath9k/debug.c:1768:2: error: initializer element is not constant
+  .write = write_file_tx99_power,
+  ^
+drivers/net/wireless/ath/ath9k/debug.c:1768:2: error: (near initialization for ‘fops_tx99_power.write’)
+drivers/net/wireless/ath/ath9k/debug.c:1867:1: error: expected declaration or statement at end of input
+ }
+ ^
+drivers/net/wireless/ath/ath9k/debug.c:1766:37: warning: unused variable ‘fops_tx99_power’ [-Wunused-variable]
+ static const struct file_operations fops_tx99_power = {
+                                     ^
+drivers/net/wireless/ath/ath9k/debug.c:1719:37: warning: unused variable ‘fops_tx99’ [-Wunused-variable]
+ static const struct file_operations fops_tx99 = {
+                                     ^
+drivers/net/wireless/ath/ath9k/debug.c: In function ‘ath9k_sta_add_debugfs’:
+drivers/net/wireless/ath/ath9k/debug.c:1867:1: error: expected declaration or statement at end of input
+ }
+ ^
+drivers/net/wireless/ath/ath9k/debug.c: At top level:
+drivers/net/wireless/ath/ath9k/debug.c:835:16: warning: ‘read_file_recv’ defined but not used [-Wunused-function]
+ static ssize_t read_file_recv(struct file *file, char __user *user_buf,
+                ^
+drivers/net/wireless/ath/ath9k/debug.c:921:16: warning: ‘read_file_spectral_fft_period’ defined but not used [-Wunused-function]
+ static ssize_t read_file_spectral_fft_period(struct file *file,
+                ^
+drivers/net/wireless/ath/ath9k/debug.c:933:16: warning: ‘write_file_spectral_fft_period’ defined but not used [-Wunused-function]
+ static ssize_t write_file_spectral_fft_period(struct file *file,
+                ^
+drivers/net/wireless/ath/ath9k/debug.c:969:31: warning: ‘rfs_spec_scan_cb’ defined but not used [-Wunused-variable]
+ static struct rchan_callbacks rfs_spec_scan_cb = {
+                               ^
+cc1: some warnings being treated as errors
+make[5]: *** [drivers/net/wireless/ath/ath9k/debug.o] Error 1
+make[5]: *** Waiting for unfinished jobs....
+make[4]: *** [drivers/net/wireless/ath/ath9k] Error 2
+make[3]: *** [drivers/net/wireless/ath] Error 2
+make[3]: *** Waiting for unfinished jobs....
+make[2]: *** [drivers/net/wireless] Error 2
+make[1]: *** [drivers/net] Error 2
+make[1]: *** Waiting for unfinished jobs....
+drivers/staging/rtl8192u/ieee80211/ieee80211_rx.c: In function ‘RxReorderIndicatePacket’:
+drivers/staging/rtl8192u/ieee80211/ieee80211_rx.c:765:1: warning: the frame size of 1064 bytes is larger than 1024 bytes [-Wframe-larger-than=]
+ }
+ ^
+drivers/staging/rtl8192u/ieee80211/rtl819x_TSProc.c: In function ‘RxPktPendingTimeout’:
+drivers/staging/rtl8192u/ieee80211/rtl819x_TSProc.c:94:1: warning: the frame size of 1048 bytes is larger than 1024 bytes [-Wframe-larger-than=]
+ }
+ ^
+drivers/scsi/advansys.c:71:2: warning: #warning this driver is still not properly converted to the DMA API [-Wcpp]
+ #warning this driver is still not properly converted to the DMA API
+  ^
+make: *** [drivers] Error 2

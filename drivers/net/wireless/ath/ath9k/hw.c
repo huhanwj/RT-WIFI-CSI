@@ -25,11 +25,11 @@
 
 #include "hw.h"
 #include "hw-ops.h"
-//#include "rc.h"
+#include "rc.h"
 #include "ar9003_mac.h"
 #include "ar9003_mci.h"
 #include "ar9003_phy.h"
-//#include "debug.h"
+#include "debug.h"
 #include "ath9k.h"
 
 static bool ath9k_hw_set_reset_reg(struct ath_hw *ah, u32 type);
