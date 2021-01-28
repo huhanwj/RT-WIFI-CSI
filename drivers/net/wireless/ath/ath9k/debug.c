@@ -1202,11 +1202,7 @@ static const struct file_operations fops_spectral_fft_period = {
 
 static struct dentry *create_buf_file_handler(const char *filename,
 					      struct dentry *parent,
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0))
-					      umode_t mode,
-#else
 					      int mode,
-#endif
 					      struct rchan_buf *buf,
 					      int *is_global)
 {
@@ -1939,111 +1935,6 @@ void ath9k_deinit_debug(struct ath_softc *sc)
 {
 	ath9k_cmn_spectral_deinit_debug(&sc->spec_priv);
 }
-
-static ssize_t read_file_tx99(struct file *file, char __user *user_buf,
-			      size_t count, loff_t *ppos)
-{
-	struct ath_softc *sc = file->private_data;
-	char buf[3];
-	unsigned int len;
-
-	len = sprintf(buf, "%d\n", sc->tx99_state);
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
-}
-
-static ssize_t write_file_tx99(struct file *file, const char __user *user_buf,
-			       size_t count, loff_t *ppos)
-{
-	struct ath_softc *sc = file->private_data;
-	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
-	char buf[32];
-	bool start;
-	ssize_t len;
-	int r;
-
-	if (sc->nvifs > 1)
-		return -EOPNOTSUPP;
-
-	len = min(count, sizeof(buf) - 1);
-	if (copy_from_user(buf, user_buf, len))
-		return -EFAULT;
-
-	if (strtobool(buf, &start))
-		return -EINVAL;
-
-	if (start == sc->tx99_state) {
-		if (!start)
-			return count;
-		ath_dbg(common, XMIT, "Resetting TX99\n");
-		ath9k_tx99_deinit(sc);
-	}
-
-	if (!start) {
-		ath9k_tx99_deinit(sc);
-		return count;
-	}
-
-	r = ath9k_tx99_init(sc);
-	if (r)
-		return r;
-
-	return count;
-}
-
-static const struct file_operations fops_tx99 = {
-	.read = read_file_tx99,
-	.write = write_file_tx99,
-	.open = simple_open,
-	.owner = THIS_MODULE,
-	.llseek = default_llseek,
-};
-
-static ssize_t read_file_tx99_power(struct file *file,
-				    char __user *user_buf,
-				    size_t count, loff_t *ppos)
-{
-	struct ath_softc *sc = file->private_data;
-	char buf[32];
-	unsigned int len;
-
-	len = sprintf(buf, "%d (%d dBm)\n",
-		      sc->tx99_power,
-		      sc->tx99_power / 2);
-
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
-}
-
-static ssize_t write_file_tx99_power(struct file *file,
-				     const char __user *user_buf,
-				     size_t count, loff_t *ppos)
-{
-	struct ath_softc *sc = file->private_data;
-	int r;
-	u8 tx_power;
-
-	r = kstrtou8_from_user(user_buf, count, 0, &tx_power);
-	if (r)
-		return r;
-
-	if (tx_power > MAX_RATE_POWER)
-		return -EINVAL;
-
-	sc->tx99_power = tx_power;
-
-	ath9k_ps_wakeup(sc);
-	ath9k_hw_tx99_set_txpower(sc->sc_ah, sc->tx99_power);
-	ath9k_ps_restore(sc);
-
-	return count;
-}
-
-static const struct file_operations fops_tx99_power = {
-	.read = read_file_tx99_power,
-	.write = write_file_tx99_power,
-	.open = simple_open,
-	.owner = THIS_MODULE,
-	.llseek = default_llseek,
-};
 
 int ath9k_init_debug(struct ath_hw *ah)
 {
