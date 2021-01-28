@@ -20,7 +20,6 @@
 #include "hw.h"
 #include "rc.h"
 #include "dfs_debug.h"
-#include "common-debug.h"
 
 struct ath_txq;
 struct ath_buf;
