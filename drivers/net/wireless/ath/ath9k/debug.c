@@ -472,6 +472,13 @@ static int read_file_dma(struct seq_file *file, void *data)
 	return 0;
 }
 
+static const struct file_operations fops_dma = {
+	.read = read_file_dma,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 
 void ath_debug_stat_interrupt(struct ath_softc *sc, enum ath9k_int status)
 {
@@ -825,6 +832,34 @@ void ath_debug_stat_tx(struct ath_softc *sc, struct ath_buf *bf,
 		TX_STAT_INC(qnum, delim_underrun);
 }
 
+static const struct file_operations fops_xmit = {
+	.read = read_file_xmit,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static const struct file_operations fops_queues = {
+	.read = read_file_queues,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static const struct file_operations fops_misc = {
+	.read = read_file_misc,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static const struct file_operations fops_reset = {
+	.read = read_file_reset,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static ssize_t read_file_recv(struct file *file, char __user *user_buf,
 			      size_t count, loff_t *ppos)
 {
@@ -910,8 +945,285 @@ void ath_debug_stat_rx(struct ath_softc *sc, struct ath_rx_status *rs)
 	ath9k_cmn_debug_stat_rx(&sc->debug.stats.rxstats, rs);
 	
 }
+static const struct file_operations fops_recv = {
+	.read = read_file_recv,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
 
+static ssize_t read_file_spec_scan_ctl(struct file *file, char __user *user_buf,
+				       size_t count, loff_t *ppos)
+{
+	struct ath_softc *sc = file->private_data;
+	char *mode = "";
+	unsigned int len;
 
+	switch (sc->spectral_mode) {
+	case SPECTRAL_DISABLED:
+		mode = "disable";
+		break;
+	case SPECTRAL_BACKGROUND:
+		mode = "background";
+		break;
+	case SPECTRAL_CHANSCAN:
+		mode = "chanscan";
+		break;
+	case SPECTRAL_MANUAL:
+		mode = "manual";
+		break;
+	}
+	len = strlen(mode);
+	return simple_read_from_buffer(user_buf, count, ppos, mode, len);
+}
+
+static ssize_t write_file_spec_scan_ctl(struct file *file,
+					const char __user *user_buf,
+					size_t count, loff_t *ppos)
+{
+	struct ath_softc *sc = file->private_data;
+	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
+	char buf[32];
+	ssize_t len;
+
+	if (config_enabled(CPTCFG_ATH9K_TX99))
+		return -EOPNOTSUPP;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+
+	if (strncmp("trigger", buf, 7) == 0) {
+		ath9k_spectral_scan_trigger(sc->hw);
+	} else if (strncmp("background", buf, 9) == 0) {
+		ath9k_spectral_scan_config(sc->hw, SPECTRAL_BACKGROUND);
+		ath_dbg(common, CONFIG, "spectral scan: background mode enabled\n");
+	} else if (strncmp("chanscan", buf, 8) == 0) {
+		ath9k_spectral_scan_config(sc->hw, SPECTRAL_CHANSCAN);
+		ath_dbg(common, CONFIG, "spectral scan: channel scan mode enabled\n");
+	} else if (strncmp("manual", buf, 6) == 0) {
+		ath9k_spectral_scan_config(sc->hw, SPECTRAL_MANUAL);
+		ath_dbg(common, CONFIG, "spectral scan: manual mode enabled\n");
+	} else if (strncmp("disable", buf, 7) == 0) {
+		ath9k_spectral_scan_config(sc->hw, SPECTRAL_DISABLED);
+		ath_dbg(common, CONFIG, "spectral scan: disabled\n");
+	} else {
+		return -EINVAL;
+	}
+
+	return count;
+}
+
+static const struct file_operations fops_spec_scan_ctl = {
+	.read = read_file_spec_scan_ctl,
+	.write = write_file_spec_scan_ctl,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static ssize_t read_file_spectral_short_repeat(struct file *file,
+					       char __user *user_buf,
+					       size_t count, loff_t *ppos)
+{
+	struct ath_softc *sc = file->private_data;
+	char buf[32];
+	unsigned int len;
+
+	len = sprintf(buf, "%d\n", sc->spec_config.short_repeat);
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t write_file_spectral_short_repeat(struct file *file,
+						const char __user *user_buf,
+						size_t count, loff_t *ppos)
+{
+	struct ath_softc *sc = file->private_data;
+	unsigned long val;
+	char buf[32];
+	ssize_t len;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+	if (kstrtoul(buf, 0, &val))
+		return -EINVAL;
+
+	if (val < 0 || val > 1)
+		return -EINVAL;
+
+	sc->spec_config.short_repeat = val;
+	return count;
+}
+
+static const struct file_operations fops_spectral_short_repeat = {
+	.read = read_file_spectral_short_repeat,
+	.write = write_file_spectral_short_repeat,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static ssize_t read_file_spectral_count(struct file *file,
+					char __user *user_buf,
+					size_t count, loff_t *ppos)
+{
+	struct ath_softc *sc = file->private_data;
+	char buf[32];
+	unsigned int len;
+
+	len = sprintf(buf, "%d\n", sc->spec_config.count);
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t write_file_spectral_count(struct file *file,
+					 const char __user *user_buf,
+					 size_t count, loff_t *ppos)
+{
+	struct ath_softc *sc = file->private_data;
+	unsigned long val;
+	char buf[32];
+	ssize_t len;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+	if (kstrtoul(buf, 0, &val))
+		return -EINVAL;
+
+	if (val < 0 || val > 255)
+		return -EINVAL;
+
+	sc->spec_config.count = val;
+	return count;
+}
+
+static const struct file_operations fops_spectral_count = {
+	.read = read_file_spectral_count,
+	.write = write_file_spectral_count,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static ssize_t read_file_spectral_period(struct file *file,
+					 char __user *user_buf,
+					 size_t count, loff_t *ppos)
+{
+	struct ath_softc *sc = file->private_data;
+	char buf[32];
+	unsigned int len;
+
+	len = sprintf(buf, "%d\n", sc->spec_config.period);
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t write_file_spectral_period(struct file *file,
+					  const char __user *user_buf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath_softc *sc = file->private_data;
+	unsigned long val;
+	char buf[32];
+	ssize_t len;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+	if (kstrtoul(buf, 0, &val))
+		return -EINVAL;
+
+	if (val < 0 || val > 255)
+		return -EINVAL;
+
+	sc->spec_config.period = val;
+	return count;
+}
+
+static const struct file_operations fops_spectral_period = {
+	.read = read_file_spectral_period,
+	.write = write_file_spectral_period,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static ssize_t read_file_spectral_fft_period(struct file *file,
+					     char __user *user_buf,
+					     size_t count, loff_t *ppos)
+{
+	struct ath_softc *sc = file->private_data;
+	char buf[32];
+	unsigned int len;
+
+	len = sprintf(buf, "%d\n", sc->spec_config.fft_period);
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t write_file_spectral_fft_period(struct file *file,
+					      const char __user *user_buf,
+					      size_t count, loff_t *ppos)
+{
+	struct ath_softc *sc = file->private_data;
+	unsigned long val;
+	char buf[32];
+	ssize_t len;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+	if (kstrtoul(buf, 0, &val))
+		return -EINVAL;
+
+	if (val < 0 || val > 15)
+		return -EINVAL;
+
+	sc->spec_config.fft_period = val;
+	return count;
+}
+
+static const struct file_operations fops_spectral_fft_period = {
+	.read = read_file_spectral_fft_period,
+	.write = write_file_spectral_fft_period,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static struct dentry *create_buf_file_handler(const char *filename,
+					      struct dentry *parent,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,3,0))
+					      umode_t mode,
+#else
+					      int mode,
+#endif
+					      struct rchan_buf *buf,
+					      int *is_global)
+{
+	struct dentry *buf_file;
+
+	buf_file = debugfs_create_file(filename, mode, parent, buf,
+				       &relay_file_operations);
+	*is_global = 1;
+	return buf_file;
+}
+
+static int remove_buf_file_handler(struct dentry *dentry)
+{
+	debugfs_remove(dentry);
+
+	return 0;
+}
 
 void ath_debug_send_fft_sample(struct ath_softc *sc,
 			       struct fft_sample_tlv *fft_sample_tlv)
@@ -925,7 +1237,10 @@ void ath_debug_send_fft_sample(struct ath_softc *sc,
 	relay_write(sc->rfs_chan_spec_scan, fft_sample_tlv, length);
 }
 
-
+static struct rchan_callbacks rfs_spec_scan_cb = {
+	.create_buf_file = create_buf_file_handler,
+	.remove_buf_file = remove_buf_file_handler,
+};
 
 
 static ssize_t read_file_regidx(struct file *file, char __user *user_buf,
@@ -1266,7 +1581,76 @@ static const struct file_operations fops_btcoex = {
 };
 #endif
 
+static ssize_t read_file_node_stat(struct file *file, char __user *user_buf,
+				   size_t count, loff_t *ppos)
+{
+	struct ath_node *an = file->private_data;
+	struct ath_softc *sc = an->sc;
+	struct ath_atx_tid *tid;
+	struct ath_atx_ac *ac;
+	struct ath_txq *txq;
+	u32 len = 0, size = 4096;
+	char *buf;
+	size_t retval;
+	int tidno, acno;
 
+	buf = kzalloc(size, GFP_KERNEL);
+	if (buf == NULL)
+		return -ENOMEM;
+
+	if (!an->sta->ht_cap.ht_supported) {
+		len = scnprintf(buf, size, "%s\n",
+				"HT not supported");
+		goto exit;
+	}
+
+	len = scnprintf(buf, size, "Max-AMPDU: %d\n",
+			an->maxampdu);
+	len += scnprintf(buf + len, size - len, "MPDU Density: %d\n\n",
+			 an->mpdudensity);
+
+	len += scnprintf(buf + len, size - len,
+			 "%2s%7s\n", "AC", "SCHED");
+
+	for (acno = 0, ac = &an->ac[acno];
+	     acno < IEEE80211_NUM_ACS; acno++, ac++) {
+		txq = ac->txq;
+		ath_txq_lock(sc, txq);
+		len += scnprintf(buf + len, size - len,
+				 "%2d%7d\n",
+				 acno, ac->sched);
+		ath_txq_unlock(sc, txq);
+	}
+
+	len += scnprintf(buf + len, size - len,
+			 "\n%3s%11s%10s%10s%10s%10s%9s%6s%8s\n",
+			 "TID", "SEQ_START", "SEQ_NEXT", "BAW_SIZE",
+			 "BAW_HEAD", "BAW_TAIL", "BAR_IDX", "SCHED", "PAUSED");
+
+	for (tidno = 0, tid = &an->tid[tidno];
+	     tidno < IEEE80211_NUM_TIDS; tidno++, tid++) {
+		txq = tid->ac->txq;
+		ath_txq_lock(sc, txq);
+		len += scnprintf(buf + len, size - len,
+				 "%3d%11d%10d%10d%10d%10d%9d%6d%8d\n",
+				 tid->tidno, tid->seq_start, tid->seq_next,
+				 tid->baw_size, tid->baw_head, tid->baw_tail,
+				 tid->bar_index, tid->sched, tid->paused);
+		ath_txq_unlock(sc, txq);
+	}
+exit:
+	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(buf);
+
+	return retval;
+}
+
+static const struct file_operations fops_node_stat = {
+	.read = read_file_node_stat,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
 
 void ath9k_sta_add_debugfs(struct ieee80211_hw *hw,
 			   struct ieee80211_vif *vif,
@@ -1276,6 +1660,7 @@ void ath9k_sta_add_debugfs(struct ieee80211_hw *hw,
 	struct ath_node *an = (struct ath_node *)sta->drv_priv;
 	debugfs_create_file("node_stat", S_IRUGO, dir, an, &fops_node_stat);
 }
+
 #ifdef CONFIG_ATH9K_DYNACK
 static ssize_t read_file_ackto(struct file *file, char __user *user_buf,
 			       size_t count, loff_t *ppos)
@@ -1553,9 +1938,113 @@ void ath9k_get_et_stats(struct ieee80211_hw *hw,
 void ath9k_deinit_debug(struct ath_softc *sc)
 {
 	ath9k_cmn_spectral_deinit_debug(&sc->spec_priv);
-	
-
 }
+
+static ssize_t read_file_tx99(struct file *file, char __user *user_buf,
+			      size_t count, loff_t *ppos)
+{
+	struct ath_softc *sc = file->private_data;
+	char buf[3];
+	unsigned int len;
+
+	len = sprintf(buf, "%d\n", sc->tx99_state);
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t write_file_tx99(struct file *file, const char __user *user_buf,
+			       size_t count, loff_t *ppos)
+{
+	struct ath_softc *sc = file->private_data;
+	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
+	char buf[32];
+	bool start;
+	ssize_t len;
+	int r;
+
+	if (sc->nvifs > 1)
+		return -EOPNOTSUPP;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	if (strtobool(buf, &start))
+		return -EINVAL;
+
+	if (start == sc->tx99_state) {
+		if (!start)
+			return count;
+		ath_dbg(common, XMIT, "Resetting TX99\n");
+		ath9k_tx99_deinit(sc);
+	}
+
+	if (!start) {
+		ath9k_tx99_deinit(sc);
+		return count;
+	}
+
+	r = ath9k_tx99_init(sc);
+	if (r)
+		return r;
+
+	return count;
+}
+
+static const struct file_operations fops_tx99 = {
+	.read = read_file_tx99,
+	.write = write_file_tx99,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static ssize_t read_file_tx99_power(struct file *file,
+				    char __user *user_buf,
+				    size_t count, loff_t *ppos)
+{
+	struct ath_softc *sc = file->private_data;
+	char buf[32];
+	unsigned int len;
+
+	len = sprintf(buf, "%d (%d dBm)\n",
+		      sc->tx99_power,
+		      sc->tx99_power / 2);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t write_file_tx99_power(struct file *file,
+				     const char __user *user_buf,
+				     size_t count, loff_t *ppos)
+{
+	struct ath_softc *sc = file->private_data;
+	int r;
+	u8 tx_power;
+
+	r = kstrtou8_from_user(user_buf, count, 0, &tx_power);
+	if (r)
+		return r;
+
+	if (tx_power > MAX_RATE_POWER)
+		return -EINVAL;
+
+	sc->tx99_power = tx_power;
+
+	ath9k_ps_wakeup(sc);
+	ath9k_hw_tx99_set_txpower(sc->sc_ah, sc->tx99_power);
+	ath9k_ps_restore(sc);
+
+	return count;
+}
+
+static const struct file_operations fops_tx99_power = {
+	.read = read_file_tx99_power,
+	.write = write_file_tx99_power,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath9k_init_debug(struct ath_hw *ah)
 {
 	struct ath_common *common = ath9k_hw_common(ah);
@@ -1622,7 +2111,19 @@ int ath9k_init_debug(struct ath_hw *ah)
 
 	ath9k_cmn_debug_base_eeprom(sc->debug.debugfs_phy, sc->sc_ah);
 	ath9k_cmn_debug_modal_eeprom(sc->debug.debugfs_phy, sc->sc_ah);
-
+	debugfs_create_file("spectral_scan_ctl", S_IRUSR | S_IWUSR,
+			    sc->debug.debugfs_phy, sc,
+			    &fops_spec_scan_ctl);
+	debugfs_create_file("spectral_short_repeat", S_IRUSR | S_IWUSR,
+			    sc->debug.debugfs_phy, sc,
+			    &fops_spectral_short_repeat);
+	debugfs_create_file("spectral_count", S_IRUSR | S_IWUSR,
+			    sc->debug.debugfs_phy, sc, &fops_spectral_count);
+	debugfs_create_file("spectral_period", S_IRUSR | S_IWUSR,
+			    sc->debug.debugfs_phy, sc, &fops_spectral_period);
+	debugfs_create_file("spectral_fft_period", S_IRUSR | S_IWUSR,
+			    sc->debug.debugfs_phy, sc,
+			    &fops_spectral_fft_period);
 	debugfs_create_u32("gpio_mask", S_IRUSR | S_IWUSR,
 			   sc->debug.debugfs_phy, &sc->sc_ah->gpio_mask);
 	debugfs_create_u32("gpio_val", S_IRUSR | S_IWUSR,
@@ -1647,6 +2148,15 @@ int ath9k_init_debug(struct ath_hw *ah)
 #endif
 	debugfs_create_file("tpc", S_IRUSR | S_IWUSR,
 			    sc->debug.debugfs_phy, sc, &fops_tpc);
+	if (config_enabled(CPTCFG_ATH9K_TX99) &&
+	    AR_SREV_9300_20_OR_LATER(ah)) {
+		debugfs_create_file("tx99", S_IRUSR | S_IWUSR,
+				    sc->debug.debugfs_phy, sc,
+				    &fops_tx99);
+		debugfs_create_file("tx99_power", S_IRUSR | S_IWUSR,
+				    sc->debug.debugfs_phy, sc,
+				    &fops_tx99_power);
+	}
 
 	return 0;
 }
