@@ -2039,5 +2039,15 @@ int ath9k_init_debug(struct ath_hw *ah)
 #endif
 	debugfs_create_file("tpc", S_IRUSR | S_IWUSR,
 			    sc->debug.debugfs_phy, sc, &fops_tpc);
+	if (config_enabled(CPTCFG_ATH9K_TX99) &&
+	    AR_SREV_9300_20_OR_LATER(ah)) {
+		debugfs_create_file("tx99", S_IRUSR | S_IWUSR,
+				    sc->debug.debugfs_phy, sc,
+				    &fops_tx99);
+		debugfs_create_file("tx99_power", S_IRUSR | S_IWUSR,
+				    sc->debug.debugfs_phy, sc,
+				    &fops_tx99_power);
+	}
+
 	return 0;
 }
