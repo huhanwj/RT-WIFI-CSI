@@ -219,6 +219,26 @@ struct ath_rx_rate_stats {
 		u32 cck_lp_cnt;
 		u32 cck_sp_cnt;
 	} cck_stats[4];
+	
+};
+struct ath_rx_stats {
+	u32 rx_pkts_all;
+	u32 rx_bytes_all;
+	u32 crc_err;
+	u32 decrypt_crc_err;
+	u32 phy_err;
+	u32 mic_err;
+	u32 pre_delim_crc_err;
+	u32 post_delim_crc_err;
+	u32 decrypt_busy_err;
+	u32 phy_err_stats[ATH9K_PHYERR_MAX];
+	u32 rx_len_err;
+	u32 rx_oom_err;
+	u32 rx_rate_err;
+	u32 rx_too_many_frags_err;
+	u32 rx_beacons;
+	u32 rx_frags;
+	u32 rx_spectral;
 };
 
 #define ANT_MAIN 0
