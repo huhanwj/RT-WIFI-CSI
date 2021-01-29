@@ -18,7 +18,7 @@
 #include <linux/relay.h>
 #include "ath9k.h"
 #include "ar9003_mac.h"
-#include "common.h"
+#include "common-spectral.h"
 
 #define SKB_CB_ATHBUF(__skb)	(*((struct ath_rxbuf **)__skb->cb))
 
