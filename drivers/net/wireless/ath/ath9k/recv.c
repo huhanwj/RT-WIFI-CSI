@@ -18,7 +18,6 @@
 #include <linux/relay.h>
 #include "ath9k.h"
 #include "ar9003_mac.h"
-#include "common-spectral.h"
 
 #define SKB_CB_ATHBUF(__skb)	(*((struct ath_rxbuf **)__skb->cb))
 
@@ -1160,7 +1159,6 @@ static int ath_process_fft(struct ath_softc *sc, struct ieee80211_hdr *hdr,
 		tlv = (struct fft_sample_tlv *)&fft_sample_20;
 	}
 
-	ath_debug_send_fft_sample(sc, tlv);
 	return 1;
 #else
 	return 0;
