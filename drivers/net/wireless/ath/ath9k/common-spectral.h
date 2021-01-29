@@ -140,7 +140,5 @@ int ath9k_cmn_spectral_scan_config(struct ath_common *common,
 			       enum spectral_mode spectral_mode);
 int ath_cmn_process_fft(struct ath_spec_scan_priv *spec_priv, struct ieee80211_hdr *hdr,
 		    struct ath_rx_status *rs, u64 tsf);
-static inline void ath_debug_send_fft_sample(struct ath_spec_scan_priv *spec_priv,
-					struct fft_sample_tlv *fft_sample_tlv);
 
 #endif /* SPECTRAL_H */
