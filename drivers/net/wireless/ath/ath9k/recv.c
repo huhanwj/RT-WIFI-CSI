@@ -1159,7 +1159,6 @@ static int ath_process_fft(struct ath_softc *sc, struct ieee80211_hdr *hdr,
 		tlv = (struct fft_sample_tlv *)&fft_sample_20;
 	}
 
-	ath_debug_send_fft_sample(sc, tlv);
 	return 1;
 #else
 	return 0;

@@ -19,7 +19,6 @@
 #include <linux/export.h>
 #include <linux/relay.h>
 #include <asm/unaligned.h>
-
 #include "ath9k.h"
 
 #define REG_WRITE_D(_ah, _reg, _val) \
@@ -1071,89 +1070,6 @@ static const struct file_operations fops_spectral_period = {
 	.llseek = default_llseek,
 };
 
-static ssize_t read_file_spectral_fft_period(struct file *file,
-					     char __user *user_buf,
-					     size_t count, loff_t *ppos)
-{
-	struct ath_softc *sc = file->private_data;
-	char buf[32];
-	unsigned int len;
-
-	len = sprintf(buf, "%d\n", sc->spec_config.fft_period);
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
-}
-
-static ssize_t write_file_spectral_fft_period(struct file *file,
-					      const char __user *user_buf,
-					      size_t count, loff_t *ppos)
-{
-	struct ath_softc *sc = file->private_data;
-	unsigned long val;
-	char buf[32];
-	ssize_t len;
-
-	len = min(count, sizeof(buf) - 1);
-	if (copy_from_user(buf, user_buf, len))
-		return -EFAULT;
-
-	buf[len] = '\0';
-	if (kstrtoul(buf, 0, &val))
-		return -EINVAL;
-
-	if (val < 0 || val > 15)
-		return -EINVAL;
-
-	sc->spec_config.fft_period = val;
-	return count;
-}
-
-static const struct file_operations fops_spectral_fft_period = {
-	.read = read_file_spectral_fft_period,
-	.write = write_file_spectral_fft_period,
-	.open = simple_open,
-	.owner = THIS_MODULE,
-	.llseek = default_llseek,
-};
-
-static struct dentry *create_buf_file_handler(const char *filename,
-					      struct dentry *parent,
-					      int mode,
-					      struct rchan_buf *buf,
-					      int *is_global)
-{
-	struct dentry *buf_file;
-
-	buf_file = debugfs_create_file(filename, mode, parent, buf,
-				       &relay_file_operations);
-	*is_global = 1;
-	return buf_file;
-}
-
-static int remove_buf_file_handler(struct dentry *dentry)
-{
-	debugfs_remove(dentry);
-
-	return 0;
-}
-
-void ath_debug_send_fft_sample(struct ath_softc *sc,
-			       struct fft_sample_tlv *fft_sample_tlv)
-{
-	int length;
-	if (!sc->rfs_chan_spec_scan)
-		return;
-
-	length = __be16_to_cpu(fft_sample_tlv->length) +
-		 sizeof(*fft_sample_tlv);
-	relay_write(sc->rfs_chan_spec_scan, fft_sample_tlv, length);
-}
-
-static struct rchan_callbacks rfs_spec_scan_cb = {
-	.create_buf_file = create_buf_file_handler,
-	.remove_buf_file = remove_buf_file_handler,
-};
-
-
 static ssize_t read_file_regidx(struct file *file, char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
@@ -1870,9 +1786,6 @@ int ath9k_init_debug(struct ath_hw *ah)
 			    sc->debug.debugfs_phy, sc, &fops_spectral_count);
 	debugfs_create_file("spectral_period", S_IRUSR | S_IWUSR,
 			    sc->debug.debugfs_phy, sc, &fops_spectral_period);
-	debugfs_create_file("spectral_fft_period", S_IRUSR | S_IWUSR,
-			    sc->debug.debugfs_phy, sc,
-			    &fops_spectral_fft_period);
 	debugfs_create_u32("gpio_mask", S_IRUSR | S_IWUSR,
 			   sc->debug.debugfs_phy, &sc->sc_ah->gpio_mask);
 	debugfs_create_u32("gpio_val", S_IRUSR | S_IWUSR,
