@@ -468,6 +468,9 @@ void ath9k_tasklet(unsigned long data)
 			ath_tx_tasklet(sc);
 		}
 
+#ifndef CONFIG_RT_WIFI
+	ath9k_btcoex_handle_interrupt(sc, status);
+#endif
 		wake_up(&sc->tx_wait);
 	}
 
@@ -485,6 +488,7 @@ out:
 
 irqreturn_t ath_isr(int irq, void *dev)
 {
+#ifndef CONFIG_RT_WIFI
 #define SCHED_INTR (				\
 		ATH9K_INT_FATAL |		\
 		ATH9K_INT_BB_WATCHDOG |		\
@@ -500,6 +504,21 @@ irqreturn_t ath_isr(int irq, void *dev)
 		ATH9K_INT_TSFOOR |		\
 		ATH9K_INT_GENTIMER |		\
 		ATH9K_INT_MCI)
+#else
+#define SCHED_INTR (				\
+		ATH9K_INT_FATAL |		\
+		ATH9K_INT_BB_WATCHDOG |		\
+		ATH9K_INT_RXORN |		\
+		ATH9K_INT_RXEOL |		\
+		ATH9K_INT_RX |			\
+		ATH9K_INT_RXLP |		\
+		ATH9K_INT_RXHP |		\
+		ATH9K_INT_TX |			\
+		ATH9K_INT_BMISS |		\
+		ATH9K_INT_CST |			\
+		ATH9K_INT_TSFOOR |		\
+		ATH9K_INT_MCI)
+#endif
 
 	struct ath_softc *sc = dev;
 	struct ath_hw *ah = sc->sc_ah;
@@ -567,7 +586,13 @@ irqreturn_t ath_isr(int irq, void *dev)
 		ah->imask &= ~(ATH9K_INT_RXEOL | ATH9K_INT_RXORN);
 		ath9k_hw_set_interrupts(ah);
 	}
-
+#ifdef CONFIG_RT_WIFI
+	if (status & ATH9K_INT_GENTIMER) {
+		ath9k_hw_disable_interrupts(ah);
+		ath_rt_wifi_tasklet(sc);
+		ath9k_hw_enable_interrupts(ah);
+	}
+#endif
 	if (!(ah->caps.hw_caps & ATH9K_HW_CAP_AUTOSLEEP))
 		if (status & ATH9K_INT_TIM_TIMER) {
 			if (ATH_DBG_WARN_ON_ONCE(sc->ps_idle))
@@ -806,6 +831,24 @@ static void ath9k_tx(struct ieee80211_hw *hw,
 	txctl.txq = sc->tx.txq_map[skb_get_queue_mapping(skb)];
 	txctl.sta = control->sta;
 
+#ifdef CONFIG_RT_WIFI
+	/* rt-wifi: Disable probe response. */
+	if (ieee80211_is_probe_resp(hdr->frame_control)) {
+		if(rt_wifi_authorized_sta(hdr->addr1) == false) {
+			// The above function checks whether the MAC address of the destination
+			// is same to AP's MAC address or not
+			RT_WIFI_DEBUG("Unauthorized destination address: %X:%X:%X:%X:%X:%X\n"
+				, hdr->addr1[0]
+				, hdr->addr1[1]
+				, hdr->addr1[2]
+				, hdr->addr1[3]
+				, hdr->addr1[4]
+				, hdr->addr1[5]);
+			
+			goto exit;
+		}
+	}
+#endif
 	ath_dbg(common, XMIT, "transmitting packet, skb: %p\n", skb);
 
 	if (ath_tx_start(hw, skb, &txctl) != 0) {
@@ -1380,6 +1423,77 @@ static void ath9k_disable_ps(struct ath_softc *sc)
 	ath_dbg(common, PS, "PowerSave disabled\n");
 }
 
+void ath9k_spectral_scan_trigger(struct ieee80211_hw *hw)
+{
+	struct ath_softc *sc = hw->priv;
+	struct ath_hw *ah = sc->sc_ah;
+	struct ath_common *common = ath9k_hw_common(ah);
+	u32 rxfilter;
+
+	if (config_enabled(CPTCFG_ATH9K_TX99))
+		return;
+
+	if (!ath9k_hw_ops(ah)->spectral_scan_trigger) {
+		ath_err(common, "spectrum analyzer not implemented on this hardware\n");
+		return;
+	}
+
+	ath9k_ps_wakeup(sc);
+	rxfilter = ath9k_hw_getrxfilter(ah);
+	ath9k_hw_setrxfilter(ah, rxfilter |
+				 ATH9K_RX_FILTER_PHYRADAR |
+				 ATH9K_RX_FILTER_PHYERR);
+
+	/* TODO: usually this should not be neccesary, but for some reason
+	 * (or in some mode?) the trigger must be called after the
+	 * configuration, otherwise the register will have its values reset
+	 * (on my ar9220 to value 0x01002310)
+	 */
+	ath9k_spectral_scan_config(hw, sc->spectral_mode);
+	ath9k_hw_ops(ah)->spectral_scan_trigger(ah);
+	ath9k_ps_restore(sc);
+}
+
+int ath9k_spectral_scan_config(struct ieee80211_hw *hw,
+			       enum spectral_mode spectral_mode)
+{
+	struct ath_softc *sc = hw->priv;
+	struct ath_hw *ah = sc->sc_ah;
+	struct ath_common *common = ath9k_hw_common(ah);
+
+	if (!ath9k_hw_ops(ah)->spectral_scan_trigger) {
+		ath_err(common, "spectrum analyzer not implemented on this hardware\n");
+		return -1;
+	}
+
+	switch (spectral_mode) {
+	case SPECTRAL_DISABLED:
+		sc->spec_config.enabled = 0;
+		break;
+	case SPECTRAL_BACKGROUND:
+		/* send endless samples.
+		 * TODO: is this really useful for "background"?
+		 */
+		sc->spec_config.endless = 1;
+		sc->spec_config.enabled = 1;
+		break;
+	case SPECTRAL_CHANSCAN:
+	case SPECTRAL_MANUAL:
+		sc->spec_config.endless = 0;
+		sc->spec_config.enabled = 1;
+		break;
+	default:
+		return -1;
+	}
+
+	ath9k_ps_wakeup(sc);
+	ath9k_hw_ops(ah)->spectral_scan_config(ah, &sc->spec_config);
+	ath9k_ps_restore(sc);
+
+	sc->spectral_mode = spectral_mode;
+
+	return 0;
+}
 static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 {
 	struct ath_softc *sc = hw->priv;
@@ -1395,9 +1509,13 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 		sc->ps_idle = !!(conf->flags & IEEE80211_CONF_IDLE);
 		if (sc->ps_idle) {
 			ath_cancel_work(sc);
+#ifndef CONFIG_RT_WIFI
 			ath9k_stop_btcoex(sc);
+#endif
 		} else {
+#ifndef
 			ath9k_start_btcoex(sc);
+#endif
 			/*
 			 * The chip needs a reset to properly wake up from
 			 * full sleep
@@ -1625,6 +1743,13 @@ static int ath9k_conf_tx(struct ieee80211_hw *hw,
 	qi.tqi_cwmax = params->cw_max;
 	qi.tqi_burstTime = params->txop * 32;
 
+#ifdef CONFIG_RT_WIFI
+	#if RT_WIFI_ENABLE_COEX == 1
+	qi.tqi_aifs = 1;
+	qi.tqi_cwmin = 0;
+	qi.tqi_cwmax = 0;
+	#endif
+#endif
 	ath_dbg(common, CONFIG,
 		"Configure tx [queue/halq] [%d/%d], aifs: %d, cw_min: %d, cw_max: %d, txop: %d\n",
 		queue, txq->axq_qnum, params->aifs, params->cw_min,
@@ -2653,4 +2778,5 @@ struct ieee80211_ops ath9k_ops = {
 	.sw_scan_start	    = ath9k_sw_scan_start,
 	.sw_scan_complete   = ath9k_sw_scan_complete,
 	.get_txpower        = ath9k_get_txpower,
+	.channel_switch_beacon     = ath9k_channel_switch_beacon,
 };

@@ -1201,7 +1201,14 @@ static void ath_buf_set_rate(struct ath_softc *sc, struct ath_buf *bf,
 			continue;
 
 		rix = rates[i].idx;
+#ifdef CONFIG_RT_WIFI
+		if (i == 0) 
+			info->rates[i].Tries = RT_WIFI_NUM_OF_TRIES;
+		else
+			info->rates[i].Tries = 0;
+#else
 		info->rates[i].Tries = rates[i].count;
+#endif
 
 		/*
 		 * Handle RTS threshold for unaggregated HT frames.
@@ -1338,12 +1345,25 @@ static void ath_tx_fill_desc(struct ath_softc *sc, struct ath_buf *bf,
 
 			if (!sc->tx99_state)
 				info.flags = ATH9K_TXDESC_INTREQ;
+#ifdef CPTCFG_RT_WIFI
+			/* rt-wifi: Clear destination mask for avoiding TXERR_FILT. */
+			info.flags |= ATH9K_TXDESC_CLRDMASK;					
+	#if (RT_WIFI_ENABLE_ACK == 1)
+			if (tx_info->flags & IEEE80211_TX_CTL_NO_ACK)			// No matter the skb requires ACK or not, RT-WiFi requires no ACK
+																	// during data packet transmission
+				info.flags |= ATH9K_TXDESC_NOACK;					// set info.flags as NO ACK
+	#else
+			info.flags |= ATH9K_TXDESC_NOACK;						// set info.flags as NO ACK
+
+	#endif
+#else
 			if ((tx_info->flags & IEEE80211_TX_CTL_CLEAR_PS_FILT) ||
 			    txq == sc->tx.uapsdq)
 				info.flags |= ATH9K_TXDESC_CLRDMASK;
 
 			if (tx_info->flags & IEEE80211_TX_CTL_NO_ACK)
 				info.flags |= ATH9K_TXDESC_NOACK;
+#endif
 			if (tx_info->flags & IEEE80211_TX_CTL_LDPC)
 				info.flags |= ATH9K_TXDESC_LDPC;
 
@@ -2029,13 +2049,13 @@ static void ath_tx_txqaddbuf(struct ath_softc *sc, struct ath_txq *txq,
 
 	if (list_empty(head))
 		return;
-
+#ifndef CONFIG_RT_WIFI
 	edma = !!(ah->caps.hw_caps & ATH9K_HW_CAP_EDMA);
 	bf = list_first_entry(head, struct ath_buf, list);
 	bf_last = list_entry(head->prev, struct ath_buf, list);
 
 	ath_dbg(common, QUEUE, "qnum: %d, txq depth: %d\n",
-		txq->axq_qnum, txq->axq_depth);
+			txq->axq_qnum, txq->axq_depth);
 
 	if (edma && list_empty(&txq->txq_fifo[txq->txq_headidx])) {
 		list_splice_tail_init(head, &txq->txq_fifo[txq->txq_headidx]);
@@ -2046,9 +2066,12 @@ static void ath_tx_txqaddbuf(struct ath_softc *sc, struct ath_txq *txq,
 
 		if (txq->axq_link) {
 			ath9k_hw_set_desc_link(ah, txq->axq_link, bf->bf_daddr);
+			// the useage of this function: ath9k_hw_ops(ah)->set_desc_link(ds, link)
+			// set_desc_link is just a void variable of ath_hw_ops(ah) stroing two varaibles
+			// txq->axq_link and bf->bf_daddr
 			ath_dbg(common, XMIT, "link[%u] (%p)=%llx (%p)\n",
-				txq->axq_qnum, txq->axq_link,
-				ito64(bf->bf_daddr), bf->bf_desc);
+					txq->axq_qnum, txq->axq_link,
+					ito64(bf->bf_daddr), bf->bf_desc);
 		} else if (!edma)
 			puttxbuf = true;
 
@@ -2059,7 +2082,7 @@ static void ath_tx_txqaddbuf(struct ath_softc *sc, struct ath_txq *txq,
 		TX_STAT_INC(txq->axq_qnum, puttxbuf);
 		ath9k_hw_puttxbuf(ah, txq->axq_qnum, bf->bf_daddr);
 		ath_dbg(common, XMIT, "TXDP[%u] = %llx (%p)\n",
-			txq->axq_qnum, ito64(bf->bf_daddr), bf->bf_desc);
+				txq->axq_qnum, ito64(bf->bf_daddr), bf->bf_desc);
 	}
 
 	if (!edma || sc->tx99_state) {
@@ -2078,6 +2101,75 @@ static void ath_tx_txqaddbuf(struct ath_softc *sc, struct ath_txq *txq,
 			bf_last->bf_next = NULL;
 		}
 	}
+#else
+	if (sc->rt_wifi_enable == 0) {
+		edma = !!(ah->caps.hw_caps & ATH9K_HW_CAP_EDMA);
+		bf = list_first_entry(head, struct ath_buf, list);
+		bf_last = list_entry(head->prev, struct ath_buf, list);
+
+		ath_dbg(common, QUEUE, "qnum: %d, txq depth: %d\n",
+			txq->axq_qnum, txq->axq_depth);
+
+		if (edma && list_empty(&txq->txq_fifo[txq->txq_headidx])) {
+			list_splice_tail_init(head, &txq->txq_fifo[txq->txq_headidx]);
+			INCR(txq->txq_headidx, ATH_TXFIFO_DEPTH);
+			puttxbuf = true;
+		} else {
+			list_splice_tail_init(head, &txq->axq_q);
+
+			if (txq->axq_link) {
+				ath9k_hw_set_desc_link(ah, txq->axq_link, bf->bf_daddr);
+				ath_dbg(common, XMIT, "link[%u] (%p)=%llx (%p)\n",
+					txq->axq_qnum, txq->axq_link,
+					ito64(bf->bf_daddr), bf->bf_desc);
+			} else if (!edma)
+				puttxbuf = true;
+
+			txq->axq_link = bf_last->bf_desc;
+		}
+
+		if (puttxbuf) {
+			TX_STAT_INC(txq->axq_qnum, puttxbuf);
+			ath9k_hw_puttxbuf(ah, txq->axq_qnum, bf->bf_daddr);
+			ath_dbg(common, XMIT, "TXDP[%u] = %llx (%p)\n",
+				txq->axq_qnum, ito64(bf->bf_daddr), bf->bf_desc);
+		}
+
+		if (!edma || sc->tx99_state) {
+			TX_STAT_INC(txq->axq_qnum, txstart);
+			ath9k_hw_txstart(ah, txq->axq_qnum);
+		}
+
+		if (!internal) {
+			while (bf) {
+				txq->axq_depth++;
+				if (bf_is_ampdu_not_probing(bf))
+					txq->axq_ampdu_depth++;
+
+				bf_last = bf->bf_lastbf;
+				bf = bf_last->bf_next;
+				bf_last->bf_next = NULL;
+		}
+		}
+	} else if (sc->rt_wifi_enable == 1) {
+			unsigned long flags;
+			spin_lock_irqsave(&sc->rt_wifi_fifo_lock, flags);
+			list_for_each_entry(bf_itr, head, list) {
+				if (kfifo_avail(&sc->rt_wifi_fifo) >=
+						sizeof(struct ath_buf*)) {
+					kfifo_in(&sc->rt_wifi_fifo,
+							&bf_itr,						//&bf_itr is exactly what is needed for a new pointer
+															//points to bf_itr
+							sizeof(struct ath_buf*));
+				} else {
+					RT_WIFI_DEBUG(
+						"KFIFO is out of space!! If this"
+							"happens, investigate RT_WIFI_KFIFO_SIZE\n");
+				}
+			}
+			spin_unlock_irqrestore(&sc->rt_wifi_fifo_lock, flags);
+		}
+#endif
 }
 
 static void ath_tx_send_normal(struct ath_softc *sc, struct ath_txq *txq,
@@ -2087,7 +2179,18 @@ static void ath_tx_send_normal(struct ath_softc *sc, struct ath_txq *txq,
 	struct ath_frame_info *fi = get_frame_info(skb);
 	struct list_head bf_head;
 	struct ath_buf *bf = fi->bf;
+	/* rt-wifi */
+	struct ieee80211_hdr *hdr;
 
+	hdr = (struct ieee80211_hdr*)skb->data;
+	RT_WIFI_DEBUG( "New destination address: %X:%X:%X:%X:%X:%X\n"
+				, hdr->addr1[0]
+				, hdr->addr1[1]
+				, hdr->addr1[2]
+				, hdr->addr1[3]
+				, hdr->addr1[4]
+				, hdr->addr1[5]);
+	/* eom */
 	INIT_LIST_HEAD(&bf_head);
 	list_add_tail(&bf->list, &bf_head);
 	bf->bf_state.bf_type = 0;
@@ -2201,6 +2304,9 @@ static struct ath_buf *ath_tx_setup_buffer(struct ath_softc *sc,
 
 	ATH_TXBUF_RESET(bf);
 
+#ifdef CONFIG_RT_WIFI
+	bf->qnum = txq->axq_qnum;	   // In RT-WiFi, bf->qnum is the ath9k hardware queue number
+#endif
 	if (tid && ieee80211_is_data_present(hdr->frame_control)) {
 		fragno = le16_to_cpu(hdr->seq_ctrl) & IEEE80211_SCTL_FRAG;
 		seqno = tid->seq_next;
@@ -2881,6 +2987,7 @@ void ath_tx_node_init(struct ath_softc *sc, struct ath_node *an)
 		tid->baw_size  = WME_MAX_BA;
 		tid->baw_head  = tid->baw_tail = 0;
 		tid->sched     = false;
+		tid->paused    = false;
 		tid->active	   = false;
 		__skb_queue_head_init(&tid->buf_q);
 		__skb_queue_head_init(&tid->retry_q);

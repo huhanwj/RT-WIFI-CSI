@@ -203,7 +203,6 @@ int ath_descdma_setup(struct ath_softc *sc, struct ath_descdma *dd,
 
 #define ATH_TX_COMPLETE_POLL_INT	1000
 
-
 #define ATH_TXFIFO_DEPTH 8
 struct ath_txq {
 	int mac80211_qnum; /* mac80211 queue number, -1 means not mac80211 Q */
@@ -223,7 +222,7 @@ struct ath_txq {
 	struct sk_buff_head complete_q;
 };
 
-struct ath_atx_ac {
+struct ath_atx_ac {		//access category queue. It is a bridge connecting hardware queues (4) and Tid queues (17)
 	struct ath_txq *txq;
 	struct list_head list;
 	struct list_head tid_q;
@@ -270,7 +269,7 @@ struct ath_buf {
 	struct ath_buf *bf_next;	/* next subframe in the aggregate */
 	struct sk_buff *bf_mpdu;	/* enclosing frame structure */
 	void *bf_desc;			/* virtual addr of desc */
-	dma_addr_t bf_daddr;		/* physical addr of desc */
+	dma_addr_t bf_daddr;		/* physical addr of desc, for DMA*/
 	dma_addr_t bf_buf_addr;	/* physical addr of data buffer, for DMA */
 	struct ieee80211_tx_rate rates[4];
 	struct ath_buf_state bf_state;

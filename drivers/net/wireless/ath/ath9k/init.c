@@ -347,6 +347,7 @@ static int ath9k_init_queues(struct ath_softc *sc)
 
 	sc->beacon.beaconq = ath9k_hw_beaconq_setup(sc->sc_ah);
 	sc->beacon.cabq = ath_txq_setup(sc, ATH9K_TX_QUEUE_CAB, 0);
+
 	ath_cabq_update(sc);
 
 	sc->tx.uapsdq = ath_txq_setup(sc, ATH9K_TX_QUEUE_UAPSD, 0);
@@ -355,6 +356,51 @@ static int ath9k_init_queues(struct ath_softc *sc)
 		sc->tx.txq_map[i] = ath_txq_setup(sc, ATH9K_TX_QUEUE_DATA, i);
 		sc->tx.txq_map[i]->mac80211_qnum = i;
 		sc->tx.txq_max_pending[i] = ATH_MAX_QDEPTH;
+	}
+	return 0;
+}
+
+static int ath9k_init_channels_rates(struct ath_softc *sc)
+{
+	void *channels;
+
+	BUILD_BUG_ON(ARRAY_SIZE(ath9k_2ghz_chantable) +
+		     ARRAY_SIZE(ath9k_5ghz_chantable) !=
+		     ATH9K_NUM_CHANNELS);
+
+	if (sc->sc_ah->caps.hw_caps & ATH9K_HW_CAP_2GHZ) {
+		channels = devm_kzalloc(sc->dev,
+			sizeof(ath9k_2ghz_chantable), GFP_KERNEL);
+		if (!channels)
+		    return -ENOMEM;
+
+		memcpy(channels, ath9k_2ghz_chantable,
+		       sizeof(ath9k_2ghz_chantable));
+		sc->sbands[IEEE80211_BAND_2GHZ].channels = channels;
+		sc->sbands[IEEE80211_BAND_2GHZ].band = IEEE80211_BAND_2GHZ;
+		sc->sbands[IEEE80211_BAND_2GHZ].n_channels =
+			ARRAY_SIZE(ath9k_2ghz_chantable);
+		sc->sbands[IEEE80211_BAND_2GHZ].bitrates = ath9k_legacy_rates;
+		sc->sbands[IEEE80211_BAND_2GHZ].n_bitrates =
+			ARRAY_SIZE(ath9k_legacy_rates);
+	}
+
+	if (sc->sc_ah->caps.hw_caps & ATH9K_HW_CAP_5GHZ) {
+		channels = devm_kzalloc(sc->dev,
+			sizeof(ath9k_5ghz_chantable), GFP_KERNEL);
+		if (!channels)
+			return -ENOMEM;
+
+		memcpy(channels, ath9k_5ghz_chantable,
+		       sizeof(ath9k_5ghz_chantable));
+		sc->sbands[IEEE80211_BAND_5GHZ].channels = channels;
+		sc->sbands[IEEE80211_BAND_5GHZ].band = IEEE80211_BAND_5GHZ;
+		sc->sbands[IEEE80211_BAND_5GHZ].n_channels =
+			ARRAY_SIZE(ath9k_5ghz_chantable);
+		sc->sbands[IEEE80211_BAND_5GHZ].bitrates =
+			ath9k_legacy_rates + 4;
+		sc->sbands[IEEE80211_BAND_5GHZ].n_bitrates =
+			ARRAY_SIZE(ath9k_legacy_rates) - 4;
 	}
 	return 0;
 }
@@ -528,7 +574,68 @@ static int ath9k_init_soc_platform(struct ath_softc *sc)
 
 	return ret;
 }
+#ifdef CONFIG_RT_WIFI
+static void test_trigger(void *arg)
+{
+    printk(KERN_DEBUG "test trigger\n");
+}
 
+static void test_thres(void *arg)
+{
+    printk(KERN_DEBUG "test thres\n");
+}
+
+static void ath9k_init_rt_wifi(struct ath_softc *sc)
+{
+	int ret;
+	unsigned int fifo_size = sizeof(struct ath_buf*) * RT_WIFI_KFIFO_SIZE;
+	
+	sc->rt_wifi_enable = 0;
+	ret = kfifo_alloc(&sc->rt_wifi_fifo, fifo_size, GFP_KERNEL);
+	if (ret != 0) {
+		printk(KERN_WARNING "%s: Error in allocating RT_WIFI FIFO %d.\n",
+			__FUNCTION__, ret);
+	}
+	INIT_LIST_HEAD(&(sc->rt_wifi_q));
+	sc->rt_wifi_qcount = 0;
+	spin_lock_init(&sc->rt_wifi_q_lock);
+	spin_lock_init(&sc->rt_wifi_fifo_lock);
+
+	sc->rt_wifi_timer = ath_gen_timer_alloc(sc->sc_ah, test_trigger, test_thres, (void*)sc, 7);
+	sc->rt_wifi_join = 0;
+}
+
+static void ath9k_deinit_rt_wifi(struct ath_softc *sc)
+{
+	struct ath_buf *new_buf;
+
+	sc->rt_wifi_enable = 0;
+
+	/* TODO: Not sure if the deinit is handled properly. */
+	while (true) {
+		new_buf = ath_rt_wifi_get_buf_sta(sc);
+		if (new_buf != NULL) {
+			ath_rt_wifi_tx(sc, new_buf);
+		} else {
+			break;
+		}
+	}
+	while (!list_empty(&sc->rt_wifi_q)) {
+		new_buf = list_first_entry(&sc->rt_wifi_q, struct ath_buf, list);
+		list_del_init(&new_buf->list);
+		ath_rt_wifi_tx(sc, new_buf);
+	}
+
+	if (sc->rt_wifi_timer != NULL) {
+		ath9k_gen_timer_stop(sc->sc_ah, sc->rt_wifi_timer);
+		ath_gen_timer_free(sc->sc_ah, sc->rt_wifi_timer);
+	}
+
+	if (sc->rt_wifi_superframe != NULL) {
+		kfree(sc->rt_wifi_superframe);
+	}
+}
+#endif
 static int ath9k_init_softc(u16 devid, struct ath_softc *sc,
 			    const struct ath_bus_ops *bus_ops)
 {
@@ -646,6 +753,12 @@ static int ath9k_init_softc(u16 devid, struct ath_softc *sc,
 	if (ret)
 		goto err_queues;
 
+	/* rt-wifi: Disable Bluetooth co-existence for GENTIMER usage. */
+#ifndef CONFIG_RT_WIFI
+	ret =  ath9k_init_btcoex(sc);
+	if (ret)
+		goto err_btcoex;
+#endif
 	ret =  ath9k_init_btcoex(sc);
 	if (ret)
 		goto err_btcoex;
@@ -663,6 +776,9 @@ static int ath9k_init_softc(u16 devid, struct ath_softc *sc,
 	ath_fill_led_pin(sc);
 	ath_chanctx_init(sc);
 	ath9k_offchannel_init(sc);
+#ifdef CONFIG_RT_WIFI
+	ath9k_init_rt_wifi(sc);
+#endif
 
 	if (common->bus_ops->aspm_init)
 		common->bus_ops->aspm_init(common);
@@ -989,7 +1105,11 @@ static void ath9k_deinit_softc(struct ath_softc *sc)
 	int i = 0;
 
 	ath9k_deinit_p2p(sc);
+#ifdef CONFIG_RT_WIFI
+	ath9k_deinit_rt_wifi(sc);
+#else
 	ath9k_deinit_btcoex(sc);
+#endif
 
 	for (i = 0; i < ATH9K_NUM_TX_QUEUES; i++)
 		if (ATH_TXQ_SETUP(sc, i))
@@ -1029,11 +1149,19 @@ static int __init ath9k_init(void)
 {
 	int error;
 
+	/* Register rate control algorithm */
+	error = ath_rate_control_register();
+	if (error != 0) {
+		pr_err("Unable to register rate control algorithm: %d\n",
+		       error);
+		goto err_out;
+	}
+
 	error = ath_pci_init();
 	if (error < 0) {
 		pr_err("No PCI devices found, driver not installed\n");
 		error = -ENODEV;
-		goto err_out;
+		goto err_rate_unregister;
 	}
 
 	error = ath_ahb_init();
@@ -1046,6 +1174,9 @@ static int __init ath9k_init(void)
 
  err_pci_exit:
 	ath_pci_exit();
+
+ err_rate_unregister:
+	ath_rate_control_unregister();
  err_out:
 	return error;
 }
@@ -1056,6 +1187,7 @@ static void __exit ath9k_exit(void)
 	is_ath9k_unloaded = true;
 	ath_ahb_exit();
 	ath_pci_exit();
+	ath_rate_control_unregister();
 	pr_info("%s: Driver unloaded\n", dev_info);
 }
 module_exit(ath9k_exit);

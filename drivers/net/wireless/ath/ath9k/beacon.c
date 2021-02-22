@@ -504,7 +504,16 @@ static void ath9k_beacon_config_ap(struct ath_softc *sc,
 	struct ath_hw *ah = sc->sc_ah;
 
 	ath9k_cmn_beacon_config_ap(ah, conf, ATH_BCBUF);
-	ath9k_beacon_init(sc, conf->nexttbtt, conf->intval, false);
+	ath9k_beacon_init(sc, conf->nexttbtt, conf->intval, true);
+	#ifdef CONFIG_RT_WIFI
+	if(sc->rt_wifi_timer == NULL) {
+		RT_WIFI_DEBUG("No timer is allocated.\n");
+	} else {
+		RT_WIFI_DEBUG("AP timer starts.\n");
+		ath_rt_wifi_ap_start_timer(sc, intval, nexttbtt);
+		sc->rt_wifi_enable = 1;
+	}
+#endif
 }
 
 static void ath9k_beacon_config_sta(struct ath_hw *ah,
