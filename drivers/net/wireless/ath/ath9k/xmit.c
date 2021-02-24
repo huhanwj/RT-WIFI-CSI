@@ -2038,7 +2038,7 @@ static void ath_tx_txqaddbuf(struct ath_softc *sc, struct ath_txq *txq,
 {
 	struct ath_hw *ah = sc->sc_ah;
 	struct ath_common *common = ath9k_hw_common(ah);
-	struct ath_buf *bf, *bf_last;
+	struct ath_buf *bf, *bf_last, *bf_itr;
 	bool puttxbuf = false;
 	bool edma;
 

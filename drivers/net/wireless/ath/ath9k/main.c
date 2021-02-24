@@ -1513,7 +1513,7 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 			ath9k_stop_btcoex(sc);
 #endif
 		} else {
-#ifndef
+#ifndef CONFIG_RT_WIFI
 			ath9k_start_btcoex(sc);
 #endif
 			/*
@@ -2778,5 +2778,5 @@ struct ieee80211_ops ath9k_ops = {
 	.sw_scan_start	    = ath9k_sw_scan_start,
 	.sw_scan_complete   = ath9k_sw_scan_complete,
 	.get_txpower        = ath9k_get_txpower,
-	.channel_switch_beacon     = ath9k_channel_switch_beacon,
+	//.channel_switch_beacon     = ath9k_channel_switch_beacon,
 };

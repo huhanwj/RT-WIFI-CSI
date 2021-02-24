@@ -360,51 +360,6 @@ static int ath9k_init_queues(struct ath_softc *sc)
 	return 0;
 }
 
-static int ath9k_init_channels_rates(struct ath_softc *sc)
-{
-	void *channels;
-
-	BUILD_BUG_ON(ARRAY_SIZE(ath9k_2ghz_chantable) +
-		     ARRAY_SIZE(ath9k_5ghz_chantable) !=
-		     ATH9K_NUM_CHANNELS);
-
-	if (sc->sc_ah->caps.hw_caps & ATH9K_HW_CAP_2GHZ) {
-		channels = devm_kzalloc(sc->dev,
-			sizeof(ath9k_2ghz_chantable), GFP_KERNEL);
-		if (!channels)
-		    return -ENOMEM;
-
-		memcpy(channels, ath9k_2ghz_chantable,
-		       sizeof(ath9k_2ghz_chantable));
-		sc->sbands[IEEE80211_BAND_2GHZ].channels = channels;
-		sc->sbands[IEEE80211_BAND_2GHZ].band = IEEE80211_BAND_2GHZ;
-		sc->sbands[IEEE80211_BAND_2GHZ].n_channels =
-			ARRAY_SIZE(ath9k_2ghz_chantable);
-		sc->sbands[IEEE80211_BAND_2GHZ].bitrates = ath9k_legacy_rates;
-		sc->sbands[IEEE80211_BAND_2GHZ].n_bitrates =
-			ARRAY_SIZE(ath9k_legacy_rates);
-	}
-
-	if (sc->sc_ah->caps.hw_caps & ATH9K_HW_CAP_5GHZ) {
-		channels = devm_kzalloc(sc->dev,
-			sizeof(ath9k_5ghz_chantable), GFP_KERNEL);
-		if (!channels)
-			return -ENOMEM;
-
-		memcpy(channels, ath9k_5ghz_chantable,
-		       sizeof(ath9k_5ghz_chantable));
-		sc->sbands[IEEE80211_BAND_5GHZ].channels = channels;
-		sc->sbands[IEEE80211_BAND_5GHZ].band = IEEE80211_BAND_5GHZ;
-		sc->sbands[IEEE80211_BAND_5GHZ].n_channels =
-			ARRAY_SIZE(ath9k_5ghz_chantable);
-		sc->sbands[IEEE80211_BAND_5GHZ].bitrates =
-			ath9k_legacy_rates + 4;
-		sc->sbands[IEEE80211_BAND_5GHZ].n_bitrates =
-			ARRAY_SIZE(ath9k_legacy_rates) - 4;
-	}
-	return 0;
-}
-
 static void ath9k_init_misc(struct ath_softc *sc)
 {
 	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
