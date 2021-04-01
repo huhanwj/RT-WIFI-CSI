@@ -27,6 +27,7 @@ Then, run the following command in this folder
 `make menuconfig`
 
 The default config is configured installing both RT-WiFi and CSI Tool, you may check it manually.
+**Update:** If you want to save time for cancelling RT-WiFi functioning, just replace `.config` with `.config.nortwifi` without spending time finding the RT-WiFi part hidden in ath9k support in menuconfig.
 
 Next compile the kernel modules
 ```
