@@ -12,8 +12,9 @@ Do NOT try to clone or download the ZIP file and unzip it under Windows Environm
 
 All of our testing is done on x86 platforms, we don't know whether this is compatible with ARM chips.
 ## Installation
+First, remember to download or clone the whole repository.
 ### System Requirements
-Same as Atheros CSI Tool, i.e. Ubuntu 14.04 with kernel version lower than or equal to 4.1.10.
+Any Ubuntu system with kernel version being less or equal to 5.4.
 ### Installation of required packages
 Some packages are needed (may still have missing packages when compiling, add the missing packages yourself depending on what error you encounter)
 
@@ -61,15 +62,8 @@ https://github.com/citysu/csiread
 
 *Manual for RT-WiFi Project*: https://www.cs.utexas.edu/users/cps/rt-wifi/RT-WiFi%20user%20guide%20v0.1.pdf
 
-## Problems solved
-
-### Building side
-
-* New Kconfig file and makefile
-* Solve the kernel version issue: 4.15(displayed as 4.1.10+) for Atheros CSI Tool and 3.13 for RT-WiFi project
-* For compatability reasons, removing one debugging interface (cfg80211 DebugFS entries) included in RT-WiFi project and being unclear whether it matters. 
-
 ### Notice for building
 
 Do NOT put the folder under some folder with space in its name like *Untitled folder*, it will result in a **make error** during the `sudo make modules_install`.
 
+If you find that `uname -r` does not give `5.4.0-CSI`, then you can modify `/etc/default/grub` and deactivate `GRUB_HIDDEN_TIMEOUT=0` by commenting it. Then run `sudo upgrade-grub` to update the grub and reboot the system. You can see the grub menu and select advanced options for ubuntu and select our customized kernel.
