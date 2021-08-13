@@ -1,6 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright 2014, Michael Ellerman, IBM Corp.
- * Licensed under GPLv2.
  */
 
 #include <stdio.h>
@@ -17,6 +17,8 @@ int multi_counter(void)
 {
 	struct event events[6];
 	int i, group_fd;
+
+	SKIP_IF(!ebb_is_supported());
 
 	event_init_named(&events[0], 0x1001C, "PM_CMPLU_STALL_THRD");
 	event_init_named(&events[1], 0x2D016, "PM_CMPLU_STALL_FXU");

@@ -34,7 +34,7 @@
 
 /* TDMA configuration */
 /* TDMA slot size, see definition in rt-wifi.h */
-#define RT_WIFI_TIME_SLOT_LEN 5
+#define RT_WIFI_TIME_SLOT_LEN 7
 
 /* Transmission configuration */
 /* co-existence */
