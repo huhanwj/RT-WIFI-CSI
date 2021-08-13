@@ -1,14 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * GE watchdog userspace interface
  *
  * Author:  Martyn Welch <martyn.welch@ge.com>
  *
  * Copyright 2008 GE Intelligent Platforms Embedded Systems, Inc.
- *
- * This program is free software; you can redistribute  it and/or modify it
- * under  the terms of  the GNU General  Public License as published by the
- * Free Software Foundation;  either version 2 of the  License, or (at your
- * option) any later version.
  *
  * Based on: mv64x60_wdt.c (MV64X60 watchdog userspace interface)
  *   Author: James Chapman <jchapman@katalix.com>
@@ -229,7 +225,7 @@ static int gef_wdt_open(struct inode *inode, struct file *file)
 
 	gef_wdt_handler_enable();
 
-	return nonseekable_open(inode, file);
+	return stream_open(inode, file);
 }
 
 static int gef_wdt_release(struct inode *inode, struct file *file)
@@ -303,6 +299,7 @@ static const struct of_device_id gef_wdt_ids[] = {
 	},
 	{},
 };
+MODULE_DEVICE_TABLE(of, gef_wdt_ids);
 
 static struct platform_driver gef_wdt_driver = {
 	.driver = {

@@ -1,34 +1,21 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /**************************************************************************
  * Copyright (c) 2007, Intel Corporation.
  * All Rights Reserved.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
  *
  * Intel funded Tungsten Graphics (http://www.tungstengraphics.com) to
  * develop this driver.
  *
  **************************************************************************/
-/*
- */
 
-#include <drm/drmP.h>
-#include "psb_drv.h"
-#include "psb_reg.h"
-#include "psb_intel_reg.h"
-#include "power.h"
-#include "psb_irq.h"
+#include <drm/drm_vblank.h>
+
 #include "mdfld_output.h"
+#include "power.h"
+#include "psb_drv.h"
+#include "psb_intel_reg.h"
+#include "psb_irq.h"
+#include "psb_reg.h"
 
 /*
  * inline functions
@@ -510,7 +497,7 @@ int psb_irq_disable_dpst(struct drm_device *dev)
 /*
  * It is used to enable VBLANK interrupt
  */
-int psb_enable_vblank(struct drm_device *dev, int pipe)
+int psb_enable_vblank(struct drm_device *dev, unsigned int pipe)
 {
 	struct drm_psb_private *dev_priv = dev->dev_private;
 	unsigned long irqflags;
@@ -549,7 +536,7 @@ int psb_enable_vblank(struct drm_device *dev, int pipe)
 /*
  * It is used to disable VBLANK interrupt
  */
-void psb_disable_vblank(struct drm_device *dev, int pipe)
+void psb_disable_vblank(struct drm_device *dev, unsigned int pipe)
 {
 	struct drm_psb_private *dev_priv = dev->dev_private;
 	unsigned long irqflags;
@@ -622,7 +609,7 @@ void mdfld_disable_te(struct drm_device *dev, int pipe)
 /* Called from drm generic code, passed a 'crtc', which
  * we use as a pipe index
  */
-u32 psb_get_vblank_counter(struct drm_device *dev, int pipe)
+u32 psb_get_vblank_counter(struct drm_device *dev, unsigned int pipe)
 {
 	uint32_t high_frame = PIPEAFRAMEHIGH;
 	uint32_t low_frame = PIPEAFRAMEPIXEL;
@@ -654,7 +641,7 @@ u32 psb_get_vblank_counter(struct drm_device *dev, int pipe)
 	reg_val = REG_READ(pipeconf_reg);
 
 	if (!(reg_val & PIPEACONF_ENABLE)) {
-		dev_err(dev->dev, "trying to get vblank count for disabled pipe %d\n",
+		dev_err(dev->dev, "trying to get vblank count for disabled pipe %u\n",
 								pipe);
 		goto psb_get_vblank_counter_exit;
 	}

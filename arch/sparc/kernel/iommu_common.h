@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /* iommu_common.h: UltraSparc SBUS/PCI common iommu declarations.
  *
  * Copyright (C) 1999, 2008 David S. Miller (davem@davemloft.net)
@@ -15,7 +16,6 @@
 #include <linux/iommu-helper.h>
 
 #include <asm/iommu.h>
-#include <asm/scatterlist.h>
 
 /*
  * These give mapping size of each iommu pte/tlb.

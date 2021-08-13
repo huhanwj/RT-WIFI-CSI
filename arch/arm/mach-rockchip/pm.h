@@ -1,15 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2014, Fuzhou Rockchip Electronics Co., Ltd
  * Author: Tony Xie <tony.xie@rock-chips.com>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
  */
 
 #ifndef __MACH_ROCKCHIP_PM_H
@@ -59,19 +51,9 @@ static inline void rockchip_suspend_init(void)
 #define SGRF_DAPDEVICEEN		BIT(0)
 #define SGRF_DAPDEVICEEN_WRITE		BIT(16)
 
-#define RK3288_CRU_MODE_CON		0x50
-#define RK3288_CRU_SEL0_CON		0x60
-#define RK3288_CRU_SEL1_CON		0x64
-#define RK3288_CRU_SEL10_CON		0x88
-#define RK3288_CRU_SEL33_CON		0xe4
-#define RK3288_CRU_SEL37_CON		0xf4
-
 /* PMU_WAKEUP_CFG1 bits */
 #define PMU_ARMINT_WAKEUP_EN		BIT(0)
-
-/* wait 30ms for OSC stable and 30ms for pmic stable */
-#define OSC_STABL_CNT_THRESH	(32 * 30)
-#define PMU_STABL_CNT_THRESH	(32 * 30)
+#define PMU_GPIOINT_WAKEUP_EN		BIT(3)
 
 enum rk3288_pwr_mode_con {
 	PMU_PWR_MODE_EN = 0,

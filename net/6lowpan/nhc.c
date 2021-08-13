@@ -1,14 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *	6LoWPAN next header compression
  *
- *
  *	Authors:
  *	Alexander Aring		<aar@pengutronix.de>
- *
- *	This program is free software; you can redistribute it and/or
- *	modify it under the terms of the GNU General Public License
- *	as published by the Free Software Foundation; either version
- *	2 of the License, or (at your option) any later version.
  */
 
 #include <linux/netdevice.h>
@@ -18,7 +13,7 @@
 #include "nhc.h"
 
 static struct rb_root rb_root = RB_ROOT;
-static struct lowpan_nhc *lowpan_nexthdr_nhcs[NEXTHDR_MAX];
+static struct lowpan_nhc *lowpan_nexthdr_nhcs[NEXTHDR_MAX + 1];
 static DEFINE_SPINLOCK(lowpan_nhc_lock);
 
 static int lowpan_nhc_insert(struct lowpan_nhc *nhc)
@@ -27,8 +22,8 @@ static int lowpan_nhc_insert(struct lowpan_nhc *nhc)
 
 	/* Figure out where to put new node */
 	while (*new) {
-		struct lowpan_nhc *this = container_of(*new, struct lowpan_nhc,
-						       node);
+		struct lowpan_nhc *this = rb_entry(*new, struct lowpan_nhc,
+						   node);
 		int result, len_dif, len;
 
 		len_dif = nhc->idlen - this->idlen;
@@ -69,8 +64,8 @@ static struct lowpan_nhc *lowpan_nhc_by_nhcid(const struct sk_buff *skb)
 	const u8 *nhcid_skb_ptr = skb->data;
 
 	while (node) {
-		struct lowpan_nhc *nhc = container_of(node, struct lowpan_nhc,
-						      node);
+		struct lowpan_nhc *nhc = rb_entry(node, struct lowpan_nhc,
+						  node);
 		u8 nhcid_skb_ptr_masked[LOWPAN_NHC_MAX_ID_LEN];
 		int result, i;
 
@@ -95,23 +90,20 @@ static struct lowpan_nhc *lowpan_nhc_by_nhcid(const struct sk_buff *skb)
 }
 
 int lowpan_nhc_check_compression(struct sk_buff *skb,
-				 const struct ipv6hdr *hdr, u8 **hc_ptr,
-				 u8 *iphc0)
+				 const struct ipv6hdr *hdr, u8 **hc_ptr)
 {
 	struct lowpan_nhc *nhc;
+	int ret = 0;
 
 	spin_lock_bh(&lowpan_nhc_lock);
 
 	nhc = lowpan_nexthdr_nhcs[hdr->nexthdr];
-	if (nhc && nhc->compress)
-		*iphc0 |= LOWPAN_IPHC_NH_C;
-	else
-		lowpan_push_hc_data(hc_ptr, &hdr->nexthdr,
-				    sizeof(hdr->nexthdr));
+	if (!(nhc && nhc->compress))
+		ret = -ENOENT;
 
 	spin_unlock_bh(&lowpan_nhc_lock);
 
-	return 0;
+	return ret;
 }
 
 int lowpan_nhc_do_compression(struct sk_buff *skb, const struct ipv6hdr *hdr,
@@ -157,7 +149,8 @@ out:
 	return ret;
 }
 
-int lowpan_nhc_do_uncompression(struct sk_buff *skb, struct net_device *dev,
+int lowpan_nhc_do_uncompression(struct sk_buff *skb,
+				const struct net_device *dev,
 				struct ipv6hdr *hdr)
 {
 	struct lowpan_nhc *nhc;

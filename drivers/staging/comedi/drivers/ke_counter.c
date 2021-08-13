@@ -1,19 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * ke_counter.c
  * Comedi driver for Kolter-Electronic PCI Counter 1 Card
  *
  * COMEDI - Linux Control and Measurement Device Interface
  * Copyright (C) 2000 David A. Schleef <ds@schleef.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 /*
@@ -41,9 +32,10 @@
 #define KE_MSB_REG(x)			(0x0c + ((x) * 0x20))
 #define KE_SIGN_REG(x)			(0x10 + ((x) * 0x20))
 #define KE_OSC_SEL_REG			0xf8
-#define KE_OSC_SEL_EXT			(1 << 0)
-#define KE_OSC_SEL_4MHZ			(2 << 0)
-#define KE_OSC_SEL_20MHZ		(3 << 0)
+#define KE_OSC_SEL_CLK(x)		(((x) & 0x3) << 0)
+#define KE_OSC_SEL_EXT			KE_OSC_SEL_CLK(1)
+#define KE_OSC_SEL_4MHZ			KE_OSC_SEL_CLK(2)
+#define KE_OSC_SEL_20MHZ		KE_OSC_SEL_CLK(3)
 #define KE_DO_REG			0xfc
 
 static int ke_counter_insn_write(struct comedi_device *dev,

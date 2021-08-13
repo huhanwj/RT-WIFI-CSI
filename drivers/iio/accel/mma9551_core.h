@@ -1,15 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Common code for Freescale MMA955x Intelligent Sensor Platform drivers
  * Copyright (c) 2014, Intel Corporation.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
  */
 
 #ifndef _MMA9551_CORE_H_
@@ -22,7 +14,7 @@
 #define MMA9551_APPID_TILT		0x0B
 #define MMA9551_APPID_SLEEP_WAKE	0x12
 #define MMA9551_APPID_PEDOMETER	        0x15
-#define MMA9551_APPID_RCS		0x17
+#define MMA9551_APPID_RSC		0x17
 #define MMA9551_APPID_NONE		0xff
 
 /* Reset/Suspend/Clear application app masks */
@@ -53,13 +45,13 @@ int mma9551_write_config_byte(struct i2c_client *client, u8 app_id,
 int mma9551_read_status_byte(struct i2c_client *client, u8 app_id,
 			     u16 reg, u8 *val);
 int mma9551_read_config_word(struct i2c_client *client, u8 app_id,
-			    u16 reg, u16 *val);
+			     u16 reg, u16 *val);
 int mma9551_write_config_word(struct i2c_client *client, u8 app_id,
-			     u16 reg, u16 val);
+			      u16 reg, u16 val);
 int mma9551_read_status_word(struct i2c_client *client, u8 app_id,
 			     u16 reg, u16 *val);
 int mma9551_read_config_words(struct i2c_client *client, u8 app_id,
-			     u16 reg, u8 len, u16 *buf);
+			      u16 reg, u8 len, u16 *buf);
 int mma9551_read_status_words(struct i2c_client *client, u8 app_id,
 			      u16 reg, u8 len, u16 *buf);
 int mma9551_write_config_words(struct i2c_client *client, u8 app_id,

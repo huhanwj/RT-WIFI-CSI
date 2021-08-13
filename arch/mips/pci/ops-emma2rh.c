@@ -1,23 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Copyright (C) NEC Electronics Corporation 2004-2006
  *
  *  This file is based on the arch/mips/pci/ops-vr41xx.c
  *
  *	Copyright 2001 MontaVista Software Inc.
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #include <linux/pci.h>
@@ -25,7 +12,6 @@
 #include <linux/types.h>
 
 #include <asm/addrspace.h>
-#include <asm/debug.h>
 
 #include <asm/emma/emma2rh.h>
 
@@ -40,10 +26,9 @@
 static int check_args(struct pci_bus *bus, u32 devfn, u32 * bus_num)
 {
 	/* check if the bus is top-level */
-	if (bus->parent != NULL) {
+	if (bus->parent != NULL)
 		*bus_num = bus->number;
-		db_assert(bus_num != NULL);
-	} else
+	else
 		*bus_num = 0;
 
 	if (*bus_num == 0) {

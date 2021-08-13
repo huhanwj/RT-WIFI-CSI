@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  *  S390 version
  *
@@ -7,21 +8,9 @@
 #define _ASM_S390_UNISTD_H_
 
 #include <uapi/asm/unistd.h>
+#include <asm/unistd_nr.h>
 
-
-#define __IGNORE_time
-
-/* Ignore NUMA system calls. Not wired up on s390. */
-#define __IGNORE_mbind
-#define __IGNORE_get_mempolicy
-#define __IGNORE_set_mempolicy
-#define __IGNORE_migrate_pages
-#define __IGNORE_move_pages
-
-/* Ignore system calls that are also reachable via sys_socket */
-#define __IGNORE_recvmmsg
-#define __IGNORE_sendmmsg
-
+#define __ARCH_WANT_NEW_STAT
 #define __ARCH_WANT_OLD_READDIR
 #define __ARCH_WANT_SYS_ALARM
 #define __ARCH_WANT_SYS_GETHOSTNAME
@@ -32,7 +21,6 @@
 #define __ARCH_WANT_SYS_IPC
 #define __ARCH_WANT_SYS_FADVISE64
 #define __ARCH_WANT_SYS_GETPGRP
-#define __ARCH_WANT_SYS_LLSEEK
 #define __ARCH_WANT_SYS_NICE
 #define __ARCH_WANT_SYS_OLD_GETRLIMIT
 #define __ARCH_WANT_SYS_OLD_MMAP
@@ -40,10 +28,12 @@
 #define __ARCH_WANT_SYS_SIGPENDING
 #define __ARCH_WANT_SYS_SIGPROCMASK
 # ifdef CONFIG_COMPAT
-#   define __ARCH_WANT_COMPAT_SYS_TIME
+#   define __ARCH_WANT_SYS_TIME32
+#   define __ARCH_WANT_SYS_UTIME32
 # endif
 #define __ARCH_WANT_SYS_FORK
 #define __ARCH_WANT_SYS_VFORK
 #define __ARCH_WANT_SYS_CLONE
+#define __ARCH_WANT_SYS_CLONE3
 
 #endif /* _ASM_S390_UNISTD_H_ */

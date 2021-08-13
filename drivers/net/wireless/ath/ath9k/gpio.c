@@ -21,6 +21,33 @@
 /********************************/
 
 #ifdef CONFIG_MAC80211_LEDS
+
+static void ath_fill_led_pin(struct ath_softc *sc)
+{
+	struct ath_hw *ah = sc->sc_ah;
+
+	/* Set default led pin if invalid */
+	if (ah->led_pin < 0) {
+		if (AR_SREV_9287(ah))
+			ah->led_pin = ATH_LED_PIN_9287;
+		else if (AR_SREV_9485(ah))
+			ah->led_pin = ATH_LED_PIN_9485;
+		else if (AR_SREV_9300(ah))
+			ah->led_pin = ATH_LED_PIN_9300;
+		else if (AR_SREV_9462(ah) || AR_SREV_9565(ah))
+			ah->led_pin = ATH_LED_PIN_9462;
+		else
+			ah->led_pin = ATH_LED_PIN_DEF;
+	}
+
+	/* Configure gpio for output */
+	ath9k_hw_gpio_request_out(ah, ah->led_pin, "ath9k-led",
+				  AR_GPIO_OUTPUT_MUX_AS_OUTPUT);
+
+	/* LED off, active low */
+	ath9k_hw_set_gpio(ah, ah->led_pin, ah->config.led_active_high ? 0 : 1);
+}
+
 static void ath_led_brightness(struct led_classdev *led_cdev,
 			       enum led_brightness brightness)
 {
@@ -40,6 +67,8 @@ void ath_deinit_leds(struct ath_softc *sc)
 
 	ath_led_brightness(&sc->led_cdev, LED_OFF);
 	led_classdev_unregister(&sc->led_cdev);
+
+	ath9k_hw_gpio_free(sc->sc_ah, sc->sc_ah->led_pin);
 }
 
 void ath_init_leds(struct ath_softc *sc)
@@ -48,6 +77,8 @@ void ath_init_leds(struct ath_softc *sc)
 
 	if (AR_SREV_9100(sc->sc_ah))
 		return;
+
+	ath_fill_led_pin(sc);
 
 	if (!ath9k_led_blink)
 		sc->led_cdev.default_trigger =
@@ -63,37 +94,6 @@ void ath_init_leds(struct ath_softc *sc)
 		return;
 
 	sc->led_registered = true;
-}
-
-void ath_fill_led_pin(struct ath_softc *sc)
-{
-	struct ath_hw *ah = sc->sc_ah;
-
-	if (AR_SREV_9100(ah))
-		return;
-
-	if (ah->led_pin >= 0) {
-		if (!((1 << ah->led_pin) & AR_GPIO_OE_OUT_MASK))
-			ath9k_hw_request_gpio(ah, ah->led_pin, "ath9k-led");
-		return;
-	}
-
-	if (AR_SREV_9287(ah))
-		ah->led_pin = ATH_LED_PIN_9287;
-	else if (AR_SREV_9485(sc->sc_ah))
-		ah->led_pin = ATH_LED_PIN_9485;
-	else if (AR_SREV_9300(sc->sc_ah))
-		ah->led_pin = ATH_LED_PIN_9300;
-	else if (AR_SREV_9462(sc->sc_ah) || AR_SREV_9565(sc->sc_ah))
-		ah->led_pin = ATH_LED_PIN_9462;
-	else
-		ah->led_pin = ATH_LED_PIN_DEF;
-
-	/* Configure gpio 1 for output */
-	ath9k_hw_cfg_output(ah, ah->led_pin, AR_GPIO_OUTPUT_MUX_AS_OUTPUT);
-
-	/* LED off, active low */
-	ath9k_hw_set_gpio(ah, ah->led_pin, (ah->config.led_active_high) ? 0 : 1);
 }
 #endif
 
@@ -167,22 +167,6 @@ static void ath_detect_bt_priority(struct ath_softc *sc)
 		btcoex->bt_priority_time = jiffies;
 	}
 }
-
-static void ath9k_gen_timer_start(struct ath_hw *ah,
-				  struct ath_gen_timer *timer,
-				  u32 trig_timeout,
-				  u32 timer_period)
-{
-	ath9k_hw_gen_timer_start(ah, timer, trig_timeout, timer_period);
-
-	if ((ah->imask & ATH9K_INT_GENTIMER) == 0) {
-		ath9k_hw_disable_interrupts(ah);
-		ah->imask |= ATH9K_INT_GENTIMER;
-		ath9k_hw_set_interrupts(ah);
-		ath9k_hw_enable_interrupts(ah);
-	}
-}
-
 /* rt-wifi static void ath9k_gen_timer_stop(struct ath_hw *ah, struct ath_gen_timer *timer) */
 void ath9k_gen_timer_stop(struct ath_hw *ah, struct ath_gen_timer *timer)
 {
@@ -191,7 +175,7 @@ void ath9k_gen_timer_stop(struct ath_hw *ah, struct ath_gen_timer *timer)
 	ath9k_hw_gen_timer_stop(ah, timer);
 
 	/* if no timer is enabled, turn off interrupt mask */
-	if (timer_table->timer_mask.val == 0) {
+	if (timer_table->timer_mask == 0) {
 		ath9k_hw_disable_interrupts(ah);
 		ah->imask &= ~ATH9K_INT_GENTIMER;
 		ath9k_hw_set_interrupts(ah);
@@ -222,9 +206,9 @@ static void ath_mci_ftp_adjust(struct ath_softc *sc)
  * 45ms, bt traffic will be given priority during 55% of this
  * period while wlan gets remaining 45%
  */
-static void ath_btcoex_period_timer(unsigned long data)
+static void ath_btcoex_period_timer(struct timer_list *t)
 {
-	struct ath_softc *sc = (struct ath_softc *) data;
+	struct ath_softc *sc = from_timer(sc, t, btcoex.period_timer);
 	struct ath_hw *ah = sc->sc_ah;
 	struct ath_btcoex *btcoex = &sc->btcoex;
 	enum ath_stomp_type stomp_type;
@@ -283,9 +267,9 @@ skip_hw_wakeup:
  * Generic tsf based hw timer which configures weight
  * registers to time slice between wlan and bt traffic
  */
-static void ath_btcoex_no_stomp_timer(unsigned long arg)
+static void ath_btcoex_no_stomp_timer(struct timer_list *t)
 {
-	struct ath_softc *sc = (struct ath_softc *)arg;
+	struct ath_softc *sc = from_timer(sc, t, btcoex.no_stomp_timer);
 	struct ath_hw *ah = sc->sc_ah;
 	struct ath_btcoex *btcoex = &sc->btcoex;
 
@@ -315,10 +299,8 @@ static void ath_init_btcoex_timer(struct ath_softc *sc)
 				   btcoex->btcoex_period / 100;
 	btcoex->bt_stomp_type = ATH_BTCOEX_STOMP_LOW;
 
-	setup_timer(&btcoex->period_timer, ath_btcoex_period_timer,
-			(unsigned long) sc);
-	setup_timer(&btcoex->no_stomp_timer, ath_btcoex_no_stomp_timer,
-			(unsigned long) sc);
+	timer_setup(&btcoex->period_timer, ath_btcoex_period_timer, 0);
+	timer_setup(&btcoex->no_stomp_timer, ath_btcoex_no_stomp_timer, 0);
 
 	spin_lock_init(&btcoex->btcoex_lock);
 }
@@ -433,6 +415,13 @@ void ath9k_deinit_btcoex(struct ath_softc *sc)
 
 	if (ath9k_hw_mci_is_enabled(ah))
 		ath_mci_cleanup(sc);
+	else {
+		enum ath_btcoex_scheme scheme = ath9k_hw_get_btcoex_scheme(ah);
+
+		if (scheme == ATH_BTCOEX_CFG_2WIRE ||
+		    scheme == ATH_BTCOEX_CFG_3WIRE)
+			ath9k_hw_btcoex_deinit(sc->sc_ah);
+	}
 }
 
 int ath9k_init_btcoex(struct ath_softc *sc)

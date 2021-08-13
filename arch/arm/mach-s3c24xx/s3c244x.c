@@ -1,14 +1,9 @@
-/* linux/arch/arm/plat-s3c24xx/s3c244x.c
- *
- * Copyright (c) 2004-2006 Simtec Electronics
- *   Ben Dooks <ben@simtec.co.uk>
- *
- * Samsung S3C2440 and S3C2442 Mobile CPU support (not S3C2443)
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
-*/
+// SPDX-License-Identifier: GPL-2.0
+//
+// Copyright (c) 2004-2006 Simtec Electronics
+//   Ben Dooks <ben@simtec.co.uk>
+//
+// Samsung S3C2440 and S3C2442 Mobile CPU support (not S3C2443)
 
 #include <linux/kernel.h>
 #include <linux/types.h>
@@ -41,9 +36,9 @@
 #include <plat/devs.h>
 #include <plat/cpu.h>
 #include <plat/pm.h>
-#include <plat/nand-core.h>
 
 #include "common.h"
+#include "nand-core.h"
 #include "regs-dsc.h"
 
 static struct map_desc s3c244x_iodesc[] __initdata = {

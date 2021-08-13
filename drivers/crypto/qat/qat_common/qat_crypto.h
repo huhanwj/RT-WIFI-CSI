@@ -57,8 +57,6 @@ struct qat_crypto_instance {
 	struct adf_etr_ring_data *sym_rx;
 	struct adf_etr_ring_data *pke_tx;
 	struct adf_etr_ring_data *pke_rx;
-	struct adf_etr_ring_data *rnd_tx;
-	struct adf_etr_ring_data *rnd_rx;
 	struct adf_accel_dev *accel_dev;
 	struct list_head list;
 	unsigned long state;
@@ -90,6 +88,8 @@ struct qat_crypto_request {
 	struct qat_crypto_request_buffs buf;
 	void (*cb)(struct icp_qat_fw_la_resp *resp,
 		   struct qat_crypto_request *req);
+	void *iv;
+	dma_addr_t iv_paddr;
 };
 
 #endif

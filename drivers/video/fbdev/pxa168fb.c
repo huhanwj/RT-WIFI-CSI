@@ -279,7 +279,7 @@ static void set_clock_divider(struct pxa168fb_info *fbi,
 
 	/* check whether divisor is too small. */
 	if (divider_int < 2) {
-		dev_warn(fbi->dev, "Warning: clock source is too slow."
+		dev_warn(fbi->dev, "Warning: clock source is too slow. "
 				"Try smaller resolution\n");
 		divider_int = 2;
 	}
@@ -405,9 +405,6 @@ static int pxa168fb_set_par(struct fb_info *info)
 	struct fb_var_screeninfo *var = &info->var;
 	struct fb_videomode mode;
 	u32 x;
-	struct pxa168fb_mach_info *mi;
-
-	mi = dev_get_platdata(fbi->dev);
 
 	/*
 	 * Set additional mode info.
@@ -615,7 +612,7 @@ static int pxa168fb_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	clk = clk_get(&pdev->dev, "LCDCLK");
+	clk = devm_clk_get(&pdev->dev, "LCDCLK");
 	if (IS_ERR(clk)) {
 		dev_err(&pdev->dev, "unable to get LCDCLK");
 		return PTR_ERR(clk);
@@ -624,21 +621,18 @@ static int pxa168fb_probe(struct platform_device *pdev)
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (res == NULL) {
 		dev_err(&pdev->dev, "no IO memory defined\n");
-		ret = -ENOENT;
-		goto failed_put_clk;
+		return -ENOENT;
 	}
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0) {
 		dev_err(&pdev->dev, "no IRQ defined\n");
-		ret = -ENOENT;
-		goto failed_put_clk;
+		return -ENOENT;
 	}
 
 	info = framebuffer_alloc(sizeof(struct pxa168fb_info), &pdev->dev);
 	if (info == NULL) {
-		ret = -ENOMEM;
-		goto failed_put_clk;
+		return -ENOMEM;
 	}
 
 	/* Initialize private data */
@@ -683,8 +677,8 @@ static int pxa168fb_probe(struct platform_device *pdev)
 	 */
 	info->fix.smem_len = PAGE_ALIGN(DEFAULT_FB_SIZE);
 
-	info->screen_base = dma_alloc_writecombine(fbi->dev, info->fix.smem_len,
-						&fbi->fb_start_dma, GFP_KERNEL);
+	info->screen_base = dma_alloc_wc(fbi->dev, info->fix.smem_len,
+					 &fbi->fb_start_dma, GFP_KERNEL);
 	if (info->screen_base == NULL) {
 		ret = -ENOMEM;
 		goto failed_free_info;
@@ -715,7 +709,7 @@ static int pxa168fb_probe(struct platform_device *pdev)
 	/*
 	 * enable controller clock
 	 */
-	clk_enable(fbi->clk);
+	clk_prepare_enable(fbi->clk);
 
 	pxa168fb_set_par(info);
 
@@ -770,14 +764,12 @@ static int pxa168fb_probe(struct platform_device *pdev)
 failed_free_cmap:
 	fb_dealloc_cmap(&info->cmap);
 failed_free_clk:
-	clk_disable(fbi->clk);
+	clk_disable_unprepare(fbi->clk);
 failed_free_fbmem:
 	dma_free_coherent(fbi->dev, info->fix.smem_len,
 			info->screen_base, fbi->fb_start_dma);
 failed_free_info:
 	kfree(info);
-failed_put_clk:
-	clk_put(clk);
 
 	dev_err(&pdev->dev, "frame buffer device init failed with %d\n", ret);
 	return ret;
@@ -809,11 +801,10 @@ static int pxa168fb_remove(struct platform_device *pdev)
 
 	irq = platform_get_irq(pdev, 0);
 
-	dma_free_writecombine(fbi->dev, PAGE_ALIGN(info->fix.smem_len),
-				info->screen_base, info->fix.smem_start);
+	dma_free_wc(fbi->dev, PAGE_ALIGN(info->fix.smem_len),
+		    info->screen_base, info->fix.smem_start);
 
-	clk_disable(fbi->clk);
-	clk_put(fbi->clk);
+	clk_disable_unprepare(fbi->clk);
 
 	framebuffer_release(info);
 

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  sst-atom-controls.h - Intel MID Platform driver header file
  *
@@ -7,17 +8,7 @@
  *  	Samreen Nilofer <samreen.nilofer@intel.com>
  *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; version 2 of the License.
- *
- *  This program is distributed in the hope that it will be useful, but
- *  WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- *  General Public License for more details.
- *
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- *
  */
 
 #ifndef __SST_ATOM_CONTROLS_H__
@@ -28,12 +19,15 @@
 
 enum {
 	MERR_DPCM_AUDIO = 0,
+	MERR_DPCM_DEEP_BUFFER,
 	MERR_DPCM_COMPR,
 };
 
 /* define a bit for each mixer input */
 #define SST_MIX_IP(x)		(x)
 
+#define SST_IP_MODEM		SST_MIX_IP(0)
+#define SST_IP_BT		SST_MIX_IP(1)
 #define SST_IP_CODEC0		SST_MIX_IP(2)
 #define SST_IP_CODEC1		SST_MIX_IP(3)
 #define SST_IP_LOOP0		SST_MIX_IP(4)
@@ -62,6 +56,7 @@ enum {
  * Audio DSP Path Ids. Specified by the audio DSP FW
  */
 enum sst_path_index {
+	SST_PATH_INDEX_MODEM_OUT                = (0x00 << SST_PATH_ID_SHIFT),
 	SST_PATH_INDEX_CODEC_OUT0               = (0x02 << SST_PATH_ID_SHIFT),
 	SST_PATH_INDEX_CODEC_OUT1               = (0x03 << SST_PATH_ID_SHIFT),
 
@@ -79,6 +74,7 @@ enum sst_path_index {
 
 
 	/* Start of input paths */
+	SST_PATH_INDEX_MODEM_IN                 = (0x80 << SST_PATH_ID_SHIFT),
 	SST_PATH_INDEX_CODEC_IN0                = (0x82 << SST_PATH_ID_SHIFT),
 	SST_PATH_INDEX_CODEC_IN1                = (0x83 << SST_PATH_ID_SHIFT),
 
@@ -104,6 +100,7 @@ enum sst_path_index {
  * path IDs
  */
 enum sst_swm_inputs {
+	SST_SWM_IN_MODEM	= (SST_PATH_INDEX_MODEM_IN	  | SST_DEFAULT_CELL_NBR),
 	SST_SWM_IN_CODEC0	= (SST_PATH_INDEX_CODEC_IN0	  | SST_DEFAULT_CELL_NBR),
 	SST_SWM_IN_CODEC1	= (SST_PATH_INDEX_CODEC_IN1	  | SST_DEFAULT_CELL_NBR),
 	SST_SWM_IN_SPROT_LOOP	= (SST_PATH_INDEX_SPROT_LOOP_IN	  | SST_DEFAULT_CELL_NBR),
@@ -123,6 +120,7 @@ enum sst_swm_inputs {
  * path IDs
  */
 enum sst_swm_outputs {
+	SST_SWM_OUT_MODEM	= (SST_PATH_INDEX_MODEM_OUT	  | SST_DEFAULT_CELL_NBR),
 	SST_SWM_OUT_CODEC0	= (SST_PATH_INDEX_CODEC_OUT0	  | SST_DEFAULT_CELL_NBR),
 	SST_SWM_OUT_CODEC1	= (SST_PATH_INDEX_CODEC_OUT1	  | SST_DEFAULT_CELL_NBR),
 	SST_SWM_OUT_SPROT_LOOP	= (SST_PATH_INDEX_SPROT_LOOP_OUT  | SST_DEFAULT_CELL_NBR),
@@ -562,6 +560,8 @@ struct sst_ssp_config {
 	u8 active_slot_map;
 	u8 start_delay;
 	u16 fs_width;
+	u8 frame_sync_polarity;
+	u8 data_polarity;
 };
 
 struct sst_ssp_cfg {
@@ -695,7 +695,7 @@ struct sst_gain_mixer_control {
 	u16 module_id;
 	u16 pipe_id;
 	u16 task_id;
-	char pname[44];
+	char pname[SNDRV_CTL_ELEM_ID_NAME_MAXLEN];
 	struct snd_soc_dapm_widget *w;
 };
 
@@ -866,5 +866,10 @@ struct sst_enum {
 #define SST_SSP_MUX_CTL(xpname, xinstance, xreg, xshift, xtexts) \
 	SOC_DAPM_ENUM(SST_MUX_CTL_NAME(xpname, xinstance), \
 			  SST_SSP_MUX_ENUM(xreg, xshift, xtexts))
+
+int sst_fill_ssp_slot(struct snd_soc_dai *dai, unsigned int tx_mask,
+				unsigned int rx_mask, int slots, int slot_width);
+int sst_fill_ssp_config(struct snd_soc_dai *dai, unsigned int fmt);
+void sst_fill_ssp_defaults(struct snd_soc_dai *dai);
 
 #endif

@@ -1,4 +1,4 @@
-#include <linux/atmel_tc.h>
+// SPDX-License-Identifier: GPL-2.0-only
 #include <linux/clk.h>
 #include <linux/err.h>
 #include <linux/init.h>
@@ -10,6 +10,7 @@
 #include <linux/slab.h>
 #include <linux/export.h>
 #include <linux/of.h>
+#include <soc/at91/atmel_tcb.h>
 
 /*
  * This is a thin library to solve the problem of how to portably allocate
@@ -111,6 +112,9 @@ static int __init tc_probe(struct platform_device *pdev)
 	struct resource	*r;
 	unsigned int	i;
 
+	if (of_get_child_count(pdev->dev.of_node))
+		return -EBUSY;
+
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0)
 		return -EINVAL;
@@ -124,6 +128,10 @@ static int __init tc_probe(struct platform_device *pdev)
 	clk = devm_clk_get(&pdev->dev, "t0_clk");
 	if (IS_ERR(clk))
 		return PTR_ERR(clk);
+
+	tc->slow_clk = devm_clk_get(&pdev->dev, "slow_clk");
+	if (IS_ERR(tc->slow_clk))
+		return PTR_ERR(tc->slow_clk);
 
 	r = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	tc->regs = devm_ioremap_resource(&pdev->dev, r);

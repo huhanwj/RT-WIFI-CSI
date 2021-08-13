@@ -1,9 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/kernel.h>
 #include <linux/jump_label.h>
 #include <asm/patch.h>
 #include <asm/insn.h>
-
-#ifdef HAVE_JUMP_LABEL
 
 static void __arch_jump_label_transform(struct jump_entry *entry,
 					enum jump_label_type type,
@@ -12,7 +11,7 @@ static void __arch_jump_label_transform(struct jump_entry *entry,
 	void *addr = (void *)entry->code;
 	unsigned int insn;
 
-	if (type == JUMP_LABEL_ENABLE)
+	if (type == JUMP_LABEL_JMP)
 		insn = arm_gen_branch(entry->code, entry->target);
 	else
 		insn = arm_gen_nop();
@@ -34,5 +33,3 @@ void arch_jump_label_transform_static(struct jump_entry *entry,
 {
 	__arch_jump_label_transform(entry, type, true);
 }
-
-#endif

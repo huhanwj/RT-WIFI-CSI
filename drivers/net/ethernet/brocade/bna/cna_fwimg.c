@@ -1,14 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Linux network driver for QLogic BR-series Converged Network Adapter.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License (GPL) Version 2 as
- * published by the Free Software Foundation
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
  */
 /*
  * Copyright (c) 2005-2014 Brocade Communications Systems, Inc.
@@ -33,7 +25,7 @@ cna_read_firmware(struct pci_dev *pdev, u32 **bfi_image,
 	u32 n;
 
 	if (request_firmware(&fw, fw_name, &pdev->dev)) {
-		pr_alert("Can't locate firmware %s\n", fw_name);
+		dev_alert(&pdev->dev, "can't load firmware %s\n", fw_name);
 		goto error;
 	}
 

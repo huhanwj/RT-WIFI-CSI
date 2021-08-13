@@ -27,20 +27,6 @@
 #include <nvif/class.h>
 
 /*******************************************************************************
- * Graphics object classes
- ******************************************************************************/
-
-static struct nvkm_oclass
-gf108_gr_sclass[] = {
-	{ FERMI_TWOD_A, &nvkm_object_ofuncs },
-	{ FERMI_MEMORY_TO_MEMORY_FORMAT_A, &nvkm_object_ofuncs },
-	{ FERMI_A, &gf100_fermi_ofuncs, gf100_gr_9097_omthds },
-	{ FERMI_B, &gf100_fermi_ofuncs, gf100_gr_9097_omthds },
-	{ FERMI_COMPUTE_A, &nvkm_object_ofuncs, gf100_gr_90c0_omthds },
-	{}
-};
-
-/*******************************************************************************
  * PGRAPH register lists
  ******************************************************************************/
 
@@ -117,18 +103,48 @@ gf108_gr_pack_mmio[] = {
  * PGRAPH engine/subdev functions
  ******************************************************************************/
 
-struct nvkm_oclass *
-gf108_gr_oclass = &(struct gf100_gr_oclass) {
-	.base.handle = NV_ENGINE(GR, 0xc1),
-	.base.ofuncs = &(struct nvkm_ofuncs) {
-		.ctor = gf100_gr_ctor,
-		.dtor = gf100_gr_dtor,
-		.init = gf100_gr_init,
-		.fini = _nvkm_gr_fini,
-	},
-	.cclass = &gf108_grctx_oclass,
-	.sclass = gf108_gr_sclass,
+static void
+gf108_gr_init_r405a14(struct gf100_gr *gr)
+{
+	nvkm_wr32(gr->base.engine.subdev.device, 0x405a14, 0x80000000);
+}
+
+static const struct gf100_gr_func
+gf108_gr = {
+	.oneinit_tiles = gf100_gr_oneinit_tiles,
+	.oneinit_sm_id = gf100_gr_oneinit_sm_id,
+	.init = gf100_gr_init,
+	.init_gpc_mmu = gf100_gr_init_gpc_mmu,
+	.init_r405a14 = gf108_gr_init_r405a14,
+	.init_vsc_stream_master = gf100_gr_init_vsc_stream_master,
+	.init_zcull = gf100_gr_init_zcull,
+	.init_num_active_ltcs = gf100_gr_init_num_active_ltcs,
+	.init_fecs_exceptions = gf100_gr_init_fecs_exceptions,
+	.init_40601c = gf100_gr_init_40601c,
+	.init_419cc0 = gf100_gr_init_419cc0,
+	.init_419eb4 = gf100_gr_init_419eb4,
+	.init_tex_hww_esr = gf100_gr_init_tex_hww_esr,
+	.init_shader_exceptions = gf100_gr_init_shader_exceptions,
+	.init_400054 = gf100_gr_init_400054,
+	.trap_mp = gf100_gr_trap_mp,
 	.mmio = gf108_gr_pack_mmio,
 	.fecs.ucode = &gf100_gr_fecs_ucode,
 	.gpccs.ucode = &gf100_gr_gpccs_ucode,
-}.base;
+	.rops = gf100_gr_rops,
+	.grctx = &gf108_grctx,
+	.zbc = &gf100_gr_zbc,
+	.sclass = {
+		{ -1, -1, FERMI_TWOD_A },
+		{ -1, -1, FERMI_MEMORY_TO_MEMORY_FORMAT_A },
+		{ -1, -1, FERMI_A, &gf100_fermi },
+		{ -1, -1, FERMI_B, &gf100_fermi },
+		{ -1, -1, FERMI_COMPUTE_A },
+		{}
+	}
+};
+
+int
+gf108_gr_new(struct nvkm_device *device, int index, struct nvkm_gr **pgr)
+{
+	return gf100_gr_new_(&gf108_gr, device, index, pgr);
+}

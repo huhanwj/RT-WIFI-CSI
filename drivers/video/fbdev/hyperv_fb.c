@@ -1,18 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2012, Microsoft Corporation.
  *
  * Author:
  *   Haiyang Zhang <haiyangz@microsoft.com>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE, GOOD TITLE or
- * NON INFRINGEMENT.  See the GNU General Public License for more
- * details.
  */
 
 /*
@@ -213,7 +204,7 @@ struct synthvid_msg {
 
 struct hvfb_par {
 	struct fb_info *info;
-	struct resource mem;
+	struct resource *mem;
 	bool fb_ready; /* fb device is ready */
 	struct completion wait;
 	u32 synthvid_version;
@@ -677,26 +668,18 @@ static void hvfb_get_option(struct fb_info *info)
 
 
 /* Get framebuffer memory from Hyper-V video pci space */
-static int hvfb_getmem(struct fb_info *info)
+static int hvfb_getmem(struct hv_device *hdev, struct fb_info *info)
 {
 	struct hvfb_par *par = info->par;
 	struct pci_dev *pdev  = NULL;
 	void __iomem *fb_virt;
 	int gen2vm = efi_enabled(EFI_BOOT);
+	resource_size_t pot_start, pot_end;
 	int ret;
 
-	par->mem.name = KBUILD_MODNAME;
-	par->mem.flags = IORESOURCE_MEM | IORESOURCE_BUSY;
 	if (gen2vm) {
-		ret = allocate_resource(&hyperv_mmio, &par->mem,
-					screen_fb_size,
-					0, -1,
-					screen_fb_size,
-					NULL, NULL);
-		if (ret != 0) {
-			pr_err("Unable to allocate framebuffer memory\n");
-			return -ENODEV;
-		}
+		pot_start = 0;
+		pot_end = -1;
 	} else {
 		pdev = pci_get_device(PCI_VENDOR_ID_MICROSOFT,
 			      PCI_DEVICE_ID_HYPERV_VIDEO, NULL);
@@ -709,16 +692,18 @@ static int hvfb_getmem(struct fb_info *info)
 		    pci_resource_len(pdev, 0) < screen_fb_size)
 			goto err1;
 
-		par->mem.end = pci_resource_end(pdev, 0);
-		par->mem.start = par->mem.end - screen_fb_size + 1;
-		ret = request_resource(&pdev->resource[0], &par->mem);
-		if (ret != 0) {
-			pr_err("Unable to request framebuffer memory\n");
-			goto err1;
-		}
+		pot_end = pci_resource_end(pdev, 0);
+		pot_start = pot_end - screen_fb_size + 1;
 	}
 
-	fb_virt = ioremap(par->mem.start, screen_fb_size);
+	ret = vmbus_allocate_mmio(&par->mem, hdev, pot_start, pot_end,
+				  screen_fb_size, 0x100000, true);
+	if (ret != 0) {
+		pr_err("Unable to allocate framebuffer memory\n");
+		goto err1;
+	}
+
+	fb_virt = ioremap(par->mem->start, screen_fb_size);
 	if (!fb_virt)
 		goto err2;
 
@@ -736,7 +721,7 @@ static int hvfb_getmem(struct fb_info *info)
 		info->apertures->ranges[0].size = pci_resource_len(pdev, 0);
 	}
 
-	info->fix.smem_start = par->mem.start;
+	info->fix.smem_start = par->mem->start;
 	info->fix.smem_len = screen_fb_size;
 	info->screen_base = fb_virt;
 	info->screen_size = screen_fb_size;
@@ -749,7 +734,8 @@ static int hvfb_getmem(struct fb_info *info)
 err3:
 	iounmap(fb_virt);
 err2:
-	release_resource(&par->mem);
+	vmbus_free_mmio(par->mem->start, screen_fb_size);
+	par->mem = NULL;
 err1:
 	if (!gen2vm)
 		pci_dev_put(pdev);
@@ -763,7 +749,8 @@ static void hvfb_putmem(struct fb_info *info)
 	struct hvfb_par *par = info->par;
 
 	iounmap(info->screen_base);
-	release_resource(&par->mem);
+	vmbus_free_mmio(par->mem->start, screen_fb_size);
+	par->mem = NULL;
 }
 
 
@@ -775,10 +762,8 @@ static int hvfb_probe(struct hv_device *hdev,
 	int ret;
 
 	info = framebuffer_alloc(sizeof(struct hvfb_par), &hdev->device);
-	if (!info) {
-		pr_err("No memory for framebuffer info\n");
+	if (!info)
 		return -ENOMEM;
-	}
 
 	par = info->par;
 	par->info = info;
@@ -794,7 +779,7 @@ static int hvfb_probe(struct hv_device *hdev,
 		goto error1;
 	}
 
-	ret = hvfb_getmem(info);
+	ret = hvfb_getmem(hdev, info);
 	if (ret) {
 		pr_err("No memory for framebuffer\n");
 		goto error2;
@@ -916,6 +901,9 @@ static struct hv_driver hvfb_drv = {
 	.id_table = id_table,
 	.probe = hvfb_probe,
 	.remove = hvfb_remove,
+	.driver = {
+		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
+	},
 };
 
 static int hvfb_pci_stub_probe(struct pci_dev *pdev,
@@ -933,6 +921,9 @@ static struct pci_driver hvfb_pci_stub_driver = {
 	.id_table =	pci_stub_id_table,
 	.probe =	hvfb_pci_stub_probe,
 	.remove =	hvfb_pci_stub_remove,
+	.driver = {
+		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
+	}
 };
 
 static int __init hvfb_drv_init(void)

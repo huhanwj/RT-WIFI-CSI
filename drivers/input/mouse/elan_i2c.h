@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Elan I2C/SMBus Touchpad driver
  *
@@ -8,10 +9,6 @@
  * Based on cyapa driver:
  * copyright (c) 2011-2012 Cypress Semiconductor, Inc.
  * copyright (c) 2011-2012 Google, Inc.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation.
  *
  * Trademarks are the property of their respective owners.
  */
@@ -27,15 +24,16 @@
 #define ETP_DISABLE_POWER	0x0001
 #define ETP_PRESSURE_OFFSET	25
 
+#define ETP_CALIBRATE_MAX_LEN	3
+
 /* IAP Firmware handling */
-#define ETP_FW_NAME		"elan_i2c.bin"
+#define ETP_PRODUCT_ID_FORMAT_STRING	"%d.0"
+#define ETP_FW_NAME		"elan_i2c_" ETP_PRODUCT_ID_FORMAT_STRING ".bin"
 #define ETP_IAP_START_ADDR	0x0083
 #define ETP_FW_IAP_PAGE_ERR	(1 << 5)
 #define ETP_FW_IAP_INTF_ERR	(1 << 4)
 #define ETP_FW_PAGE_SIZE	64
-#define ETP_FW_VAILDPAGE_COUNT	768
 #define ETP_FW_SIGNATURE_SIZE	6
-#define ETP_FW_SIGNATURE_ADDRESS	0xBFFA
 
 struct i2c_client;
 struct completion;
@@ -58,9 +56,10 @@ struct elan_transport_ops {
 				 bool max_baseliune, u8 *value);
 
 	int (*get_version)(struct i2c_client *client, bool iap, u8 *version);
-	int (*get_sm_version)(struct i2c_client *client, u8 *version);
+	int (*get_sm_version)(struct i2c_client *client,
+			      u16 *ic_type, u8 *version, u8 *clickpad);
 	int (*get_checksum)(struct i2c_client *client, bool iap, u16 *csum);
-	int (*get_product_id)(struct i2c_client *client, u8 *id);
+	int (*get_product_id)(struct i2c_client *client, u16 *id);
 
 	int (*get_max)(struct i2c_client *client,
 		       unsigned int *max_x, unsigned int *max_y);
@@ -82,6 +81,7 @@ struct elan_transport_ops {
 	int (*get_report)(struct i2c_client *client, u8 *report);
 	int (*get_pressure_adjustment)(struct i2c_client *client,
 				       int *adjustment);
+	int (*get_pattern)(struct i2c_client *client, u8 *pattern);
 };
 
 extern const struct elan_transport_ops elan_smbus_ops, elan_i2c_ops;

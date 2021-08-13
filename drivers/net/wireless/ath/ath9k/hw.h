@@ -160,7 +160,6 @@
 #define AR_GPIO_OUTPUT_MUX_AS_RUCKUS_DATA        0x1e
 
 #define AR_GPIOD_MASK               0x00001FFF
-#define AR_GPIO_BIT(_gpio)          (1 << (_gpio))
 
 #define BASE_ACTIVATE_DELAY         100
 #define RTC_PLL_SETTLE_DELAY        (AR_SREV_9340(ah) ? 1000 : 100)
@@ -174,6 +173,7 @@
 #define ATH9K_NUM_QUEUES            10
 
 #define MAX_RATE_POWER              63
+#define MAX_COMBINED_POWER          254 /* 128 dBm, chosen to fit in u8 */
 #define AH_WAIT_TIMEOUT             100000 /* (us) */
 #define AH_TSF_WRITE_TIMEOUT        100    /* (us) */
 #define AH_TIME_QUANTUM             10
@@ -301,6 +301,8 @@ struct ath9k_hw_capabilities {
 	u8 max_txchains;
 	u8 max_rxchains;
 	u8 num_gpio_pins;
+	u32 gpio_mask;
+	u32 gpio_requested;
 	u8 rx_hp_qdepth;
 	u8 rx_lp_qdepth;
 	u8 rx_status_len;
@@ -332,14 +334,14 @@ enum ath9k_hw_hang_checks {
 struct ath9k_ops_config {
 	int dma_beacon_response_time;
 	int sw_beacon_response_time;
-	u32 cwm_ignore_extcca;
+	bool cwm_ignore_extcca;
 	u32 pcie_waen;
 	u8 analog_shiftreg;
 	u32 ofdm_trig_low;
 	u32 ofdm_trig_high;
 	u32 cck_trig_high;
 	u32 cck_trig_low;
-	u32 enable_paprd;
+	bool enable_paprd;
 	int serialize_regmode;
 	bool rx_intr_mitigation;
 	bool tx_intr_mitigation;
@@ -552,10 +554,7 @@ struct ath_gen_timer {
 
 struct ath_gen_timer_table {
 	struct ath_gen_timer *timers[ATH_MAX_GEN_TIMER];
-	union {
-		unsigned long timer_bits;
-		u16 val;
-	} timer_mask;
+	u16 timer_mask;
 	bool tsf2_enabled;
 };
 
@@ -756,6 +755,8 @@ struct ath_nf_limits {
 	s16 max;
 	s16 min;
 	s16 nominal;
+	s16 cal[AR5416_MAX_CHAINS];
+	s16 pwr[AR5416_MAX_CHAINS];
 };
 
 enum ath_cal_list {
@@ -805,6 +806,7 @@ struct ath_hw {
 	u32 rfkill_gpio;
 	u32 rfkill_polarity;
 	u32 ah_flags;
+	s16 nf_override;
 
 	bool reset_power_on;
 	bool htc_reset_init;
@@ -922,7 +924,7 @@ struct ath_hw {
 	struct ar5416IniArray iniCckfirJapan2484;
 	struct ar5416IniArray iniModes_9271_ANI_reg;
 	struct ar5416IniArray ini_radio_post_sys2ant;
-	struct ar5416IniArray ini_modes_rxgain_5g_xlna;
+	struct ar5416IniArray ini_modes_rxgain_xlna;
 	struct ar5416IniArray ini_modes_rxgain_bb_core;
 	struct ar5416IniArray ini_modes_rxgain_bb_postamble;
 
@@ -978,6 +980,9 @@ struct ath_hw {
 	bool tpc_enabled;
 	u8 tx_power[Ar5416RateSize];
 	u8 tx_power_stbc[Ar5416RateSize];
+	bool msi_enabled;
+	u32 msi_mask;
+	u32 msi_reg;
 };
 
 struct ath_bus_ops {
@@ -1022,12 +1027,12 @@ int ath9k_hw_fill_cap_info(struct ath_hw *ah);
 u32 ath9k_regd_get_ctl(struct ath_regulatory *reg, struct ath9k_channel *chan);
 
 /* GPIO / RFKILL / Antennae */
-void ath9k_hw_cfg_gpio_input(struct ath_hw *ah, u32 gpio);
+void ath9k_hw_gpio_request_in(struct ath_hw *ah, u32 gpio, const char *label);
+void ath9k_hw_gpio_request_out(struct ath_hw *ah, u32 gpio, const char *label,
+			       u32 ah_signal_type);
+void ath9k_hw_gpio_free(struct ath_hw *ah, u32 gpio);
 u32 ath9k_hw_gpio_get(struct ath_hw *ah, u32 gpio);
-void ath9k_hw_cfg_output(struct ath_hw *ah, u32 gpio,
-			 u32 ah_signal_type);
 void ath9k_hw_set_gpio(struct ath_hw *ah, u32 gpio, u32 val);
-void ath9k_hw_request_gpio(struct ath_hw *ah, u32 gpio, const char *label);
 void ath9k_hw_setantenna(struct ath_hw *ah, u32 antenna);
 
 /* General Operation */
@@ -1056,7 +1061,7 @@ u32 ath9k_hw_gettsf32(struct ath_hw *ah);
 u64 ath9k_hw_gettsf64(struct ath_hw *ah);
 void ath9k_hw_settsf64(struct ath_hw *ah, u64 tsf64);
 void ath9k_hw_reset_tsf(struct ath_hw *ah);
-u32 ath9k_hw_get_tsf_offset(struct timespec *last, struct timespec *cur);
+u32 ath9k_hw_get_tsf_offset(struct timespec64 *last, struct timespec64 *cur);
 void ath9k_hw_set_tsfadjust(struct ath_hw *ah, bool set);
 void ath9k_hw_init_global_settings(struct ath_hw *ah);
 u32 ar9003_get_pll_sqsum_dvc(struct ath_hw *ah);
@@ -1122,6 +1127,8 @@ bool ar9003_is_paprd_enabled(struct ath_hw *ah);
 void ar9003_hw_set_chain_masks(struct ath_hw *ah, u8 rx, u8 tx);
 void ar9003_hw_init_rate_txpower(struct ath_hw *ah, u8 *rate_array,
 				 struct ath9k_channel *chan);
+void ar5008_hw_cmn_spur_mitigate(struct ath_hw *ah,
+				 struct ath9k_channel *chan, int bin);
 void ar5008_hw_init_rate_txpower(struct ath_hw *ah, int16_t *rate_array,
 				 struct ath9k_channel *chan, int ht40_delta);
 

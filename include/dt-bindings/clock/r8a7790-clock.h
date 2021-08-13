@@ -1,10 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Copyright 2013 Ideas On Board SPRL
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
 
 #ifndef __DT_BINDINGS_CLOCK_R8A7790_H__
@@ -66,6 +62,7 @@
 #define R8A7790_CLK_IIC2		0
 #define R8A7790_CLK_TPU0		4
 #define R8A7790_CLK_MMCIF1		5
+#define R8A7790_CLK_SCIF2		10
 #define R8A7790_CLK_SDHI3		11
 #define R8A7790_CLK_SDHI2		12
 #define R8A7790_CLK_SDHI1		13
@@ -78,6 +75,10 @@
 #define R8A7790_CLK_CMT1		29
 #define R8A7790_CLK_USBDMAC0		30
 #define R8A7790_CLK_USBDMAC1		31
+
+/* MSTP4 */
+#define R8A7790_CLK_IRQC		7
+#define R8A7790_CLK_INTC_SYS		8
 
 /* MSTP5 */
 #define R8A7790_CLK_AUDIO_DMAC1		1
@@ -105,6 +106,7 @@
 #define R8A7790_CLK_VIN2		9
 #define R8A7790_CLK_VIN1		10
 #define R8A7790_CLK_VIN0		11
+#define R8A7790_CLK_ETHERAVB		12
 #define R8A7790_CLK_ETHER		13
 #define R8A7790_CLK_SATA1		14
 #define R8A7790_CLK_SATA0		15
@@ -140,6 +142,8 @@
 #define R8A7790_CLK_SCU_ALL		17
 #define R8A7790_CLK_SCU_DVC1		18
 #define R8A7790_CLK_SCU_DVC0		19
+#define R8A7790_CLK_SCU_CTU1_MIX1	20
+#define R8A7790_CLK_SCU_CTU0_MIX0	21
 #define R8A7790_CLK_SCU_SRC9		22
 #define R8A7790_CLK_SCU_SRC8		23
 #define R8A7790_CLK_SCU_SRC7		24

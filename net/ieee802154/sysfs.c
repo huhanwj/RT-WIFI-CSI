@@ -1,11 +1,5 @@
-/* This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2
- * as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+// SPDX-License-Identifier: GPL-2.0-only
+/*
  *
  * Authors:
  * Alexander Aring <aar@pengutronix.de>
@@ -14,11 +8,13 @@
  */
 
 #include <linux/device.h>
+#include <linux/rtnetlink.h>
 
 #include <net/cfg802154.h>
 
 #include "core.h"
 #include "sysfs.h"
+#include "rdev-ops.h"
 
 static inline struct cfg802154_registered_device *
 dev_to_rdev(struct device *dev)
@@ -62,10 +58,46 @@ static struct attribute *pmib_attrs[] = {
 };
 ATTRIBUTE_GROUPS(pmib);
 
+#ifdef CONFIG_PM_SLEEP
+static int wpan_phy_suspend(struct device *dev)
+{
+	struct cfg802154_registered_device *rdev = dev_to_rdev(dev);
+	int ret = 0;
+
+	if (rdev->ops->suspend) {
+		rtnl_lock();
+		ret = rdev_suspend(rdev);
+		rtnl_unlock();
+	}
+
+	return ret;
+}
+
+static int wpan_phy_resume(struct device *dev)
+{
+	struct cfg802154_registered_device *rdev = dev_to_rdev(dev);
+	int ret = 0;
+
+	if (rdev->ops->resume) {
+		rtnl_lock();
+		ret = rdev_resume(rdev);
+		rtnl_unlock();
+	}
+
+	return ret;
+}
+
+static SIMPLE_DEV_PM_OPS(wpan_phy_pm_ops, wpan_phy_suspend, wpan_phy_resume);
+#define WPAN_PHY_PM_OPS (&wpan_phy_pm_ops)
+#else
+#define WPAN_PHY_PM_OPS NULL
+#endif
+
 struct class wpan_phy_class = {
 	.name = "ieee802154",
 	.dev_release = wpan_phy_release,
 	.dev_groups = pmib_groups,
+	.pm = WPAN_PHY_PM_OPS,
 };
 
 int wpan_phy_sysfs_init(void)

@@ -1,20 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2011 Kionix, Inc.
  * Written by Chris Hudson <chudson@kionix.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
- * 02111-1307, USA
  */
 
 #include <linux/delay.h>
@@ -635,7 +622,6 @@ static int __maybe_unused kxtj9_resume(struct device *dev)
 	struct i2c_client *client = to_i2c_client(dev);
 	struct kxtj9_data *tj9 = i2c_get_clientdata(client);
 	struct input_dev *input_dev = tj9->input_dev;
-	int retval = 0;
 
 	mutex_lock(&input_dev->mutex);
 
@@ -643,7 +629,7 @@ static int __maybe_unused kxtj9_resume(struct device *dev)
 		kxtj9_enable(tj9);
 
 	mutex_unlock(&input_dev->mutex);
-	return retval;
+	return 0;
 }
 
 static SIMPLE_DEV_PM_OPS(kxtj9_pm_ops, kxtj9_suspend, kxtj9_resume);
@@ -658,7 +644,6 @@ MODULE_DEVICE_TABLE(i2c, kxtj9_id);
 static struct i2c_driver kxtj9_driver = {
 	.driver = {
 		.name	= NAME,
-		.owner	= THIS_MODULE,
 		.pm	= &kxtj9_pm_ops,
 	},
 	.probe		= kxtj9_probe,

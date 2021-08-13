@@ -1,20 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * vivid-vbi-cap.c - vbi capture support functions.
  *
  * Copyright 2014 Cisco Systems, Inc. and/or its affiliates. All rights reserved.
- *
- * This program is free software; you may redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; version 2 of the License.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
- * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
- * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
  */
 
 #include <linux/errno.h>
@@ -30,7 +18,7 @@
 static void vivid_sliced_vbi_cap_fill(struct vivid_dev *dev, unsigned seqnr)
 {
 	struct vivid_vbi_gen_data *vbi_gen = &dev->vbi_gen;
-	bool is_60hz = dev->std_cap & V4L2_STD_525_60;
+	bool is_60hz = dev->std_cap[dev->input] & V4L2_STD_525_60;
 
 	vivid_vbi_gen_sliced(vbi_gen, is_60hz, seqnr);
 
@@ -77,7 +65,7 @@ static void vivid_sliced_vbi_cap_fill(struct vivid_dev *dev, unsigned seqnr)
 
 static void vivid_g_fmt_vbi_cap(struct vivid_dev *dev, struct v4l2_vbi_format *vbi)
 {
-	bool is_60hz = dev->std_cap & V4L2_STD_525_60;
+	bool is_60hz = dev->std_cap[dev->input] & V4L2_STD_525_60;
 
 	vbi->sampling_rate = 27000000;
 	vbi->offset = 24;
@@ -94,53 +82,49 @@ static void vivid_g_fmt_vbi_cap(struct vivid_dev *dev, struct v4l2_vbi_format *v
 void vivid_raw_vbi_cap_process(struct vivid_dev *dev, struct vivid_buffer *buf)
 {
 	struct v4l2_vbi_format vbi;
-	u8 *vbuf = vb2_plane_vaddr(&buf->vb, 0);
+	u8 *vbuf = vb2_plane_vaddr(&buf->vb.vb2_buf, 0);
 
 	vivid_g_fmt_vbi_cap(dev, &vbi);
-	buf->vb.v4l2_buf.sequence = dev->vbi_cap_seq_count;
+	buf->vb.sequence = dev->vbi_cap_seq_count;
 	if (dev->field_cap == V4L2_FIELD_ALTERNATE)
-		buf->vb.v4l2_buf.sequence /= 2;
+		buf->vb.sequence /= 2;
 
-	vivid_sliced_vbi_cap_fill(dev, buf->vb.v4l2_buf.sequence);
+	vivid_sliced_vbi_cap_fill(dev, buf->vb.sequence);
 
-	memset(vbuf, 0x10, vb2_plane_size(&buf->vb, 0));
+	memset(vbuf, 0x10, vb2_plane_size(&buf->vb.vb2_buf, 0));
 
-	if (!VIVID_INVALID_SIGNAL(dev->std_signal_mode))
+	if (!VIVID_INVALID_SIGNAL(dev->std_signal_mode[dev->input]))
 		vivid_vbi_gen_raw(&dev->vbi_gen, &vbi, vbuf);
-
-	v4l2_get_timestamp(&buf->vb.v4l2_buf.timestamp);
-	buf->vb.v4l2_buf.timestamp.tv_sec += dev->time_wrap_offset;
 }
 
 
-void vivid_sliced_vbi_cap_process(struct vivid_dev *dev, struct vivid_buffer *buf)
+void vivid_sliced_vbi_cap_process(struct vivid_dev *dev,
+			struct vivid_buffer *buf)
 {
-	struct v4l2_sliced_vbi_data *vbuf = vb2_plane_vaddr(&buf->vb, 0);
+	struct v4l2_sliced_vbi_data *vbuf =
+			vb2_plane_vaddr(&buf->vb.vb2_buf, 0);
 
-	buf->vb.v4l2_buf.sequence = dev->vbi_cap_seq_count;
+	buf->vb.sequence = dev->vbi_cap_seq_count;
 	if (dev->field_cap == V4L2_FIELD_ALTERNATE)
-		buf->vb.v4l2_buf.sequence /= 2;
+		buf->vb.sequence /= 2;
 
-	vivid_sliced_vbi_cap_fill(dev, buf->vb.v4l2_buf.sequence);
+	vivid_sliced_vbi_cap_fill(dev, buf->vb.sequence);
 
-	memset(vbuf, 0, vb2_plane_size(&buf->vb, 0));
-	if (!VIVID_INVALID_SIGNAL(dev->std_signal_mode)) {
+	memset(vbuf, 0, vb2_plane_size(&buf->vb.vb2_buf, 0));
+	if (!VIVID_INVALID_SIGNAL(dev->std_signal_mode[dev->input])) {
 		unsigned i;
 
 		for (i = 0; i < 25; i++)
 			vbuf[i] = dev->vbi_gen.data[i];
 	}
-
-	v4l2_get_timestamp(&buf->vb.v4l2_buf.timestamp);
-	buf->vb.v4l2_buf.timestamp.tv_sec += dev->time_wrap_offset;
 }
 
-static int vbi_cap_queue_setup(struct vb2_queue *vq, const struct v4l2_format *fmt,
+static int vbi_cap_queue_setup(struct vb2_queue *vq,
 		       unsigned *nbuffers, unsigned *nplanes,
-		       unsigned sizes[], void *alloc_ctxs[])
+		       unsigned sizes[], struct device *alloc_devs[])
 {
 	struct vivid_dev *dev = vb2_get_drv_priv(vq);
-	bool is_60hz = dev->std_cap & V4L2_STD_525_60;
+	bool is_60hz = dev->std_cap[dev->input] & V4L2_STD_525_60;
 	unsigned size = vq->type == V4L2_BUF_TYPE_SLICED_VBI_CAPTURE ?
 		36 * sizeof(struct v4l2_sliced_vbi_data) :
 		1440 * 2 * (is_60hz ? 12 : 18);
@@ -160,7 +144,7 @@ static int vbi_cap_queue_setup(struct vb2_queue *vq, const struct v4l2_format *f
 static int vbi_cap_buf_prepare(struct vb2_buffer *vb)
 {
 	struct vivid_dev *dev = vb2_get_drv_priv(vb->vb2_queue);
-	bool is_60hz = dev->std_cap & V4L2_STD_525_60;
+	bool is_60hz = dev->std_cap[dev->input] & V4L2_STD_525_60;
 	unsigned size = vb->vb2_queue->type == V4L2_BUF_TYPE_SLICED_VBI_CAPTURE ?
 		36 * sizeof(struct v4l2_sliced_vbi_data) :
 		1440 * 2 * (is_60hz ? 12 : 18);
@@ -187,8 +171,9 @@ static int vbi_cap_buf_prepare(struct vb2_buffer *vb)
 
 static void vbi_cap_buf_queue(struct vb2_buffer *vb)
 {
+	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
 	struct vivid_dev *dev = vb2_get_drv_priv(vb->vb2_queue);
-	struct vivid_buffer *buf = container_of(vb, struct vivid_buffer, vb);
+	struct vivid_buffer *buf = container_of(vbuf, struct vivid_buffer, vb);
 
 	dprintk(dev, 1, "%s\n", __func__);
 
@@ -215,7 +200,8 @@ static int vbi_cap_start_streaming(struct vb2_queue *vq, unsigned count)
 
 		list_for_each_entry_safe(buf, tmp, &dev->vbi_cap_active, list) {
 			list_del(&buf->list);
-			vb2_buffer_done(&buf->vb, VB2_BUF_STATE_QUEUED);
+			vb2_buffer_done(&buf->vb.vb2_buf,
+					VB2_BUF_STATE_QUEUED);
 		}
 	}
 	return err;
@@ -230,12 +216,20 @@ static void vbi_cap_stop_streaming(struct vb2_queue *vq)
 	vivid_stop_generating_vid_cap(dev, &dev->vbi_cap_streaming);
 }
 
+static void vbi_cap_buf_request_complete(struct vb2_buffer *vb)
+{
+	struct vivid_dev *dev = vb2_get_drv_priv(vb->vb2_queue);
+
+	v4l2_ctrl_request_complete(vb->req_obj.req, &dev->ctrl_hdl_vbi_cap);
+}
+
 const struct vb2_ops vivid_vbi_cap_qops = {
 	.queue_setup		= vbi_cap_queue_setup,
 	.buf_prepare		= vbi_cap_buf_prepare,
 	.buf_queue		= vbi_cap_buf_queue,
 	.start_streaming	= vbi_cap_start_streaming,
 	.stop_streaming		= vbi_cap_stop_streaming,
+	.buf_request_complete	= vbi_cap_buf_request_complete,
 	.wait_prepare		= vb2_ops_wait_prepare,
 	.wait_finish		= vb2_ops_wait_finish,
 };
@@ -308,7 +302,7 @@ int vidioc_try_fmt_sliced_vbi_cap(struct file *file, void *fh, struct v4l2_forma
 {
 	struct vivid_dev *dev = video_drvdata(file);
 	struct v4l2_sliced_vbi_format *vbi = &fmt->fmt.sliced;
-	bool is_60hz = dev->std_cap & V4L2_STD_525_60;
+	bool is_60hz = dev->std_cap[dev->input] & V4L2_STD_525_60;
 	u32 service_set = vbi->service_set;
 
 	if (!vivid_is_sdtv_cap(dev) || !dev->has_sliced_vbi_cap)
@@ -343,7 +337,7 @@ int vidioc_g_sliced_vbi_cap(struct file *file, void *fh, struct v4l2_sliced_vbi_
 	bool is_60hz;
 
 	if (vdev->vfl_dir == VFL_DIR_RX) {
-		is_60hz = dev->std_cap & V4L2_STD_525_60;
+		is_60hz = dev->std_cap[dev->input] & V4L2_STD_525_60;
 		if (!vivid_is_sdtv_cap(dev) || !dev->has_sliced_vbi_cap ||
 		    cap->type != V4L2_BUF_TYPE_SLICED_VBI_CAPTURE)
 			return -EINVAL;

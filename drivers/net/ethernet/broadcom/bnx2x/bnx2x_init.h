@@ -1,7 +1,9 @@
-/* bnx2x_init.h: Broadcom Everest network driver.
+/* bnx2x_init.h: Qlogic Everest network driver.
  *               Structures and macroes needed during the initialization.
  *
  * Copyright (c) 2007-2013 Broadcom Corporation
+ * Copyright (c) 2014 QLogic Corporation
+ All rights reserved
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -447,7 +449,7 @@ static inline void bnx2x_init_fw_wrr(const struct cmng_init_input *input_data,
 				ccd[cos] =
 				    (u32)input_data->cos_min_rate[cos] * 100 *
 				    (T_FAIR_COEF / (8 * 100 * cosWeightSum));
-				 if (ccd[cos] < pdata->fair_vars.fair_threshold
+				if (ccd[cos] < pdata->fair_vars.fair_threshold
 						+ MIN_ABOVE_THRESH) {
 					ccd[cos] =
 					    pdata->fair_vars.fair_threshold +

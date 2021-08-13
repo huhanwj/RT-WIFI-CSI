@@ -1,13 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Device Tree defines for Arizona devices
  *
  * Copyright 2015 Cirrus Logic Inc.
  *
  * Author: Charles Keepax <ckeepax@opensource.wolfsonmicro.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #ifndef _DT_BINDINGS_MFD_ARIZONA_H
@@ -89,5 +86,30 @@
 #define ARIZONA_INMODE_DIFF 0
 #define ARIZONA_INMODE_SE   1
 #define ARIZONA_INMODE_DMIC 2
+
+#define ARIZONA_MICD_TIME_CONTINUOUS                 0
+#define ARIZONA_MICD_TIME_250US                      1
+#define ARIZONA_MICD_TIME_500US                      2
+#define ARIZONA_MICD_TIME_1MS                        3
+#define ARIZONA_MICD_TIME_2MS                        4
+#define ARIZONA_MICD_TIME_4MS                        5
+#define ARIZONA_MICD_TIME_8MS                        6
+#define ARIZONA_MICD_TIME_16MS                       7
+#define ARIZONA_MICD_TIME_32MS                       8
+#define ARIZONA_MICD_TIME_64MS                       9
+#define ARIZONA_MICD_TIME_128MS                      10
+#define ARIZONA_MICD_TIME_256MS                      11
+#define ARIZONA_MICD_TIME_512MS                      12
+
+#define ARIZONA_ACCDET_MODE_MIC 0
+#define ARIZONA_ACCDET_MODE_HPL 1
+#define ARIZONA_ACCDET_MODE_HPR 2
+#define ARIZONA_ACCDET_MODE_HPM 4
+#define ARIZONA_ACCDET_MODE_ADC 7
+
+#define ARIZONA_GPSW_OPEN           0
+#define ARIZONA_GPSW_CLOSED         1
+#define ARIZONA_GPSW_CLAMP_ENABLED  2
+#define ARIZONA_GPSW_CLAMP_DISABLED 3
 
 #endif

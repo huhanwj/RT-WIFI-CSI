@@ -1,11 +1,5 @@
-/* This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2
- * as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+// SPDX-License-Identifier: GPL-2.0-only
+/*
  *
  * Authors:
  * Alexander Aring <aar@pengutronix.de>
@@ -14,6 +8,7 @@
  */
 
 #include "ieee802154_i.h"
+#include "driver-ops.h"
 
 /* privid for wpan_phys to determine whether they belong to us or not */
 const void *const mac802154_wpan_phy_privid = &mac802154_wpan_phy_privid;
@@ -79,17 +74,23 @@ void ieee802154_xmit_complete(struct ieee802154_hw *hw, struct sk_buff *skb,
 
 		if (skb->len > max_sifs_size)
 			hrtimer_start(&local->ifs_timer,
-				      ktime_set(0, hw->phy->lifs_period * NSEC_PER_USEC),
+				      hw->phy->lifs_period * NSEC_PER_USEC,
 				      HRTIMER_MODE_REL);
 		else
 			hrtimer_start(&local->ifs_timer,
-				      ktime_set(0, hw->phy->sifs_period * NSEC_PER_USEC),
+				      hw->phy->sifs_period * NSEC_PER_USEC,
 				      HRTIMER_MODE_REL);
-
-		consume_skb(skb);
 	} else {
 		ieee802154_wake_queue(hw);
-		consume_skb(skb);
 	}
+
+	dev_consume_skb_any(skb);
 }
 EXPORT_SYMBOL(ieee802154_xmit_complete);
+
+void ieee802154_stop_device(struct ieee802154_local *local)
+{
+	flush_workqueue(local->workqueue);
+	hrtimer_cancel(&local->ifs_timer);
+	drv_stop(local);
+}

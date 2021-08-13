@@ -1,16 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2, as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  * Copyright Novell Inc 2010
  *
@@ -352,7 +341,7 @@ static inline u32 inst_get_field(u32 inst, int msb, int lsb)
 	return kvmppc_get_field(inst, msb + 32, lsb + 32);
 }
 
-bool kvmppc_inst_is_paired_single(struct kvm_vcpu *vcpu, u32 inst)
+static bool kvmppc_inst_is_paired_single(struct kvm_vcpu *vcpu, u32 inst)
 {
 	if (!(vcpu->arch.hflags & BOOK3S_HFLAG_PAIRED_SINGLE))
 		return false;
@@ -1265,6 +1254,7 @@ int kvmppc_emulate_paired_single(struct kvm_run *run, struct kvm_vcpu *vcpu)
 	if (rcomp)
 		kvmppc_set_cr(vcpu, cr);
 
+	disable_kernel_fp();
 	preempt_enable();
 
 	return emulated;

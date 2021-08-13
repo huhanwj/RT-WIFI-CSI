@@ -1,9 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _WD719X_H_
 #define _WD719X_H_
 
 #define WD719X_SG 255		/* Scatter/gather size */
-#define WD719X_CMD_PER_LUN 1	/* We should be able to do linked commands, but
-				 * this is 1 for now to be safe. */
 
 struct wd719x_sglist {
 	__le32 ptr;
@@ -75,7 +74,6 @@ struct wd719x {
 	void *hash_virt;	/* hash table CPU address */
 	dma_addr_t hash_phys;	/* hash table bus address */
 	struct list_head active_scbs;
-	struct list_head free_scbs;
 };
 
 /* timeout delays in microsecs */

@@ -1,10 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2008-2009 Patrick McHardy <kaber@trash.net>
  * Copyright (c) 2013 Eric Leblond <eric@regit.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  *
  * Development of this code funded by Astaro AG (http://www.astaro.com/)
  */
@@ -24,15 +21,14 @@ static void nft_reject_ipv6_eval(const struct nft_expr *expr,
 				 const struct nft_pktinfo *pkt)
 {
 	struct nft_reject *priv = nft_expr_priv(expr);
-	struct net *net = dev_net((pkt->in != NULL) ? pkt->in : pkt->out);
 
 	switch (priv->type) {
 	case NFT_REJECT_ICMP_UNREACH:
-		nf_send_unreach6(net, pkt->skb, priv->icmp_code,
-				 pkt->ops->hooknum);
+		nf_send_unreach6(nft_net(pkt), pkt->skb, priv->icmp_code,
+				 nft_hook(pkt));
 		break;
 	case NFT_REJECT_TCP_RST:
-		nf_send_reset6(net, pkt->skb, pkt->ops->hooknum);
+		nf_send_reset6(nft_net(pkt), pkt->skb, nft_hook(pkt));
 		break;
 	default:
 		break;
@@ -48,6 +44,7 @@ static const struct nft_expr_ops nft_reject_ipv6_ops = {
 	.eval		= nft_reject_ipv6_eval,
 	.init		= nft_reject_init,
 	.dump		= nft_reject_dump,
+	.validate	= nft_reject_validate,
 };
 
 static struct nft_expr_type nft_reject_ipv6_type __read_mostly = {

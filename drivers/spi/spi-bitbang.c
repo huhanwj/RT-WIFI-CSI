@@ -1,15 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * polling/bitbanging SPI master controller driver utilities
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #include <linux/spinlock.h>
@@ -23,6 +14,8 @@
 
 #include <linux/spi/spi.h>
 #include <linux/spi/spi_bitbang.h>
+
+#define SPI_BITBANG_CS_DELAY	100
 
 
 /*----------------------------------------------------------------------*/
@@ -47,22 +40,26 @@
 struct spi_bitbang_cs {
 	unsigned	nsecs;	/* (clock cycle time)/2 */
 	u32		(*txrx_word)(struct spi_device *spi, unsigned nsecs,
-					u32 word, u8 bits);
+					u32 word, u8 bits, unsigned flags);
 	unsigned	(*txrx_bufs)(struct spi_device *,
 					u32 (*txrx_word)(
 						struct spi_device *spi,
 						unsigned nsecs,
-						u32 word, u8 bits),
-					unsigned, struct spi_transfer *);
+						u32 word, u8 bits,
+						unsigned flags),
+					unsigned, struct spi_transfer *,
+					unsigned);
 };
 
 static unsigned bitbang_txrx_8(
 	struct spi_device	*spi,
 	u32			(*txrx_word)(struct spi_device *spi,
 					unsigned nsecs,
-					u32 word, u8 bits),
+					u32 word, u8 bits,
+					unsigned flags),
 	unsigned		ns,
-	struct spi_transfer	*t
+	struct spi_transfer	*t,
+	unsigned flags
 ) {
 	unsigned		bits = t->bits_per_word;
 	unsigned		count = t->len;
@@ -74,7 +71,7 @@ static unsigned bitbang_txrx_8(
 
 		if (tx)
 			word = *tx++;
-		word = txrx_word(spi, ns, word, bits);
+		word = txrx_word(spi, ns, word, bits, flags);
 		if (rx)
 			*rx++ = word;
 		count -= 1;
@@ -86,9 +83,11 @@ static unsigned bitbang_txrx_16(
 	struct spi_device	*spi,
 	u32			(*txrx_word)(struct spi_device *spi,
 					unsigned nsecs,
-					u32 word, u8 bits),
+					u32 word, u8 bits,
+					unsigned flags),
 	unsigned		ns,
-	struct spi_transfer	*t
+	struct spi_transfer	*t,
+	unsigned flags
 ) {
 	unsigned		bits = t->bits_per_word;
 	unsigned		count = t->len;
@@ -100,7 +99,7 @@ static unsigned bitbang_txrx_16(
 
 		if (tx)
 			word = *tx++;
-		word = txrx_word(spi, ns, word, bits);
+		word = txrx_word(spi, ns, word, bits, flags);
 		if (rx)
 			*rx++ = word;
 		count -= 2;
@@ -112,9 +111,11 @@ static unsigned bitbang_txrx_32(
 	struct spi_device	*spi,
 	u32			(*txrx_word)(struct spi_device *spi,
 					unsigned nsecs,
-					u32 word, u8 bits),
+					u32 word, u8 bits,
+					unsigned flags),
 	unsigned		ns,
-	struct spi_transfer	*t
+	struct spi_transfer	*t,
+	unsigned flags
 ) {
 	unsigned		bits = t->bits_per_word;
 	unsigned		count = t->len;
@@ -126,7 +127,7 @@ static unsigned bitbang_txrx_32(
 
 		if (tx)
 			word = *tx++;
-		word = txrx_word(spi, ns, word, bits);
+		word = txrx_word(spi, ns, word, bits, flags);
 		if (rx)
 			*rx++ = word;
 		count -= 4;
@@ -180,7 +181,6 @@ int spi_bitbang_setup(struct spi_device *spi)
 {
 	struct spi_bitbang_cs	*cs = spi->controller_state;
 	struct spi_bitbang	*bitbang;
-	unsigned long		flags;
 
 	bitbang = spi_master_get_devdata(spi->master);
 
@@ -204,19 +204,6 @@ int spi_bitbang_setup(struct spi_device *spi)
 
 	dev_dbg(&spi->dev, "%s, %u nsec/bit\n", __func__, 2 * cs->nsecs);
 
-	/* NOTE we _need_ to call chipselect() early, ideally with adapter
-	 * setup, unless the hardware defaults cooperate to avoid confusion
-	 * between normal (active low) and inverted chipselects.
-	 */
-
-	/* deselect chip (low or high) */
-	spin_lock_irqsave(&bitbang->lock, flags);
-	if (!bitbang->busy) {
-		bitbang->chipselect(spi, BITBANG_CS_INACTIVE);
-		ndelay(cs->nsecs);
-	}
-	spin_unlock_irqrestore(&bitbang->lock, flags);
-
 	return 0;
 }
 EXPORT_SYMBOL_GPL(spi_bitbang_setup);
@@ -234,8 +221,24 @@ static int spi_bitbang_bufs(struct spi_device *spi, struct spi_transfer *t)
 {
 	struct spi_bitbang_cs	*cs = spi->controller_state;
 	unsigned		nsecs = cs->nsecs;
+	struct spi_bitbang	*bitbang;
 
-	return cs->txrx_bufs(spi, cs->txrx_word, nsecs, t);
+	bitbang = spi_master_get_devdata(spi->master);
+	if (bitbang->set_line_direction) {
+		int err;
+
+		err = bitbang->set_line_direction(spi, !!(t->tx_buf));
+		if (err < 0)
+			return err;
+	}
+
+	if (spi->mode & SPI_3WIRE) {
+		unsigned flags;
+
+		flags = t->tx_buf ? SPI_MASTER_NO_RX : SPI_MASTER_NO_TX;
+		return cs->txrx_bufs(spi, cs->txrx_word, nsecs, t, flags);
+	}
+	return cs->txrx_bufs(spi, cs->txrx_word, nsecs, t, 0);
 }
 
 /*----------------------------------------------------------------------*/
@@ -255,122 +258,39 @@ static int spi_bitbang_bufs(struct spi_device *spi, struct spi_transfer *t)
 static int spi_bitbang_prepare_hardware(struct spi_master *spi)
 {
 	struct spi_bitbang	*bitbang;
-	unsigned long		flags;
 
 	bitbang = spi_master_get_devdata(spi);
 
-	spin_lock_irqsave(&bitbang->lock, flags);
+	mutex_lock(&bitbang->lock);
 	bitbang->busy = 1;
-	spin_unlock_irqrestore(&bitbang->lock, flags);
+	mutex_unlock(&bitbang->lock);
 
 	return 0;
 }
 
 static int spi_bitbang_transfer_one(struct spi_master *master,
-				    struct spi_message *m)
+				    struct spi_device *spi,
+				    struct spi_transfer *transfer)
 {
-	struct spi_bitbang	*bitbang;
-	unsigned		nsecs;
-	struct spi_transfer	*t = NULL;
-	unsigned		cs_change;
-	int			status;
-	int			do_setup = -1;
-	struct spi_device	*spi = m->spi;
+	struct spi_bitbang *bitbang = spi_master_get_devdata(master);
+	int status = 0;
 
-	bitbang = spi_master_get_devdata(master);
+	if (bitbang->setup_transfer) {
+		status = bitbang->setup_transfer(spi, transfer);
+		if (status < 0)
+			goto out;
+	}
 
-	/* FIXME this is made-up ... the correct value is known to
-	 * word-at-a-time bitbang code, and presumably chipselect()
-	 * should enforce these requirements too?
-	 */
-	nsecs = 100;
+	if (transfer->len)
+		status = bitbang->txrx_bufs(spi, transfer);
 
-	cs_change = 1;
-	status = 0;
-
-	list_for_each_entry(t, &m->transfers, transfer_list) {
-
-		/* override speed or wordsize? */
-		if (t->speed_hz || t->bits_per_word)
-			do_setup = 1;
-
-		/* init (-1) or override (1) transfer params */
-		if (do_setup != 0) {
-			if (bitbang->setup_transfer) {
-				status = bitbang->setup_transfer(spi, t);
-				if (status < 0)
-					break;
-			}
-			if (do_setup == -1)
-				do_setup = 0;
-		}
-
-		/* set up default clock polarity, and activate chip;
-		 * this implicitly updates clock and spi modes as
-		 * previously recorded for this device via setup().
-		 * (and also deselects any other chip that might be
-		 * selected ...)
-		 */
-		if (cs_change) {
-			bitbang->chipselect(spi, BITBANG_CS_ACTIVE);
-			ndelay(nsecs);
-		}
-		cs_change = t->cs_change;
-		if (!t->tx_buf && !t->rx_buf && t->len) {
-			status = -EINVAL;
-			break;
-		}
-
-		/* transfer data.  the lower level code handles any
-		 * new dma mappings it needs. our caller always gave
-		 * us dma-safe buffers.
-		 */
-		if (t->len) {
-			/* REVISIT dma API still needs a designated
-			 * DMA_ADDR_INVALID; ~0 might be better.
-			 */
-			if (!m->is_dma_mapped)
-				t->rx_dma = t->tx_dma = 0;
-			status = bitbang->txrx_bufs(spi, t);
-		}
-		if (status > 0)
-			m->actual_length += status;
-		if (status != t->len) {
-			/* always report some kind of error */
-			if (status >= 0)
-				status = -EREMOTEIO;
-			break;
-		}
+	if (status == transfer->len)
 		status = 0;
+	else if (status >= 0)
+		status = -EREMOTEIO;
 
-		/* protocol tweaks before next transfer */
-		if (t->delay_usecs)
-			udelay(t->delay_usecs);
-
-		if (cs_change &&
-		    !list_is_last(&t->transfer_list, &m->transfers)) {
-			/* sometimes a short mid-message deselect of the chip
-			 * may be needed to terminate a mode or command
-			 */
-			ndelay(nsecs);
-			bitbang->chipselect(spi, BITBANG_CS_INACTIVE);
-			ndelay(nsecs);
-		}
-	}
-
-	m->status = status;
-
-	/* normally deactivate chipselect ... unless no error and
-	 * cs_change has hinted that the next message will probably
-	 * be for this chip too.
-	 */
-	if (!(status == 0 && cs_change)) {
-		ndelay(nsecs);
-		bitbang->chipselect(spi, BITBANG_CS_INACTIVE);
-		ndelay(nsecs);
-	}
-
-	spi_finalize_current_message(master);
+out:
+	spi_finalize_current_transfer(master);
 
 	return status;
 }
@@ -378,18 +298,69 @@ static int spi_bitbang_transfer_one(struct spi_master *master,
 static int spi_bitbang_unprepare_hardware(struct spi_master *spi)
 {
 	struct spi_bitbang	*bitbang;
-	unsigned long		flags;
 
 	bitbang = spi_master_get_devdata(spi);
 
-	spin_lock_irqsave(&bitbang->lock, flags);
+	mutex_lock(&bitbang->lock);
 	bitbang->busy = 0;
-	spin_unlock_irqrestore(&bitbang->lock, flags);
+	mutex_unlock(&bitbang->lock);
 
 	return 0;
 }
 
+static void spi_bitbang_set_cs(struct spi_device *spi, bool enable)
+{
+	struct spi_bitbang *bitbang = spi_master_get_devdata(spi->master);
+
+	/* SPI core provides CS high / low, but bitbang driver
+	 * expects CS active
+	 * spi device driver takes care of handling SPI_CS_HIGH
+	 */
+	enable = (!!(spi->mode & SPI_CS_HIGH) == enable);
+
+	ndelay(SPI_BITBANG_CS_DELAY);
+	bitbang->chipselect(spi, enable ? BITBANG_CS_ACTIVE :
+			    BITBANG_CS_INACTIVE);
+	ndelay(SPI_BITBANG_CS_DELAY);
+}
+
 /*----------------------------------------------------------------------*/
+
+int spi_bitbang_init(struct spi_bitbang *bitbang)
+{
+	struct spi_master *master = bitbang->master;
+
+	if (!master || !bitbang->chipselect)
+		return -EINVAL;
+
+	mutex_init(&bitbang->lock);
+
+	if (!master->mode_bits)
+		master->mode_bits = SPI_CPOL | SPI_CPHA | bitbang->flags;
+
+	if (master->transfer || master->transfer_one_message)
+		return -EINVAL;
+
+	master->prepare_transfer_hardware = spi_bitbang_prepare_hardware;
+	master->unprepare_transfer_hardware = spi_bitbang_unprepare_hardware;
+	master->transfer_one = spi_bitbang_transfer_one;
+	master->set_cs = spi_bitbang_set_cs;
+
+	if (!bitbang->txrx_bufs) {
+		bitbang->use_dma = 0;
+		bitbang->txrx_bufs = spi_bitbang_bufs;
+		if (!master->setup) {
+			if (!bitbang->setup_transfer)
+				bitbang->setup_transfer =
+					 spi_bitbang_setup_transfer;
+			master->setup = spi_bitbang_setup;
+			master->cleanup = spi_bitbang_cleanup;
+		}
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(spi_bitbang_init);
 
 /**
  * spi_bitbang_start - start up a polled/bitbanging SPI master driver
@@ -424,32 +395,9 @@ int spi_bitbang_start(struct spi_bitbang *bitbang)
 	struct spi_master *master = bitbang->master;
 	int ret;
 
-	if (!master || !bitbang->chipselect)
-		return -EINVAL;
-
-	spin_lock_init(&bitbang->lock);
-
-	if (!master->mode_bits)
-		master->mode_bits = SPI_CPOL | SPI_CPHA | bitbang->flags;
-
-	if (master->transfer || master->transfer_one_message)
-		return -EINVAL;
-
-	master->prepare_transfer_hardware = spi_bitbang_prepare_hardware;
-	master->unprepare_transfer_hardware = spi_bitbang_unprepare_hardware;
-	master->transfer_one_message = spi_bitbang_transfer_one;
-
-	if (!bitbang->txrx_bufs) {
-		bitbang->use_dma = 0;
-		bitbang->txrx_bufs = spi_bitbang_bufs;
-		if (!master->setup) {
-			if (!bitbang->setup_transfer)
-				bitbang->setup_transfer =
-					 spi_bitbang_setup_transfer;
-			master->setup = spi_bitbang_setup;
-			master->cleanup = spi_bitbang_cleanup;
-		}
-	}
+	ret = spi_bitbang_init(bitbang);
+	if (ret)
+		return ret;
 
 	/* driver may get busy before register() returns, especially
 	 * if someone registered boardinfo for devices
@@ -458,7 +406,7 @@ int spi_bitbang_start(struct spi_bitbang *bitbang)
 	if (ret)
 		spi_master_put(master);
 
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL_GPL(spi_bitbang_start);
 

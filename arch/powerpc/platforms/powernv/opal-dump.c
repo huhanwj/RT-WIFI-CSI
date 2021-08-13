@@ -1,12 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * PowerNV OPAL Dump Interface
  *
  * Copyright 2013,2014 IBM Corp.
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version
- * 2 of the License, or (at your option) any later version.
  */
 
 #include <linux/kobject.h>
@@ -15,6 +11,7 @@
 #include <linux/vmalloc.h>
 #include <linux/pagemap.h>
 #include <linux/delay.h>
+#include <linux/interrupt.h>
 
 #include <asm/opal.h>
 
@@ -60,7 +57,7 @@ static ssize_t dump_type_show(struct dump_obj *dump_obj,
 			      struct dump_attribute *attr,
 			      char *buf)
 {
-	
+
 	return sprintf(buf, "0x%x %s\n", dump_obj->type,
 		       dump_type_to_string(dump_obj->type));
 }
@@ -102,9 +99,9 @@ static ssize_t dump_ack_store(struct dump_obj *dump_obj,
  * due to the dynamic size of the dump
  */
 static struct dump_attribute id_attribute =
-	__ATTR(id, S_IRUGO, dump_id_show, NULL);
+	__ATTR(id, 0444, dump_id_show, NULL);
 static struct dump_attribute type_attribute =
-	__ATTR(type, S_IRUGO, dump_type_show, NULL);
+	__ATTR(type, 0444, dump_type_show, NULL);
 static struct dump_attribute ack_attribute =
 	__ATTR(acknowledge, 0660, dump_ack_show, dump_ack_store);
 
@@ -224,13 +221,16 @@ static int64_t dump_read_info(uint32_t *dump_id, uint32_t *dump_size, uint32_t *
 	if (rc == OPAL_PARAMETER)
 		rc = opal_dump_info(&id, &size);
 
+	if (rc) {
+		pr_warn("%s: Failed to get dump info (%d)\n",
+			__func__, rc);
+		return rc;
+	}
+
 	*dump_id = be32_to_cpu(id);
 	*dump_size = be32_to_cpu(size);
 	*dump_type = be32_to_cpu(type);
 
-	if (rc)
-		pr_warn("%s: Failed to get dump info (%d)\n",
-			__func__, rc);
 	return rc;
 }
 
@@ -363,16 +363,16 @@ static struct dump_obj *create_dump_obj(uint32_t id, size_t size,
 	return dump;
 }
 
-static int process_dump(void)
+static irqreturn_t process_dump(int irq, void *data)
 {
 	int rc;
 	uint32_t dump_id, dump_size, dump_type;
-	struct dump_obj *dump;
 	char name[22];
+	struct kobject *kobj;
 
 	rc = dump_read_info(&dump_id, &dump_size, &dump_type);
 	if (rc != OPAL_SUCCESS)
-		return rc;
+		return IRQ_HANDLED;
 
 	sprintf(name, "0x%x-0x%x", dump_type, dump_id);
 
@@ -380,52 +380,22 @@ static int process_dump(void)
 	 * that gracefully and not create two conflicting
 	 * entries.
 	 */
-	if (kset_find_obj(dump_kset, name))
-		return 0;
+	kobj = kset_find_obj(dump_kset, name);
+	if (kobj) {
+		/* Drop reference added by kset_find_obj() */
+		kobject_put(kobj);
+		return IRQ_HANDLED;
+	}
 
-	dump = create_dump_obj(dump_id, dump_size, dump_type);
-	if (!dump)
-		return -1;
+	create_dump_obj(dump_id, dump_size, dump_type);
 
-	return 0;
+	return IRQ_HANDLED;
 }
-
-static void dump_work_fn(struct work_struct *work)
-{
-	process_dump();
-}
-
-static DECLARE_WORK(dump_work, dump_work_fn);
-
-static void schedule_process_dump(void)
-{
-	schedule_work(&dump_work);
-}
-
-/*
- * New dump available notification
- *
- * Once we get notification, we add sysfs entries for it.
- * We only fetch the dump on demand, and create sysfs asynchronously.
- */
-static int dump_event(struct notifier_block *nb,
-		      unsigned long events, void *change)
-{
-	if (events & OPAL_EVENT_DUMP_AVAIL)
-		schedule_process_dump();
-
-	return 0;
-}
-
-static struct notifier_block dump_nb = {
-	.notifier_call  = dump_event,
-	.next           = NULL,
-	.priority       = 0
-};
 
 void __init opal_platform_dump_init(void)
 {
 	int rc;
+	int dump_irq;
 
 	/* ELOG not supported by firmware */
 	if (!opal_check_token(OPAL_DUMP_READ))
@@ -445,10 +415,19 @@ void __init opal_platform_dump_init(void)
 		return;
 	}
 
-	rc = opal_notifier_register(&dump_nb);
+	dump_irq = opal_event_request(ilog2(OPAL_EVENT_DUMP_AVAIL));
+	if (!dump_irq) {
+		pr_err("%s: Can't register OPAL event irq (%d)\n",
+		       __func__, dump_irq);
+		return;
+	}
+
+	rc = request_threaded_irq(dump_irq, NULL, process_dump,
+				IRQF_TRIGGER_HIGH | IRQF_ONESHOT,
+				"opal-dump", NULL);
 	if (rc) {
-		pr_warn("%s: Can't register OPAL event notifier (%d)\n",
-			__func__, rc);
+		pr_err("%s: Can't request OPAL event irq (%d)\n",
+		       __func__, rc);
 		return;
 	}
 

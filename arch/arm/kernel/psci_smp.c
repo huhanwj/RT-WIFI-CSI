@@ -1,12 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  *
  * Copyright (C) 2012 ARM Limited
  *
@@ -17,6 +10,8 @@
 #include <linux/smp.h>
 #include <linux/of.h>
 #include <linux/delay.h>
+#include <linux/psci.h>
+
 #include <uapi/linux/psci.h>
 
 #include <asm/psci.h>
@@ -51,25 +46,37 @@ static int psci_boot_secondary(unsigned int cpu, struct task_struct *idle)
 {
 	if (psci_ops.cpu_on)
 		return psci_ops.cpu_on(cpu_logical_map(cpu),
-				       __pa(secondary_startup));
+					virt_to_idmap(&secondary_startup));
 	return -ENODEV;
 }
 
 #ifdef CONFIG_HOTPLUG_CPU
-void __ref psci_cpu_die(unsigned int cpu)
+int psci_cpu_disable(unsigned int cpu)
 {
-       const struct psci_power_state ps = {
-               .type = PSCI_POWER_STATE_TYPE_POWER_DOWN,
-       };
+	/* Fail early if we don't have CPU_OFF support */
+	if (!psci_ops.cpu_off)
+		return -EOPNOTSUPP;
 
-       if (psci_ops.cpu_off)
-               psci_ops.cpu_off(ps);
+	/* Trusted OS will deny CPU_OFF */
+	if (psci_tos_resident_on(cpu))
+		return -EPERM;
 
-       /* We should never return */
-       panic("psci: cpu %d failed to shutdown\n", cpu);
+	return 0;
 }
 
-int __ref psci_cpu_kill(unsigned int cpu)
+void psci_cpu_die(unsigned int cpu)
+{
+	u32 state = PSCI_POWER_STATE_TYPE_POWER_DOWN <<
+		    PSCI_0_2_POWER_STATE_TYPE_SHIFT;
+
+	if (psci_ops.cpu_off)
+		psci_ops.cpu_off(state);
+
+	/* We should never return */
+	panic("psci: cpu %d failed to shutdown\n", cpu);
+}
+
+int psci_cpu_kill(unsigned int cpu)
 {
 	int err, i;
 
@@ -106,9 +113,10 @@ bool __init psci_smp_available(void)
 	return (psci_ops.cpu_on != NULL);
 }
 
-struct smp_operations __initdata psci_smp_ops = {
+const struct smp_operations psci_smp_ops __initconst = {
 	.smp_boot_secondary	= psci_boot_secondary,
 #ifdef CONFIG_HOTPLUG_CPU
+	.cpu_disable		= psci_cpu_disable,
 	.cpu_die		= psci_cpu_die,
 	.cpu_kill		= psci_cpu_kill,
 #endif

@@ -1,12 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Generic GPIO beeper driver
  *
  * Copyright (C) 2013-2014 Alexander Shiyan <shc_work@mail.ru>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
 
 #include <linux/input.h>
@@ -66,13 +62,12 @@ static int gpio_beeper_probe(struct platform_device *pdev)
 {
 	struct gpio_beeper *beep;
 	struct input_dev *input;
-	int err;
 
 	beep = devm_kzalloc(&pdev->dev, sizeof(*beep), GFP_KERNEL);
 	if (!beep)
 		return -ENOMEM;
 
-	beep->desc = devm_gpiod_get(&pdev->dev, NULL);
+	beep->desc = devm_gpiod_get(&pdev->dev, NULL, GPIOD_OUT_LOW);
 	if (IS_ERR(beep->desc))
 		return PTR_ERR(beep->desc);
 
@@ -91,10 +86,6 @@ static int gpio_beeper_probe(struct platform_device *pdev)
 	input->event		= gpio_beeper_event;
 
 	input_set_capability(input, EV_SND, SND_BELL);
-
-	err = gpiod_direction_output(beep->desc, 0);
-	if (err)
-		return err;
 
 	input_set_drvdata(input, beep);
 

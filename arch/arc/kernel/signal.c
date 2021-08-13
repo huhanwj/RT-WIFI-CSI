@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Signal Handling for ARC
  *
  * Copyright (C) 2004, 2007-2010, 2011-2012 Synopsys, Inc. (www.synopsys.com)
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  *
  * vineetg: Jan 2010 (Restarting of timer related syscalls)
  *
@@ -34,7 +31,7 @@
  *  -ViXS were still seeing crashes when using insmod to load drivers.
  *   It turned out that the code to change Execute permssions for TLB entries
  *   of user was not guarded for interrupts (mod_tlb_permission)
- *   This was cauing TLB entries to be overwritten on unrelated indexes
+ *   This was causing TLB entries to be overwritten on unrelated indexes
  *
  * Vineetg: July 15th 2008: Bug #94183
  *  -Exception happens in Delay slot of a JMP, and before user space resumes,
@@ -53,6 +50,8 @@
 #include <linux/uaccess.h>
 #include <linux/syscalls.h>
 #include <linux/tracehook.h>
+#include <linux/sched/task_stack.h>
+
 #include <asm/ucontext.h>
 
 struct rt_sigframe {
@@ -67,7 +66,33 @@ stash_usr_regs(struct rt_sigframe __user *sf, struct pt_regs *regs,
 	       sigset_t *set)
 {
 	int err;
-	err = __copy_to_user(&(sf->uc.uc_mcontext.regs.scratch), regs,
+	struct user_regs_struct uregs;
+
+	uregs.scratch.bta	= regs->bta;
+	uregs.scratch.lp_start	= regs->lp_start;
+	uregs.scratch.lp_end	= regs->lp_end;
+	uregs.scratch.lp_count	= regs->lp_count;
+	uregs.scratch.status32	= regs->status32;
+	uregs.scratch.ret	= regs->ret;
+	uregs.scratch.blink	= regs->blink;
+	uregs.scratch.fp	= regs->fp;
+	uregs.scratch.gp	= regs->r26;
+	uregs.scratch.r12	= regs->r12;
+	uregs.scratch.r11	= regs->r11;
+	uregs.scratch.r10	= regs->r10;
+	uregs.scratch.r9	= regs->r9;
+	uregs.scratch.r8	= regs->r8;
+	uregs.scratch.r7	= regs->r7;
+	uregs.scratch.r6	= regs->r6;
+	uregs.scratch.r5	= regs->r5;
+	uregs.scratch.r4	= regs->r4;
+	uregs.scratch.r3	= regs->r3;
+	uregs.scratch.r2	= regs->r2;
+	uregs.scratch.r1	= regs->r1;
+	uregs.scratch.r0	= regs->r0;
+	uregs.scratch.sp	= regs->sp;
+
+	err = __copy_to_user(&(sf->uc.uc_mcontext.regs.scratch), &uregs.scratch,
 			     sizeof(sf->uc.uc_mcontext.regs.scratch));
 	err |= __copy_to_user(&sf->uc.uc_sigmask, set, sizeof(sigset_t));
 
@@ -78,15 +103,41 @@ static int restore_usr_regs(struct pt_regs *regs, struct rt_sigframe __user *sf)
 {
 	sigset_t set;
 	int err;
+	struct user_regs_struct uregs;
 
 	err = __copy_from_user(&set, &sf->uc.uc_sigmask, sizeof(set));
-	if (!err)
-		set_current_blocked(&set);
-
-	err |= __copy_from_user(regs, &(sf->uc.uc_mcontext.regs.scratch),
+	err |= __copy_from_user(&uregs.scratch,
+				&(sf->uc.uc_mcontext.regs.scratch),
 				sizeof(sf->uc.uc_mcontext.regs.scratch));
+	if (err)
+		return err;
 
-	return err;
+	set_current_blocked(&set);
+	regs->bta	= uregs.scratch.bta;
+	regs->lp_start	= uregs.scratch.lp_start;
+	regs->lp_end	= uregs.scratch.lp_end;
+	regs->lp_count	= uregs.scratch.lp_count;
+	regs->status32	= uregs.scratch.status32;
+	regs->ret	= uregs.scratch.ret;
+	regs->blink	= uregs.scratch.blink;
+	regs->fp	= uregs.scratch.fp;
+	regs->r26	= uregs.scratch.gp;
+	regs->r12	= uregs.scratch.r12;
+	regs->r11	= uregs.scratch.r11;
+	regs->r10	= uregs.scratch.r10;
+	regs->r9	= uregs.scratch.r9;
+	regs->r8	= uregs.scratch.r8;
+	regs->r7	= uregs.scratch.r7;
+	regs->r6	= uregs.scratch.r6;
+	regs->r5	= uregs.scratch.r5;
+	regs->r4	= uregs.scratch.r4;
+	regs->r3	= uregs.scratch.r3;
+	regs->r2	= uregs.scratch.r2;
+	regs->r1	= uregs.scratch.r1;
+	regs->r0	= uregs.scratch.r0;
+	regs->sp	= uregs.scratch.sp;
+
+	return 0;
 }
 
 static inline int is_do_ss_needed(unsigned int magic)
@@ -115,7 +166,7 @@ SYSCALL_DEFINE0(rt_sigreturn)
 
 	sf = (struct rt_sigframe __force __user *)(regs->sp);
 
-	if (!access_ok(VERIFY_READ, sf, sizeof(*sf)))
+	if (!access_ok(sf, sizeof(*sf)))
 		goto badframe;
 
 	if (__get_user(magic, &sf->sigret_magic))
@@ -143,7 +194,7 @@ SYSCALL_DEFINE0(rt_sigreturn)
 	return regs->r0;
 
 badframe:
-	force_sig(SIGSEGV, current);
+	force_sig(SIGSEGV);
 	return 0;
 }
 
@@ -165,7 +216,7 @@ static inline void __user *get_sigframe(struct ksignal *ksig,
 	frame = (void __user *)((sp - framesize) & ~7);
 
 	/* Check that we can actually write to the signal frame */
-	if (!access_ok(VERIFY_WRITE, frame, framesize))
+	if (!access_ok(frame, framesize))
 		frame = NULL;
 
 	return frame;
@@ -284,7 +335,7 @@ static void arc_restart_syscall(struct k_sigaction *ka, struct pt_regs *regs)
 		 * their orig user space value when we ret from kernel
 		 */
 		regs->r0 = regs->orig_r0;
-		regs->ret -= 4;
+		regs->ret -= is_isa_arcv2() ? 2 : 4;
 		break;
 	}
 }
@@ -325,10 +376,10 @@ void do_signal(struct pt_regs *regs)
 		if (regs->r0 == -ERESTARTNOHAND ||
 		    regs->r0 == -ERESTARTSYS || regs->r0 == -ERESTARTNOINTR) {
 			regs->r0 = regs->orig_r0;
-			regs->ret -= 4;
+			regs->ret -= is_isa_arcv2() ? 2 : 4;
 		} else if (regs->r0 == -ERESTART_RESTARTBLOCK) {
 			regs->r8 = __NR_restart_syscall;
-			regs->ret -= 4;
+			regs->ret -= is_isa_arcv2() ? 2 : 4;
 		}
 		syscall_wont_restart(regs);	/* No more restarts */
 	}

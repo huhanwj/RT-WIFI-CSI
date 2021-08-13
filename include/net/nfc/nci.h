@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  The NFC Controller Interface is the communication protocol between an
  *  NFC Controller (NFCC) and a Device Host (DH).
@@ -10,19 +11,6 @@
  *  Acknowledgements:
  *  This file is based on hci.h, which was written
  *  by Maxim Krasnyansky.
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 2
- *  as published by the Free Software Foundation
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, see <http://www.gnu.org/licenses/>.
- *
  */
 
 #ifndef __NCI_H
@@ -35,6 +23,8 @@
 #define NCI_MAX_NUM_RF_CONFIGS					10
 #define NCI_MAX_NUM_CONN					10
 #define NCI_MAX_PARAM_LEN					251
+#define NCI_MAX_PAYLOAD_SIZE					255
+#define NCI_MAX_PACKET_SIZE					258
 
 /* NCI Status Codes */
 #define NCI_STATUS_OK						0x00
@@ -314,6 +304,8 @@ struct nci_nfcee_mode_set_cmd {
 	__u8	nfcee_mode;
 } __packed;
 
+#define NCI_OP_CORE_GET_CONFIG_CMD	nci_opcode_pack(NCI_GID_CORE, 0x03)
+
 /* ----------------------- */
 /* ---- NCI Responses ---- */
 /* ----------------------- */
@@ -374,6 +366,9 @@ struct nci_nfcee_discover_rsp {
 } __packed;
 
 #define NCI_OP_NFCEE_MODE_SET_RSP nci_opcode_pack(NCI_GID_NFCEE_MGMT, 0x01)
+
+#define NCI_OP_CORE_GET_CONFIG_RSP	nci_opcode_pack(NCI_GID_CORE, 0x03)
+
 /* --------------------------- */
 /* ---- NCI Notifications ---- */
 /* --------------------------- */
@@ -526,5 +521,7 @@ struct nci_nfcee_discover_ntf {
 	struct nci_nfcee_supported_protocol supported_protocols;
 	struct nci_nfcee_information_tlv	information_tlv;
 } __packed;
+
+#define NCI_OP_CORE_RESET_NTF		nci_opcode_pack(NCI_GID_CORE, 0x00)
 
 #endif /* __NCI_H */

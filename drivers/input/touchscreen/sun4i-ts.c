@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Allwinner sunxi resistive touchscreen controller driver
  *
@@ -5,16 +6,6 @@
  *
  * The hwmon parts are based on work by Corentin LABBE which is:
  * Copyright (C) 2013 Corentin LABBE <clabbe.montjoie@gmail.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 /*
@@ -31,7 +22,7 @@
  * in the kernel). So this driver offers straight forward, reliable single
  * touch functionality only.
  *
- * s.a. A20 User Manual "1.15 TP" (Documentation/arm/sunxi/README)
+ * s.a. A20 User Manual "1.15 TP" (Documentation/arm/sunxi.rst)
  * (looks like the description in the A20 User Manual v1.3 is better
  * than the one in the A10 User Manual v.1.5)
  */
@@ -115,7 +106,6 @@
 struct sun4i_ts_data {
 	struct device *dev;
 	struct input_dev *input;
-	struct thermal_zone_device *tz;
 	void __iomem *base;
 	unsigned int irq;
 	bool ignore_fifo_data;
@@ -191,7 +181,7 @@ static void sun4i_ts_close(struct input_dev *dev)
 	writel(TEMP_IRQ_EN(1), ts->base + TP_INT_FIFOC);
 }
 
-static int sun4i_get_temp(const struct sun4i_ts_data *ts, long *temp)
+static int sun4i_get_temp(const struct sun4i_ts_data *ts, int *temp)
 {
 	/* No temp_data until the first irq */
 	if (ts->temp_data == -1)
@@ -202,12 +192,12 @@ static int sun4i_get_temp(const struct sun4i_ts_data *ts, long *temp)
 	return 0;
 }
 
-static int sun4i_get_tz_temp(void *data, long *temp)
+static int sun4i_get_tz_temp(void *data, int *temp)
 {
 	return sun4i_get_temp(data, temp);
 }
 
-static struct thermal_zone_of_device_ops sun4i_ts_tz_ops = {
+static const struct thermal_zone_of_device_ops sun4i_ts_tz_ops = {
 	.get_temp = sun4i_get_tz_temp,
 };
 
@@ -215,14 +205,14 @@ static ssize_t show_temp(struct device *dev, struct device_attribute *devattr,
 			 char *buf)
 {
 	struct sun4i_ts_data *ts = dev_get_drvdata(dev);
-	long temp;
+	int temp;
 	int error;
 
 	error = sun4i_get_temp(ts, &temp);
 	if (error)
 		return error;
 
-	return sprintf(buf, "%ld\n", temp);
+	return sprintf(buf, "%d\n", temp);
 }
 
 static ssize_t show_temp_label(struct device *dev,
@@ -310,8 +300,7 @@ static int sun4i_ts_probe(struct platform_device *pdev)
 		input_set_drvdata(ts->input, ts);
 	}
 
-	ts->base = devm_ioremap_resource(dev,
-			      platform_get_resource(pdev, IORESOURCE_MEM, 0));
+	ts->base = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(ts->base))
 		return PTR_ERR(ts->base);
 
@@ -366,10 +355,7 @@ static int sun4i_ts_probe(struct platform_device *pdev)
 	if (IS_ERR(hwmon))
 		return PTR_ERR(hwmon);
 
-	ts->tz = thermal_zone_of_sensor_register(ts->dev, 0, ts,
-						 &sun4i_ts_tz_ops);
-	if (IS_ERR(ts->tz))
-		ts->tz = NULL;
+	devm_thermal_zone_of_sensor_register(ts->dev, 0, ts, &sun4i_ts_tz_ops);
 
 	writel(TEMP_IRQ_EN(1), ts->base + TP_INT_FIFOC);
 
@@ -377,7 +363,6 @@ static int sun4i_ts_probe(struct platform_device *pdev)
 		error = input_register_device(ts->input);
 		if (error) {
 			writel(0, ts->base + TP_INT_FIFOC);
-			thermal_zone_of_sensor_unregister(ts->dev, ts->tz);
 			return error;
 		}
 	}
@@ -393,8 +378,6 @@ static int sun4i_ts_remove(struct platform_device *pdev)
 	/* Explicit unregister to avoid open/close changing the imask later */
 	if (ts->input)
 		input_unregister_device(ts->input);
-
-	thermal_zone_of_sensor_unregister(ts->dev, ts->tz);
 
 	/* Deactivate all IRQs */
 	writel(0, ts->base + TP_INT_FIFOC);

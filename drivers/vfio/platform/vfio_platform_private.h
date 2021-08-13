@@ -1,15 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (C) 2013 - Virtual Open Systems
  * Author: Antonios Motakis <a.motakis@virtualopensystems.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2, as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #ifndef VFIO_PLATFORM_PRIVATE_H
@@ -56,6 +48,11 @@ struct vfio_platform_device {
 	u32				num_irqs;
 	int				refcnt;
 	struct mutex			igate;
+	struct module			*parent_module;
+	const char			*compat;
+	const char			*acpihid;
+	struct module			*reset_module;
+	struct device			*device;
 
 	/*
 	 * These fields should be filled by the bus specific binder
@@ -67,6 +64,18 @@ struct vfio_platform_device {
 	struct resource*
 		(*get_resource)(struct vfio_platform_device *vdev, int i);
 	int	(*get_irq)(struct vfio_platform_device *vdev, int i);
+	int	(*of_reset)(struct vfio_platform_device *vdev);
+
+	bool				reset_required;
+};
+
+typedef int (*vfio_platform_reset_fn_t)(struct vfio_platform_device *vdev);
+
+struct vfio_platform_reset_node {
+	struct list_head link;
+	char *compat;
+	struct module *owner;
+	vfio_platform_reset_fn_t of_reset;
 };
 
 extern int vfio_platform_probe_common(struct vfio_platform_device *vdev,
@@ -81,5 +90,30 @@ extern int vfio_platform_set_irqs_ioctl(struct vfio_platform_device *vdev,
 					uint32_t flags, unsigned index,
 					unsigned start, unsigned count,
 					void *data);
+
+extern void __vfio_platform_register_reset(struct vfio_platform_reset_node *n);
+extern void vfio_platform_unregister_reset(const char *compat,
+					   vfio_platform_reset_fn_t fn);
+#define vfio_platform_register_reset(__compat, __reset)		\
+static struct vfio_platform_reset_node __reset ## _node = {	\
+	.owner = THIS_MODULE,					\
+	.compat = __compat,					\
+	.of_reset = __reset,					\
+};								\
+__vfio_platform_register_reset(&__reset ## _node)
+
+#define module_vfio_reset_handler(compat, reset)		\
+MODULE_ALIAS("vfio-reset:" compat);				\
+static int __init reset ## _module_init(void)			\
+{								\
+	vfio_platform_register_reset(compat, reset);		\
+	return 0;						\
+};								\
+static void __exit reset ## _module_exit(void)			\
+{								\
+	vfio_platform_unregister_reset(compat, reset);		\
+};								\
+module_init(reset ## _module_init);				\
+module_exit(reset ## _module_exit)
 
 #endif /* VFIO_PLATFORM_PRIVATE_H */

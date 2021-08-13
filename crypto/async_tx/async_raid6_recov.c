@@ -1,24 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Asynchronous RAID-6 recovery calculations ASYNC_TX API.
  * Copyright(c) 2009 Intel Corporation
  *
  * based on raid6recov.c:
  *   Copyright 2002 H. Peter Anvin
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by the Free
- * Software Foundation; either version 2 of the License, or (at your option)
- * any later version.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc., 51
- * Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
- *
  */
 #include <linux/kernel.h>
 #include <linux/interrupt.h>
@@ -41,7 +27,7 @@ async_sum_product(struct page *dest, struct page **srcs, unsigned char *coef,
 	u8 *a, *b, *c;
 
 	if (dma)
-		unmap = dmaengine_get_unmap_data(dma->dev, 3, GFP_NOIO);
+		unmap = dmaengine_get_unmap_data(dma->dev, 3, GFP_NOWAIT);
 
 	if (unmap) {
 		struct device *dev = dma->dev;
@@ -105,7 +91,7 @@ async_mult(struct page *dest, struct page *src, u8 coef, size_t len,
 	u8 *d, *s;
 
 	if (dma)
-		unmap = dmaengine_get_unmap_data(dma->dev, 3, GFP_NOIO);
+		unmap = dmaengine_get_unmap_data(dma->dev, 3, GFP_NOWAIT);
 
 	if (unmap) {
 		dma_addr_t dma_dest[2];

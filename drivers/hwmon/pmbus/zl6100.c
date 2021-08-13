@@ -1,24 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Hardware monitoring driver for ZL6100 and compatibles
  *
  * Copyright (c) 2011 Ericsson AB.
  * Copyright (c) 2012 Guenter Roeck
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
+#include <linux/bitops.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/init.h>
@@ -44,16 +32,16 @@ struct zl6100_data {
 #define ZL6100_MFR_CONFIG		0xd0
 #define ZL6100_DEVICE_ID		0xe4
 
-#define ZL6100_MFR_XTEMP_ENABLE		(1 << 7)
+#define ZL6100_MFR_XTEMP_ENABLE		BIT(7)
 
 #define MFR_VMON_OV_FAULT_LIMIT		0xf5
 #define MFR_VMON_UV_FAULT_LIMIT		0xf6
 #define MFR_READ_VMON			0xf7
 
-#define VMON_UV_WARNING			(1 << 5)
-#define VMON_OV_WARNING			(1 << 4)
-#define VMON_UV_FAULT			(1 << 1)
-#define VMON_OV_FAULT			(1 << 0)
+#define VMON_UV_WARNING			BIT(5)
+#define VMON_OV_WARNING			BIT(4)
+#define VMON_UV_FAULT			BIT(1)
+#define VMON_OV_FAULT			BIT(0)
 
 #define ZL6100_WAIT_TIME		1000	/* uS	*/
 

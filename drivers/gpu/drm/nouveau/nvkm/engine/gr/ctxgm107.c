@@ -744,12 +744,17 @@ gm107_grctx_init_gpc_unk_2[] = {
 };
 
 static const struct gf100_gr_pack
-gm107_grctx_pack_gpc[] = {
+gm107_grctx_pack_gpc_0[] = {
 	{ gm107_grctx_init_gpc_unk_0 },
 	{ gk208_grctx_init_prop_0 },
 	{ gm107_grctx_init_gpc_unk_1 },
 	{ gm107_grctx_init_setup_0 },
 	{ gf100_grctx_init_zcull_0 },
+	{}
+};
+
+static const struct gf100_gr_pack
+gm107_grctx_pack_gpc_1[] = {
 	{ gk208_grctx_init_crstr_0 },
 	{ gk104_grctx_init_gpm_0 },
 	{ gm107_grctx_init_gpc_unk_2 },
@@ -860,30 +865,38 @@ gm107_grctx_pack_ppc[] = {
  * PGRAPH context implementation
  ******************************************************************************/
 
+static void
+gm107_grctx_generate_r419e00(struct gf100_gr *gr)
+{
+	struct nvkm_device *device = gr->base.engine.subdev.device;
+	nvkm_mask(device, 0x419e00, 0x00808080, 0x00808080);
+	nvkm_mask(device, 0x419ccc, 0x80000000, 0x80000000);
+	nvkm_mask(device, 0x419f80, 0x80000000, 0x80000000);
+	nvkm_mask(device, 0x419f88, 0x80000000, 0x80000000);
+}
+
 void
 gm107_grctx_generate_bundle(struct gf100_grctx *info)
 {
-	const struct gf100_grctx_oclass *impl = gf100_grctx_impl(info->priv);
-	const u32 state_limit = min(impl->bundle_min_gpm_fifo_depth,
-				    impl->bundle_size / 0x20);
-	const u32 token_limit = impl->bundle_token_limit;
-	const u32 access = NV_MEM_ACCESS_RW | NV_MEM_ACCESS_SYS;
+	const struct gf100_grctx_func *grctx = info->gr->func->grctx;
+	const u32 state_limit = min(grctx->bundle_min_gpm_fifo_depth,
+				    grctx->bundle_size / 0x20);
+	const u32 token_limit = grctx->bundle_token_limit;
 	const int s = 8;
-	const int b = mmio_vram(info, impl->bundle_size, (1 << s), access);
+	const int b = mmio_vram(info, grctx->bundle_size, (1 << s), true);
 	mmio_refn(info, 0x408004, 0x00000000, s, b);
-	mmio_wr32(info, 0x408008, 0x80000000 | (impl->bundle_size >> s));
+	mmio_wr32(info, 0x408008, 0x80000000 | (grctx->bundle_size >> s));
 	mmio_refn(info, 0x418e24, 0x00000000, s, b);
-	mmio_wr32(info, 0x418e28, 0x80000000 | (impl->bundle_size >> s));
+	mmio_wr32(info, 0x418e28, 0x80000000 | (grctx->bundle_size >> s));
 	mmio_wr32(info, 0x4064c8, (state_limit << 16) | token_limit);
 }
 
 void
 gm107_grctx_generate_pagepool(struct gf100_grctx *info)
 {
-	const struct gf100_grctx_oclass *impl = gf100_grctx_impl(info->priv);
-	const u32 access = NV_MEM_ACCESS_RW | NV_MEM_ACCESS_SYS;
+	const struct gf100_grctx_func *grctx = info->gr->func->grctx;
 	const int s = 8;
-	const int b = mmio_vram(info, impl->pagepool_size, (1 << s), access);
+	const int b = mmio_vram(info, grctx->pagepool_size, (1 << s), true);
 	mmio_refn(info, 0x40800c, 0x00000000, s, b);
 	mmio_wr32(info, 0x408010, 0x80000000);
 	mmio_refn(info, 0x419004, 0x00000000, s, b);
@@ -895,17 +908,16 @@ gm107_grctx_generate_pagepool(struct gf100_grctx *info)
 void
 gm107_grctx_generate_attrib(struct gf100_grctx *info)
 {
-	struct gf100_gr_priv *priv = info->priv;
-	const struct gf100_grctx_oclass *impl = (void *)gf100_grctx_impl(priv);
-	const u32  alpha = impl->alpha_nr;
-	const u32 attrib = impl->attrib_nr;
-	const u32   size = 0x20 * (impl->attrib_nr_max + impl->alpha_nr_max);
-	const u32 access = NV_MEM_ACCESS_RW;
+	struct gf100_gr *gr = info->gr;
+	const struct gf100_grctx_func *grctx = gr->func->grctx;
+	const u32  alpha = grctx->alpha_nr;
+	const u32 attrib = grctx->attrib_nr;
+	const u32   size = 0x20 * (grctx->attrib_nr_max + grctx->alpha_nr_max);
 	const int s = 12;
-	const int b = mmio_vram(info, size * priv->tpc_total, (1 << s), access);
+	const int b = mmio_vram(info, size * gr->tpc_total, (1 << s), false);
 	const int max_batches = 0xffff;
 	u32 bo = 0;
-	u32 ao = bo + impl->attrib_nr_max * priv->tpc_total;
+	u32 ao = bo + grctx->attrib_nr_max * gr->tpc_total;
 	int gpc, ppc, n = 0;
 
 	mmio_refn(info, 0x418810, 0x80000000, s, b);
@@ -914,101 +926,47 @@ gm107_grctx_generate_attrib(struct gf100_grctx *info)
 	mmio_wr32(info, 0x405830, (attrib << 16) | alpha);
 	mmio_wr32(info, 0x4064c4, ((alpha / 4) << 16) | max_batches);
 
-	for (gpc = 0; gpc < priv->gpc_nr; gpc++) {
-		for (ppc = 0; ppc < priv->ppc_nr[gpc]; ppc++, n++) {
-			const u32 as =  alpha * priv->ppc_tpc_nr[gpc][ppc];
-			const u32 bs = attrib * priv->ppc_tpc_nr[gpc][ppc];
+	for (gpc = 0; gpc < gr->gpc_nr; gpc++) {
+		for (ppc = 0; ppc < gr->ppc_nr[gpc]; ppc++, n++) {
+			const u32 as =  alpha * gr->ppc_tpc_nr[gpc][ppc];
+			const u32 bs = attrib * gr->ppc_tpc_nr[gpc][ppc];
 			const u32 u = 0x418ea0 + (n * 0x04);
 			const u32 o = PPC_UNIT(gpc, ppc, 0);
+			if (!(gr->ppc_mask[gpc] & (1 << ppc)))
+				continue;
 			mmio_wr32(info, o + 0xc0, bs);
 			mmio_wr32(info, o + 0xf4, bo);
-			bo += impl->attrib_nr_max * priv->ppc_tpc_nr[gpc][ppc];
+			bo += grctx->attrib_nr_max * gr->ppc_tpc_nr[gpc][ppc];
 			mmio_wr32(info, o + 0xe4, as);
 			mmio_wr32(info, o + 0xf8, ao);
-			ao += impl->alpha_nr_max * priv->ppc_tpc_nr[gpc][ppc];
-			mmio_wr32(info, u, ((bs / 3 /*XXX*/) << 16) | bs);
+			ao += grctx->alpha_nr_max * gr->ppc_tpc_nr[gpc][ppc];
+			mmio_wr32(info, u, ((bs / 3) << 16) | bs);
 		}
 	}
 }
 
 static void
-gm107_grctx_generate_tpcid(struct gf100_gr_priv *priv)
+gm107_grctx_generate_r406500(struct gf100_gr *gr)
 {
-	int gpc, tpc, id;
-
-	for (tpc = 0, id = 0; tpc < 4; tpc++) {
-		for (gpc = 0; gpc < priv->gpc_nr; gpc++) {
-			if (tpc < priv->tpc_nr[gpc]) {
-				nv_wr32(priv, TPC_UNIT(gpc, tpc, 0x698), id);
-				nv_wr32(priv, GPC_UNIT(gpc, 0x0c10 + tpc * 4), id);
-				nv_wr32(priv, TPC_UNIT(gpc, tpc, 0x088), id);
-				id++;
-			}
-
-			nv_wr32(priv, GPC_UNIT(gpc, 0x0c08), priv->tpc_nr[gpc]);
-			nv_wr32(priv, GPC_UNIT(gpc, 0x0c8c), priv->tpc_nr[gpc]);
-		}
-	}
+	nvkm_wr32(gr->base.engine.subdev.device, 0x406500, 0x00000001);
 }
 
-static void
-gm107_grctx_generate_main(struct gf100_gr_priv *priv, struct gf100_grctx *info)
+void
+gm107_grctx_generate_sm_id(struct gf100_gr *gr, int gpc, int tpc, int sm)
 {
-	struct gf100_grctx_oclass *oclass = (void *)nv_engine(priv)->cclass;
-	int i;
-
-	gf100_gr_mmio(priv, oclass->hub);
-	gf100_gr_mmio(priv, oclass->gpc);
-	gf100_gr_mmio(priv, oclass->zcull);
-	gf100_gr_mmio(priv, oclass->tpc);
-	gf100_gr_mmio(priv, oclass->ppc);
-
-	nv_wr32(priv, 0x404154, 0x00000000);
-
-	oclass->bundle(info);
-	oclass->pagepool(info);
-	oclass->attrib(info);
-	oclass->unkn(priv);
-
-	gm107_grctx_generate_tpcid(priv);
-	gf100_grctx_generate_r406028(priv);
-	gk104_grctx_generate_r418bb8(priv);
-	gf100_grctx_generate_r406800(priv);
-
-	nv_wr32(priv, 0x4064d0, 0x00000001);
-	for (i = 1; i < 8; i++)
-		nv_wr32(priv, 0x4064d0 + (i * 0x04), 0x00000000);
-	nv_wr32(priv, 0x406500, 0x00000001);
-
-	nv_wr32(priv, 0x405b00, (priv->tpc_total << 8) | priv->gpc_nr);
-
-	gk104_grctx_generate_rop_active_fbps(priv);
-
-	gf100_gr_icmd(priv, oclass->icmd);
-	nv_wr32(priv, 0x404154, 0x00000400);
-	gf100_gr_mthd(priv, oclass->mthd);
-
-	nv_mask(priv, 0x419e00, 0x00808080, 0x00808080);
-	nv_mask(priv, 0x419ccc, 0x80000000, 0x80000000);
-	nv_mask(priv, 0x419f80, 0x80000000, 0x80000000);
-	nv_mask(priv, 0x419f88, 0x80000000, 0x80000000);
+	struct nvkm_device *device = gr->base.engine.subdev.device;
+	nvkm_wr32(device, TPC_UNIT(gpc, tpc, 0x698), sm);
+	nvkm_wr32(device, GPC_UNIT(gpc, 0x0c10 + tpc * 4), sm);
+	nvkm_wr32(device, TPC_UNIT(gpc, tpc, 0x088), sm);
 }
 
-struct nvkm_oclass *
-gm107_grctx_oclass = &(struct gf100_grctx_oclass) {
-	.base.handle = NV_ENGCTX(GR, 0x08),
-	.base.ofuncs = &(struct nvkm_ofuncs) {
-		.ctor = gf100_gr_context_ctor,
-		.dtor = gf100_gr_context_dtor,
-		.init = _nvkm_gr_context_init,
-		.fini = _nvkm_gr_context_fini,
-		.rd32 = _nvkm_gr_context_rd32,
-		.wr32 = _nvkm_gr_context_wr32,
-	},
-	.main  = gm107_grctx_generate_main,
+const struct gf100_grctx_func
+gm107_grctx = {
+	.main  = gf100_grctx_generate_main,
 	.unkn  = gk104_grctx_generate_unkn,
 	.hub   = gm107_grctx_pack_hub,
-	.gpc   = gm107_grctx_pack_gpc,
+	.gpc_0 = gm107_grctx_pack_gpc_0,
+	.gpc_1 = gm107_grctx_pack_gpc_1,
 	.zcull = gf100_grctx_pack_zcull,
 	.tpc   = gm107_grctx_pack_tpc,
 	.ppc   = gm107_grctx_pack_ppc,
@@ -1025,4 +983,12 @@ gm107_grctx_oclass = &(struct gf100_grctx_oclass) {
 	.attrib_nr = 0xaa0,
 	.alpha_nr_max = 0x1800,
 	.alpha_nr = 0x1000,
-}.base;
+	.sm_id = gm107_grctx_generate_sm_id,
+	.tpc_nr = gf100_grctx_generate_tpc_nr,
+	.rop_mapping = gf117_grctx_generate_rop_mapping,
+	.alpha_beta_tables = gk104_grctx_generate_alpha_beta_tables,
+	.dist_skip_table = gf117_grctx_generate_dist_skip_table,
+	.r406500 = gm107_grctx_generate_r406500,
+	.gpc_tpc_nr = gk104_grctx_generate_gpc_tpc_nr,
+	.r419e00 = gm107_grctx_generate_r419e00,
+};

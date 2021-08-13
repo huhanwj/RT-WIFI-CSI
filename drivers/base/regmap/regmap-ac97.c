@@ -1,20 +1,8 @@
-/*
- * Register map access API - AC'97 support
- *
- * Copyright 2013 Linaro Ltd.  All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
+// SPDX-License-Identifier: GPL-2.0
+//
+// Register map access API - AC'97 support
+//
+// Copyright 2013 Linaro Ltd.  All rights reserved.
 
 #include <linux/clk.h>
 #include <linux/err.h>
@@ -78,37 +66,24 @@ static const struct regmap_bus ac97_regmap_bus = {
 	.reg_read = regmap_ac97_reg_read,
 };
 
-/**
- * regmap_init_ac97(): Initialise AC'97 register map
- *
- * @ac97: Device that will be interacted with
- * @config: Configuration for register map
- *
- * The return value will be an ERR_PTR() on error or a valid pointer to
- * a struct regmap.
- */
-struct regmap *regmap_init_ac97(struct snd_ac97 *ac97,
-				const struct regmap_config *config)
+struct regmap *__regmap_init_ac97(struct snd_ac97 *ac97,
+				  const struct regmap_config *config,
+				  struct lock_class_key *lock_key,
+				  const char *lock_name)
 {
-	return regmap_init(&ac97->dev, &ac97_regmap_bus, ac97, config);
+	return __regmap_init(&ac97->dev, &ac97_regmap_bus, ac97, config,
+			     lock_key, lock_name);
 }
-EXPORT_SYMBOL_GPL(regmap_init_ac97);
+EXPORT_SYMBOL_GPL(__regmap_init_ac97);
 
-/**
- * devm_regmap_init_ac97(): Initialise AC'97 register map
- *
- * @ac97: Device that will be interacted with
- * @config: Configuration for register map
- *
- * The return value will be an ERR_PTR() on error or a valid pointer
- * to a struct regmap.  The regmap will be automatically freed by the
- * device management code.
- */
-struct regmap *devm_regmap_init_ac97(struct snd_ac97 *ac97,
-				     const struct regmap_config *config)
+struct regmap *__devm_regmap_init_ac97(struct snd_ac97 *ac97,
+				       const struct regmap_config *config,
+				       struct lock_class_key *lock_key,
+				       const char *lock_name)
 {
-	return devm_regmap_init(&ac97->dev, &ac97_regmap_bus, ac97, config);
+	return __devm_regmap_init(&ac97->dev, &ac97_regmap_bus, ac97, config,
+				  lock_key, lock_name);
 }
-EXPORT_SYMBOL_GPL(devm_regmap_init_ac97);
+EXPORT_SYMBOL_GPL(__devm_regmap_init_ac97);
 
 MODULE_LICENSE("GPL v2");

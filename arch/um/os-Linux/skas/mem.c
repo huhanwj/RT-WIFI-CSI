@@ -1,6 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 2002 - 2007 Jeff Dike (jdike@{addtoit,linux.intel}.com)
- * Licensed under the GPL
  */
 
 #include <stddef.h>
@@ -18,7 +18,7 @@
 #include <sysdep/ptrace.h>
 #include <sysdep/stub.h>
 
-extern unsigned long batch_syscall_stub, __syscall_stub_start;
+extern char batch_syscall_stub[], __syscall_stub_start[];
 
 extern void wait_stub_done(int pid);
 
@@ -38,8 +38,8 @@ static int __init init_syscall_regs(void)
 {
 	get_safe_registers(syscall_regs, NULL);
 	syscall_regs[REGS_IP_INDEX] = STUB_CODE +
-		((unsigned long) &batch_syscall_stub -
-		 (unsigned long) &__syscall_stub_start);
+		((unsigned long) batch_syscall_stub -
+		 (unsigned long) __syscall_stub_start);
 	return 0;
 }
 

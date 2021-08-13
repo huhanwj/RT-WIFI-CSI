@@ -1,17 +1,9 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /* ------------------------------------------------------------------------ *
  * i2c-parport.h I2C bus over parallel port                                 *
  * ------------------------------------------------------------------------ *
    Copyright (C) 2003-2010 Jean Delvare <jdelvare@suse.de>
 
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
-
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
  * ------------------------------------------------------------------------ */
 
 #define PORT_DATA	0
@@ -89,6 +81,13 @@ static const struct adapter_parm adapter_parm[] = {
 		.getsda	= { 0x80, PORT_STAT, 1 },
 		.init	= { 0x04, PORT_DATA, 1 },
 	},
+	/* type 8: VCT-jig */
+	{
+		.setsda	= { 0x04, PORT_DATA, 1 },
+		.setscl	= { 0x01, PORT_DATA, 1 },
+		.getsda	= { 0x40, PORT_STAT, 0 },
+		.getscl	= { 0x80, PORT_STAT, 1 },
+	},
 };
 
 static int type = -1;
@@ -103,4 +102,5 @@ MODULE_PARM_DESC(type,
 	" 5 = ADM1025, ADM1030 and ADM1031 evaluation boards\n"
 	" 6 = Barco LPT->DVI (K5800236) adapter\n"
 	" 7 = One For All JP1 parallel port adapter\n"
+	" 8 = VCT-jig\n"
 );

@@ -1,35 +1,28 @@
-/*
- * imx-ssi.c  --  ALSA Soc Audio Layer
- *
- * Copyright 2009 Sascha Hauer <s.hauer@pengutronix.de>
- *
- * This code is based on code copyrighted by Freescale,
- * Liam Girdwood, Javier Martin and probably others.
- *
- *  This program is free software; you can redistribute  it and/or modify it
- *  under  the terms of  the GNU General  Public License as published by the
- *  Free Software Foundation;  either version 2 of the  License, or (at your
- *  option) any later version.
- *
- *
- * The i.MX SSI core has some nasty limitations in AC97 mode. While most
- * sane processor vendors have a FIFO per AC97 slot, the i.MX has only
- * one FIFO which combines all valid receive slots. We cannot even select
- * which slots we want to receive. The WM9712 with which this driver
- * was developed with always sends GPIO status data in slot 12 which
- * we receive in our (PCM-) data stream. The only chance we have is to
- * manually skip this data in the FIQ handler. With sampling rates different
- * from 48000Hz not every frame has valid receive data, so the ratio
- * between pcm data and GPIO status data changes. Our FIQ handler is not
- * able to handle this, hence this driver only works with 48000Hz sampling
- * rate.
- * Reading and writing AC97 registers is another challenge. The core
- * provides us status bits when the read register is updated with *another*
- * value. When we read the same register two times (and the register still
- * contains the same value) these status bits are not set. We work
- * around this by not polling these bits but only wait a fixed delay.
- *
- */
+// SPDX-License-Identifier: GPL-2.0+
+//
+// imx-ssi.c  --  ALSA Soc Audio Layer
+//
+// Copyright 2009 Sascha Hauer <s.hauer@pengutronix.de>
+//
+// This code is based on code copyrighted by Freescale,
+// Liam Girdwood, Javier Martin and probably others.
+//
+// The i.MX SSI core has some nasty limitations in AC97 mode. While most
+// sane processor vendors have a FIFO per AC97 slot, the i.MX has only
+// one FIFO which combines all valid receive slots. We cannot even select
+// which slots we want to receive. The WM9712 with which this driver
+// was developed with always sends GPIO status data in slot 12 which
+// we receive in our (PCM-) data stream. The only chance we have is to
+// manually skip this data in the FIQ handler. With sampling rates different
+// from 48000Hz not every frame has valid receive data, so the ratio
+// between pcm data and GPIO status data changes. Our FIQ handler is not
+// able to handle this, hence this driver only works with 48000Hz sampling
+// rate.
+// Reading and writing AC97 registers is another challenge. The core
+// provides us status bits when the read register is updated with *another*
+// value. When we read the same register two times (and the register still
+// contains the same value) these status bits are not set. We work
+// around this by not polling these bits but only wait a fixed delay.
 
 #include <linux/clk.h>
 #include <linux/delay.h>
@@ -95,7 +88,8 @@ static int imx_ssi_set_dai_fmt(struct snd_soc_dai *cpu_dai, unsigned int fmt)
 	switch (fmt & SND_SOC_DAIFMT_FORMAT_MASK) {
 	case SND_SOC_DAIFMT_I2S:
 		/* data on rising edge of bclk, frame low 1clk before data */
-		strcr |= SSI_STCR_TFSI | SSI_STCR_TEFS | SSI_STCR_TXBIT0;
+		strcr |= SSI_STCR_TXBIT0 | SSI_STCR_TSCKP | SSI_STCR_TFSI |
+			SSI_STCR_TEFS;
 		scr |= SSI_SCR_NET;
 		if (ssi->flags & IMX_SSI_USE_I2S_SLAVE) {
 			scr &= ~SSI_I2S_MODE_MASK;
@@ -104,33 +98,31 @@ static int imx_ssi_set_dai_fmt(struct snd_soc_dai *cpu_dai, unsigned int fmt)
 		break;
 	case SND_SOC_DAIFMT_LEFT_J:
 		/* data on rising edge of bclk, frame high with data */
-		strcr |= SSI_STCR_TXBIT0;
+		strcr |= SSI_STCR_TXBIT0 | SSI_STCR_TSCKP;
 		break;
 	case SND_SOC_DAIFMT_DSP_B:
 		/* data on rising edge of bclk, frame high with data */
-		strcr |= SSI_STCR_TFSL | SSI_STCR_TXBIT0;
+		strcr |= SSI_STCR_TXBIT0 | SSI_STCR_TSCKP | SSI_STCR_TFSL;
 		break;
 	case SND_SOC_DAIFMT_DSP_A:
 		/* data on rising edge of bclk, frame high 1clk before data */
-		strcr |= SSI_STCR_TFSL | SSI_STCR_TXBIT0 | SSI_STCR_TEFS;
+		strcr |= SSI_STCR_TXBIT0 | SSI_STCR_TSCKP | SSI_STCR_TFSL |
+			SSI_STCR_TEFS;
 		break;
 	}
 
 	/* DAI clock inversion */
 	switch (fmt & SND_SOC_DAIFMT_INV_MASK) {
 	case SND_SOC_DAIFMT_IB_IF:
-		strcr |= SSI_STCR_TFSI;
-		strcr &= ~SSI_STCR_TSCKP;
+		strcr ^= SSI_STCR_TSCKP | SSI_STCR_TFSI;
 		break;
 	case SND_SOC_DAIFMT_IB_NF:
-		strcr &= ~(SSI_STCR_TSCKP | SSI_STCR_TFSI);
+		strcr ^= SSI_STCR_TSCKP;
 		break;
 	case SND_SOC_DAIFMT_NB_IF:
-		strcr |= SSI_STCR_TFSI | SSI_STCR_TSCKP;
+		strcr ^= SSI_STCR_TFSI;
 		break;
 	case SND_SOC_DAIFMT_NB_NF:
-		strcr &= ~SSI_STCR_TFSI;
-		strcr |= SSI_STCR_TSCKP;
 		break;
 	}
 
@@ -528,6 +520,8 @@ static int imx_ssi_probe(struct platform_device *pdev)
 	}
 
 	ssi->irq = platform_get_irq(pdev, 0);
+	if (ssi->irq < 0)
+		return ssi->irq;
 
 	ssi->clk = devm_clk_get(&pdev->dev, NULL);
 	if (IS_ERR(ssi->clk)) {
@@ -603,7 +597,7 @@ static int imx_ssi_probe(struct platform_device *pdev)
 	ssi->fiq_params.dma_params_tx = &ssi->dma_params_tx;
 
 	ssi->fiq_init = imx_pcm_fiq_init(pdev, &ssi->fiq_params);
-	ssi->dma_init = imx_pcm_dma_init(pdev);
+	ssi->dma_init = imx_pcm_dma_init(pdev, IMX_SSI_DMABUF_SIZE);
 
 	if (ssi->fiq_init && ssi->dma_init) {
 		ret = ssi->fiq_init;

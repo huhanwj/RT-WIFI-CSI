@@ -1,15 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Error log support on PowerNV.
  *
  * Copyright 2013,2014 IBM Corp.
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version
- * 2 of the License, or (at your option) any later version.
  */
 #include <linux/kernel.h>
 #include <linux/init.h>
+#include <linux/interrupt.h>
 #include <linux/of.h>
 #include <linux/slab.h>
 #include <linux/sysfs.h>
@@ -17,7 +14,7 @@
 #include <linux/vmalloc.h>
 #include <linux/fcntl.h>
 #include <linux/kobject.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <asm/opal.h>
 
 struct elog_obj {
@@ -82,9 +79,9 @@ static ssize_t elog_ack_store(struct elog_obj *elog_obj,
 }
 
 static struct elog_attribute id_attribute =
-	__ATTR(id, S_IRUGO, elog_id_show, NULL);
+	__ATTR(id, 0444, elog_id_show, NULL);
 static struct elog_attribute type_attribute =
-	__ATTR(type, S_IRUGO, elog_type_show, NULL);
+	__ATTR(type, 0444, elog_type_show, NULL);
 static struct elog_attribute ack_attribute =
 	__ATTR(acknowledge, 0660, elog_ack_show, elog_ack_store);
 
@@ -236,7 +233,7 @@ static struct elog_obj *create_elog_obj(uint64_t id, size_t size, uint64_t type)
 	return elog;
 }
 
-static void elog_work_fn(struct work_struct *work)
+static irqreturn_t elog_event(int irq, void *data)
 {
 	__be64 size;
 	__be64 id;
@@ -246,11 +243,12 @@ static void elog_work_fn(struct work_struct *work)
 	uint64_t elog_type;
 	int rc;
 	char name[2+16+1];
+	struct kobject *kobj;
 
 	rc = opal_get_elog_size(&id, &size, &type);
 	if (rc != OPAL_SUCCESS) {
 		pr_err("ELOG: OPAL log info read failed\n");
-		return;
+		return IRQ_HANDLED;
 	}
 
 	elog_size = be64_to_cpu(size);
@@ -268,32 +266,21 @@ static void elog_work_fn(struct work_struct *work)
 	 * that gracefully and not create two conflicting
 	 * entries.
 	 */
-	if (kset_find_obj(elog_kset, name))
-		return;
+	kobj = kset_find_obj(elog_kset, name);
+	if (kobj) {
+		/* Drop reference added by kset_find_obj() */
+		kobject_put(kobj);
+		return IRQ_HANDLED;
+	}
 
 	create_elog_obj(log_id, elog_size, elog_type);
+
+	return IRQ_HANDLED;
 }
-
-static DECLARE_WORK(elog_work, elog_work_fn);
-
-static int elog_event(struct notifier_block *nb,
-				unsigned long events, void *change)
-{
-	/* check for error log event */
-	if (events & OPAL_EVENT_ERROR_LOG_AVAIL)
-		schedule_work(&elog_work);
-	return 0;
-}
-
-static struct notifier_block elog_nb = {
-	.notifier_call  = elog_event,
-	.next           = NULL,
-	.priority       = 0
-};
 
 int __init opal_elog_init(void)
 {
-	int rc = 0;
+	int rc = 0, irq;
 
 	/* ELOG not supported by firmware */
 	if (!opal_check_token(OPAL_ELOG_READ))
@@ -305,10 +292,18 @@ int __init opal_elog_init(void)
 		return -1;
 	}
 
-	rc = opal_notifier_register(&elog_nb);
+	irq = opal_event_request(ilog2(OPAL_EVENT_ERROR_LOG_AVAIL));
+	if (!irq) {
+		pr_err("%s: Can't register OPAL event irq (%d)\n",
+		       __func__, irq);
+		return irq;
+	}
+
+	rc = request_threaded_irq(irq, NULL, elog_event,
+			IRQF_TRIGGER_HIGH | IRQF_ONESHOT, "opal-elog", NULL);
 	if (rc) {
-		pr_err("%s: Can't register OPAL event notifier (%d)\n",
-		__func__, rc);
+		pr_err("%s: Can't request OPAL event irq (%d)\n",
+		       __func__, rc);
 		return rc;
 	}
 

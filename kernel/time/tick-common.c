@@ -1,15 +1,11 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
- * linux/kernel/time/tick-common.c
- *
  * This file contains the base functions to manage periodic tick
  * related events.
  *
  * Copyright(C) 2005-2006, Thomas Gleixner <tglx@linutronix.de>
  * Copyright(C) 2005-2007, Red Hat, Inc., Ingo Molnar
  * Copyright(C) 2006-2007, Timesys Corp., Thomas Gleixner
- *
- * This code is licenced under the GPL version 2. For details see
- * kernel-base/COPYING.
  */
 #include <linux/cpu.h>
 #include <linux/err.h>
@@ -19,6 +15,7 @@
 #include <linux/profile.h>
 #include <linux/sched.h>
 #include <linux/module.h>
+#include <trace/events/power.h>
 
 #include <asm/irq_regs.h>
 
@@ -49,6 +46,14 @@ ktime_t tick_period;
  *    procedure also covers cpu hotplug.
  */
 int tick_do_timer_cpu __read_mostly = TICK_DO_TIMER_BOOT;
+#ifdef CONFIG_NO_HZ_FULL
+/*
+ * tick_do_timer_boot_cpu indicates the boot CPU temporarily owns
+ * tick_do_timer_cpu and it should be taken over by an eligible secondary
+ * when one comes online.
+ */
+static int tick_do_timer_boot_cpu __read_mostly = -1;
+#endif
 
 /*
  * Debugging: see timer_list.c
@@ -102,7 +107,17 @@ void tick_handle_periodic(struct clock_event_device *dev)
 
 	tick_periodic(cpu);
 
-	if (dev->state != CLOCK_EVT_STATE_ONESHOT)
+#if defined(CONFIG_HIGH_RES_TIMERS) || defined(CONFIG_NO_HZ_COMMON)
+	/*
+	 * The cpu might have transitioned to HIGHRES or NOHZ mode via
+	 * update_process_times() -> run_local_timers() ->
+	 * hrtimer_run_queues().
+	 */
+	if (dev->event_handler != tick_handle_periodic)
+		return;
+#endif
+
+	if (!clockevent_state_oneshot(dev))
 		return;
 	for (;;) {
 		/*
@@ -140,9 +155,9 @@ void tick_setup_periodic(struct clock_event_device *dev, int broadcast)
 
 	if ((dev->features & CLOCK_EVT_FEAT_PERIODIC) &&
 	    !tick_broadcast_oneshot_active()) {
-		clockevents_set_state(dev, CLOCK_EVT_STATE_PERIODIC);
+		clockevents_switch_state(dev, CLOCK_EVT_STATE_PERIODIC);
 	} else {
-		unsigned long seq;
+		unsigned int seq;
 		ktime_t next;
 
 		do {
@@ -150,7 +165,7 @@ void tick_setup_periodic(struct clock_event_device *dev, int broadcast)
 			next = tick_next_period;
 		} while (read_seqretry(&jiffies_lock, seq));
 
-		clockevents_set_state(dev, CLOCK_EVT_STATE_ONESHOT);
+		clockevents_switch_state(dev, CLOCK_EVT_STATE_ONESHOT);
 
 		for (;;) {
 			if (!clockevents_program_event(dev, next, false))
@@ -160,6 +175,26 @@ void tick_setup_periodic(struct clock_event_device *dev, int broadcast)
 	}
 }
 
+#ifdef CONFIG_NO_HZ_FULL
+static void giveup_do_timer(void *info)
+{
+	int cpu = *(unsigned int *)info;
+
+	WARN_ON(tick_do_timer_cpu != smp_processor_id());
+
+	tick_do_timer_cpu = cpu;
+}
+
+static void tick_take_do_timer_from_boot(void)
+{
+	int cpu = smp_processor_id();
+	int from = tick_do_timer_boot_cpu;
+
+	if (from >= 0 && from != cpu)
+		smp_call_function_single(from, giveup_do_timer, &cpu, 1);
+}
+#endif
+
 /*
  * Setup the tick device
  */
@@ -167,8 +202,8 @@ static void tick_setup_device(struct tick_device *td,
 			      struct clock_event_device *newdev, int cpu,
 			      const struct cpumask *cpumask)
 {
-	ktime_t next_event;
 	void (*handler)(struct clock_event_device *) = NULL;
+	ktime_t next_event = 0;
 
 	/*
 	 * First device setup ?
@@ -179,12 +214,26 @@ static void tick_setup_device(struct tick_device *td,
 		 * this cpu:
 		 */
 		if (tick_do_timer_cpu == TICK_DO_TIMER_BOOT) {
-			if (!tick_nohz_full_cpu(cpu))
-				tick_do_timer_cpu = cpu;
-			else
-				tick_do_timer_cpu = TICK_DO_TIMER_NONE;
+			tick_do_timer_cpu = cpu;
+
 			tick_next_period = ktime_get();
-			tick_period = ktime_set(0, NSEC_PER_SEC / HZ);
+			tick_period = NSEC_PER_SEC / HZ;
+#ifdef CONFIG_NO_HZ_FULL
+			/*
+			 * The boot CPU may be nohz_full, in which case set
+			 * tick_do_timer_boot_cpu so the first housekeeping
+			 * secondary that comes up will take do_timer from
+			 * us.
+			 */
+			if (tick_nohz_full_cpu(cpu))
+				tick_do_timer_boot_cpu = cpu;
+
+		} else if (tick_do_timer_boot_cpu != -1 &&
+						!tick_nohz_full_cpu(cpu)) {
+			tick_take_do_timer_from_boot();
+			tick_do_timer_boot_cpu = -1;
+			WARN_ON(tick_do_timer_cpu != cpu);
+#endif
 		}
 
 		/*
@@ -293,9 +342,6 @@ void tick_check_new_device(struct clock_event_device *newdev)
 	int cpu;
 
 	cpu = smp_processor_id();
-	if (!cpumask_test_cpu(cpu, newdev->cpumask))
-		goto out_bc;
-
 	td = &per_cpu(tick_cpu_device, cpu);
 	curdev = td->evtdev;
 
@@ -332,6 +378,28 @@ out_bc:
 	tick_install_broadcast_device(newdev);
 }
 
+/**
+ * tick_broadcast_oneshot_control - Enter/exit broadcast oneshot mode
+ * @state:	The target state (enter/exit)
+ *
+ * The system enters/leaves a state, where affected devices might stop
+ * Returns 0 on success, -EBUSY if the cpu is used to broadcast wakeups.
+ *
+ * Called with interrupts disabled, so clockevents_lock is not
+ * required here because the local clock event device cannot go away
+ * under us.
+ */
+int tick_broadcast_oneshot_control(enum tick_broadcast_state state)
+{
+	struct tick_device *td = this_cpu_ptr(&tick_cpu_device);
+
+	if (!(td->evtdev->features & CLOCK_EVT_FEAT_C3STOP))
+		return 0;
+
+	return __tick_broadcast_oneshot_control(state);
+}
+EXPORT_SYMBOL_GPL(tick_broadcast_oneshot_control);
+
 #ifdef CONFIG_HOTPLUG_CPU
 /*
  * Transfer the do_timer job away from a dying cpu.
@@ -367,8 +435,7 @@ void tick_shutdown(unsigned int cpu)
 		 * Prevent that the clock events layer tries to call
 		 * the set mode function!
 		 */
-		dev->state = CLOCK_EVT_STATE_DETACHED;
-		dev->mode = CLOCK_EVT_MODE_UNUSED;
+		clockevent_set_state(dev, CLOCK_EVT_STATE_DETACHED);
 		clockevents_exchange_device(dev, NULL);
 		dev->event_handler = clockevents_handle_noop;
 		td->evtdev = NULL;
@@ -440,6 +507,7 @@ void tick_resume(void)
 	tick_resume_local();
 }
 
+#ifdef CONFIG_SUSPEND
 static DEFINE_RAW_SPINLOCK(tick_freeze_lock);
 static unsigned int tick_freeze_depth;
 
@@ -457,10 +525,15 @@ void tick_freeze(void)
 	raw_spin_lock(&tick_freeze_lock);
 
 	tick_freeze_depth++;
-	if (tick_freeze_depth == num_online_cpus())
+	if (tick_freeze_depth == num_online_cpus()) {
+		trace_suspend_resume(TPS("timekeeping_freeze"),
+				     smp_processor_id(), true);
+		system_state = SYSTEM_SUSPEND;
+		sched_clock_suspend();
 		timekeeping_suspend();
-	else
+	} else {
 		tick_suspend_local();
+	}
 
 	raw_spin_unlock(&tick_freeze_lock);
 }
@@ -478,15 +551,21 @@ void tick_unfreeze(void)
 {
 	raw_spin_lock(&tick_freeze_lock);
 
-	if (tick_freeze_depth == num_online_cpus())
+	if (tick_freeze_depth == num_online_cpus()) {
 		timekeeping_resume();
-	else
+		sched_clock_resume();
+		system_state = SYSTEM_RUNNING;
+		trace_suspend_resume(TPS("timekeeping_freeze"),
+				     smp_processor_id(), false);
+	} else {
 		tick_resume_local();
+	}
 
 	tick_freeze_depth--;
 
 	raw_spin_unlock(&tick_freeze_lock);
 }
+#endif /* CONFIG_SUSPEND */
 
 /**
  * tick_init - initialize the tick control

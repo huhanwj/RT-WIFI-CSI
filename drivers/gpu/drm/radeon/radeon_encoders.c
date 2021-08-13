@@ -23,9 +23,12 @@
  * Authors: Dave Airlie
  *          Alex Deucher
  */
-#include <drm/drmP.h>
+
 #include <drm/drm_crtc_helper.h>
+#include <drm/drm_device.h>
+#include <drm/drm_pci.h>
 #include <drm/radeon_drm.h>
+
 #include "radeon.h"
 #include "atom.h"
 
@@ -194,7 +197,6 @@ static void radeon_encoder_add_backlight(struct radeon_encoder *radeon_encoder,
 			radeon_atom_backlight_init(radeon_encoder, connector);
 		else
 			radeon_legacy_backlight_init(radeon_encoder, connector);
-		rdev->mode_info.bl_encoder = radeon_encoder;
 	}
 }
 
@@ -212,7 +214,7 @@ radeon_link_encoder_connector(struct drm_device *dev)
 		list_for_each_entry(encoder, &dev->mode_config.encoder_list, head) {
 			radeon_encoder = to_radeon_encoder(encoder);
 			if (radeon_encoder->devices & radeon_connector->devices) {
-				drm_mode_connector_attach_encoder(connector, encoder);
+				drm_connector_attach_encoder(connector, encoder);
 				if (radeon_encoder->devices & (ATOM_DEVICE_LCD_SUPPORT))
 					radeon_encoder_add_backlight(radeon_encoder, connector);
 			}

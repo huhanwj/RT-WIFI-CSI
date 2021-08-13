@@ -1,22 +1,9 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Realtek RTL28xxU DVB USB driver
  *
  * Copyright (C) 2009 Antti Palosaari <crope@iki.fi>
  * Copyright (C) 2011 Antti Palosaari <crope@iki.fi>
- *
- *    This program is free software; you can redistribute it and/or modify
- *    it under the terms of the GNU General Public License as published by
- *    the Free Software Foundation; either version 2 of the License, or
- *    (at your option) any later version.
- *
- *    This program is distributed in the hope that it will be useful,
- *    but WITHOUT ANY WARRANTY; without even the implied warranty of
- *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *    GNU General Public License for more details.
- *
- *    You should have received a copy of the GNU General Public License along
- *    with this program; if not, write to the Free Software Foundation, Inc.,
- *    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #ifndef RTL28XXU_H
@@ -31,6 +18,7 @@
 #include "rtl2832_sdr.h"
 #include "mn88472.h"
 #include "mn88473.h"
+#include "cxd2841er.h"
 
 #include "qt1010.h"
 #include "mt2060.h"
@@ -41,6 +29,8 @@
 #include "fc2580.h"
 #include "tua9001.h"
 #include "r820t.h"
+#include "si2168.h"
+#include "si2157.h"
 
 /*
  * USB commands
@@ -69,13 +59,14 @@
 
 
 struct rtl28xxu_dev {
-	u8 buf[28];
+	u8 buf[128];
 	u8 chip_id;
 	u8 tuner;
 	char *tuner_name;
 	u8 page; /* integrated demod active register page */
 	struct i2c_adapter *demod_i2c_adapter;
 	bool rc_active;
+	bool new_i2c_write;
 	struct i2c_client *i2c_client_demod;
 	struct i2c_client *i2c_client_tuner;
 	struct i2c_client *i2c_client_slave_demod;
@@ -83,7 +74,9 @@ struct rtl28xxu_dev {
 	#define SLAVE_DEMOD_NONE           0
 	#define SLAVE_DEMOD_MN88472        1
 	#define SLAVE_DEMOD_MN88473        2
-	unsigned int slave_demod:2;
+	#define SLAVE_DEMOD_SI2168         3
+	#define SLAVE_DEMOD_CXD2837ER      4
+	unsigned int slave_demod:3;
 	union {
 		struct rtl2830_platform_data rtl2830_platform_data;
 		struct rtl2832_platform_data rtl2832_platform_data;
@@ -116,6 +109,7 @@ enum rtl28xxu_tuner {
 	TUNER_RTL2832_FC0013,
 	TUNER_RTL2832_R820T,
 	TUNER_RTL2832_R828D,
+	TUNER_RTL2832_SI2157,
 };
 
 struct rtl28xxu_req {

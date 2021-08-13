@@ -1,13 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * linux/arch/unicore32/include/asm/memory.h
  *
  * Code specific to PKUnity SoC and UniCore ISA
  *
  * Copyright (C) 2001-2010 GUAN Xue-tao
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  *
  *  Note: this file should not be included by non-asm/.h files
  */
@@ -16,14 +13,8 @@
 
 #include <linux/compiler.h>
 #include <linux/const.h>
-#include <asm/sizes.h>
+#include <linux/sizes.h>
 #include <mach/memory.h>
-
-/*
- * Allow for constants defined here to be used from assembly code
- * by prepending the UL suffix only with actual C code compilation.
- */
-#define UL(x) _AC(x, UL)
 
 /*
  * PAGE_OFFSET - the virtual address of the start of the kernel image
@@ -59,12 +50,6 @@
 #define __virt_to_phys(x)	((x) - PAGE_OFFSET + PHYS_OFFSET)
 #define __phys_to_virt(x)	((x) - PHYS_OFFSET + PAGE_OFFSET)
 #endif
-
-/*
- * Convert a physical address to a Page Frame Number and back
- */
-#define	__phys_to_pfn(paddr)	((paddr) >> PAGE_SHIFT)
-#define	__pfn_to_phys(pfn)	((pfn) << PAGE_SHIFT)
 
 /*
  * Convert a page to/from a physical address

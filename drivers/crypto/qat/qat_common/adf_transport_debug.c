@@ -86,9 +86,7 @@ static int adf_ring_show(struct seq_file *sfile, void *v)
 {
 	struct adf_etr_ring_data *ring = sfile->private;
 	struct adf_etr_bank_data *bank = ring->bank;
-	uint32_t *msg = v;
 	void __iomem *csr = ring->bank->csr_addr;
-	int i, x;
 
 	if (v == SEQ_START_TOKEN) {
 		int head, tail, empty;
@@ -113,18 +111,8 @@ static int adf_ring_show(struct seq_file *sfile, void *v)
 		seq_puts(sfile, "----------- Ring data ------------\n");
 		return 0;
 	}
-	seq_printf(sfile, "%p:", msg);
-	x = 0;
-	i = 0;
-	for (; i < (ADF_MSG_SIZE_TO_BYTES(ring->msg_size) >> 2); i++) {
-		seq_printf(sfile, " %08X", *(msg + i));
-		if ((ADF_MSG_SIZE_TO_BYTES(ring->msg_size) >> 2) != i + 1 &&
-		    (++x == 8)) {
-			seq_printf(sfile, "\n%p:", msg + i + 1);
-			x = 0;
-		}
-	}
-	seq_puts(sfile, "\n");
+	seq_hex_dump(sfile, "", DUMP_PREFIX_ADDRESS, 32, 4,
+		     v, ADF_MSG_SIZE_TO_BYTES(ring->msg_size), false);
 	return 0;
 }
 
@@ -175,11 +163,6 @@ int adf_ring_debugfs_add(struct adf_etr_ring_data *ring, const char *name)
 	ring_debug->debug = debugfs_create_file(entry_name, S_IRUSR,
 						ring->bank->bank_debug_dir,
 						ring, &adf_ring_debug_fops);
-	if (!ring_debug->debug) {
-		pr_err("QAT: Failed to create ring debug entry.\n");
-		kfree(ring_debug);
-		return -EFAULT;
-	}
 	ring->ring_debug = ring_debug;
 	return 0;
 }
@@ -283,19 +266,9 @@ int adf_bank_debugfs_add(struct adf_etr_bank_data *bank)
 
 	snprintf(name, sizeof(name), "bank_%02d", bank->bank_number);
 	bank->bank_debug_dir = debugfs_create_dir(name, parent);
-	if (!bank->bank_debug_dir) {
-		pr_err("QAT: Failed to create bank debug dir.\n");
-		return -EFAULT;
-	}
-
 	bank->bank_debug_cfg = debugfs_create_file("config", S_IRUSR,
 						   bank->bank_debug_dir, bank,
 						   &adf_bank_debug_fops);
-	if (!bank->bank_debug_cfg) {
-		pr_err("QAT: Failed to create bank debug entry.\n");
-		debugfs_remove(bank->bank_debug_dir);
-		return -EFAULT;
-	}
 	return 0;
 }
 

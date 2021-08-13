@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /* $Id: aty128fb.c,v 1.1.1.1.36.1 1999/12/11 09:03:05 Exp $
  *  linux/drivers/video/aty128fb.c -- Frame buffer device for ATI Rage128
  *
@@ -68,7 +69,6 @@
 #include <asm/machdep.h>
 #include <asm/pmac_feature.h>
 #include <asm/prom.h>
-#include <asm/pci-bridge.h>
 #include "../macmodes.h"
 #endif
 
@@ -79,10 +79,6 @@
 #ifdef CONFIG_BOOTX_TEXT
 #include <asm/btext.h>
 #endif /* CONFIG_BOOTX_TEXT */
-
-#ifdef CONFIG_MTRR
-#include <asm/mtrr.h>
-#endif
 
 #include <video/aty128.h>
 
@@ -98,7 +94,7 @@
 
 #ifndef CONFIG_PPC_PMAC
 /* default mode */
-static struct fb_var_screeninfo default_var = {
+static const struct fb_var_screeninfo default_var = {
 	/* 640x480, 60 Hz, Non-Interlaced (25.175 MHz dotclock) */
 	640, 480, 640, 480, 0, 0, 8, 0,
 	{0, 8, 0}, {0, 8, 0}, {0, 8, 0}, {0, 0, 0},
@@ -109,7 +105,7 @@ static struct fb_var_screeninfo default_var = {
 #else /* CONFIG_PPC_PMAC */
 /* default to 1024x768 at 75Hz on PPC - this will work
  * on the iMac, the usual 640x480 @ 60Hz doesn't. */
-static struct fb_var_screeninfo default_var = {
+static const struct fb_var_screeninfo default_var = {
 	/* 1024x768, 75 Hz, Non-Interlaced (78.75 MHz dotclock) */
 	1024, 768, 1024, 768, 0, 0, 8, 0,
 	{0, 8, 0}, {0, 8, 0}, {0, 8, 0}, {0, 0, 0},
@@ -121,7 +117,7 @@ static struct fb_var_screeninfo default_var = {
 
 /* default modedb mode */
 /* 640x480, 60 Hz, Non-Interlaced (25.172 MHz dotclock) */
-static struct fb_videomode defaultmode = {
+static const struct fb_videomode defaultmode = {
 	.refresh =	60,
 	.xres =		640,
 	.yres =		480,
@@ -171,7 +167,7 @@ static int aty128_pci_resume(struct pci_dev *pdev);
 static int aty128_do_resume(struct pci_dev *pdev);
 
 /* supported Rage128 chipsets */
-static struct pci_device_id aty128_pci_tbl[] = {
+static const struct pci_device_id aty128_pci_tbl[] = {
 	{ PCI_VENDOR_ID_ATI, PCI_DEVICE_ID_ATI_RAGE128_LE,
 	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, rage_M3_pci },
 	{ PCI_VENDOR_ID_ATI, PCI_DEVICE_ID_ATI_RAGE128_LF,
@@ -380,7 +376,7 @@ static const struct aty128_meminfo ddr_sgram = {
 	.name = "64-bit DDR SGRAM",
 };
 
-static struct fb_fix_screeninfo aty128fb_fix = {
+static const struct fb_fix_screeninfo aty128fb_fix = {
 	.id		= "ATY Rage128",
 	.type		= FB_TYPE_PACKED_PIXELS,
 	.visual		= FB_VISUAL_PSEUDOCOLOR,
@@ -399,10 +395,7 @@ static int default_cmode = CMODE_8;
 
 static int default_crt_on = 0;
 static int default_lcd_on = 1;
-
-#ifdef CONFIG_MTRR
 static bool mtrr = true;
-#endif
 
 #ifdef CONFIG_FB_ATY128_BACKLIGHT
 #ifdef CONFIG_PMAC_BACKLIGHT
@@ -456,9 +449,7 @@ struct aty128fb_par {
 	u32 vram_size;                      /* onboard video ram   */
 	int chip_gen;
 	const struct aty128_meminfo *mem;   /* onboard mem info    */
-#ifdef CONFIG_MTRR
-	struct { int vram; int vram_valid; } mtrr;
-#endif
+	int wc_cookie;
 	int blitter_may_be_busy;
 	int fifo_slots;                 /* free slots in FIFO (64 max) */
 
@@ -496,11 +487,6 @@ static int aty128_encode_var(struct fb_var_screeninfo *var,
                              const struct aty128fb_par *par);
 static int aty128_decode_var(struct fb_var_screeninfo *var,
                              struct aty128fb_par *par);
-#if 0
-static void aty128_get_pllinfo(struct aty128fb_par *par, void __iomem *bios);
-static void __iomem *aty128_map_ROM(struct pci_dev *pdev,
-				    const struct aty128fb_par *par);
-#endif
 static void aty128_timings(struct aty128fb_par *par);
 static void aty128_init_engine(struct aty128fb_par *par);
 static void aty128_reset_engine(const struct aty128fb_par *par);
@@ -1674,19 +1660,6 @@ static void aty128_st_pal(u_int regno, u_int red, u_int green, u_int blue,
 			  struct aty128fb_par *par)
 {
 	if (par->chip_gen == rage_M3) {
-#if 0
-		/* Note: For now, on M3, we set palette on both heads, which may
-		 * be useless. Can someone with a M3 check this ?
-		 * 
-		 * This code would still be useful if using the second CRTC to 
-		 * do mirroring
-		 */
-
-		aty_st_le32(DAC_CNTL, aty_ld_le32(DAC_CNTL) |
-			    DAC_PALETTE_ACCESS_CNTL);
-		aty_st_8(PALETTE_INDEX, regno);
-		aty_st_le32(PALETTE_DATA, (red<<16)|(green<<8)|blue);
-#endif
 		aty_st_le32(DAC_CNTL, aty_ld_le32(DAC_CNTL) &
 			    ~DAC_PALETTE_ACCESS_CNTL);
 	}
@@ -1725,12 +1698,10 @@ static int aty128fb_setup(char *options)
 #endif
 			continue;
 		}
-#ifdef CONFIG_MTRR
 		if(!strncmp(this_opt, "nomtrr", 6)) {
-			mtrr = 0;
+			mtrr = false;
 			continue;
 		}
-#endif
 #ifdef CONFIG_PPC_PMAC
 		/* vmode and cmode deprecated */
 		if (!strncmp(this_opt, "vmode:", 6)) {
@@ -2114,10 +2085,9 @@ static int aty128_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	/* We have the resources. Now virtualize them */
 	info = framebuffer_alloc(sizeof(struct aty128fb_par), &pdev->dev);
-	if (info == NULL) {
-		printk(KERN_ERR "aty128fb: can't alloc fb_info_aty128\n");
+	if (!info)
 		goto err_free_mmio;
-	}
+
 	par = info->par;
 
 	info->pseudo_palette = par->pseudo_palette;
@@ -2133,7 +2103,7 @@ static int aty128_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	par->vram_size = aty_ld_le32(CNFG_MEMSIZE) & 0x03FFFFFF;
 
 	/* Virtualize the framebuffer */
-	info->screen_base = ioremap(fb_addr, par->vram_size);
+	info->screen_base = ioremap_wc(fb_addr, par->vram_size);
 	if (!info->screen_base)
 		goto err_unmap_out;
 
@@ -2170,15 +2140,9 @@ static int aty128_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (!aty128_init(pdev, ent))
 		goto err_out;
 
-#ifdef CONFIG_MTRR
-	if (mtrr) {
-		par->mtrr.vram = mtrr_add(info->fix.smem_start,
-				par->vram_size, MTRR_TYPE_WRCOMB, 1);
-		par->mtrr.vram_valid = 1;
-		/* let there be speed */
-		printk(KERN_INFO "aty128fb: Rage128 MTRR set to ON\n");
-	}
-#endif /* CONFIG_MTRR */
+	if (mtrr)
+		par->wc_cookie = arch_phys_wc_add(info->fix.smem_start,
+						  par->vram_size);
 	return 0;
 
 err_out:
@@ -2212,11 +2176,7 @@ static void aty128_remove(struct pci_dev *pdev)
 	aty128_bl_exit(info->bl_dev);
 #endif
 
-#ifdef CONFIG_MTRR
-	if (par->mtrr.vram_valid)
-		mtrr_del(par->mtrr.vram, info->fix.smem_start,
-			 par->vram_size);
-#endif /* CONFIG_MTRR */
+	arch_phys_wc_del(par->wc_cookie);
 	iounmap(par->regbase);
 	iounmap(info->screen_base);
 
@@ -2371,70 +2331,6 @@ static int aty128fb_ioctl(struct fb_info *info, u_int cmd, u_long arg)
 	return -EINVAL;
 }
 
-#if 0
-    /*
-     *  Accelerated functions
-     */
-
-static inline void aty128_rectcopy(int srcx, int srcy, int dstx, int dsty,
-				   u_int width, u_int height,
-				   struct fb_info_aty128 *par)
-{
-	u32 save_dp_datatype, save_dp_cntl, dstval;
-
-	if (!width || !height)
-		return;
-
-	dstval = depth_to_dst(par->current_par.crtc.depth);
-	if (dstval == DST_24BPP) {
-		srcx *= 3;
-		dstx *= 3;
-		width *= 3;
-	} else if (dstval == -EINVAL) {
-		printk("aty128fb: invalid depth or RGBA\n");
-		return;
-	}
-
-	wait_for_fifo(2, par);
-	save_dp_datatype = aty_ld_le32(DP_DATATYPE);
-	save_dp_cntl     = aty_ld_le32(DP_CNTL);
-
-	wait_for_fifo(6, par);
-	aty_st_le32(SRC_Y_X, (srcy << 16) | srcx);
-	aty_st_le32(DP_MIX, ROP3_SRCCOPY | DP_SRC_RECT);
-	aty_st_le32(DP_CNTL, DST_X_LEFT_TO_RIGHT | DST_Y_TOP_TO_BOTTOM);
-	aty_st_le32(DP_DATATYPE, save_dp_datatype | dstval | SRC_DSTCOLOR);
-
-	aty_st_le32(DST_Y_X, (dsty << 16) | dstx);
-	aty_st_le32(DST_HEIGHT_WIDTH, (height << 16) | width);
-
-	par->blitter_may_be_busy = 1;
-
-	wait_for_fifo(2, par);
-	aty_st_le32(DP_DATATYPE, save_dp_datatype);
-	aty_st_le32(DP_CNTL, save_dp_cntl);
-}
-
-
-    /*
-     * Text mode accelerated functions
-     */
-
-static void fbcon_aty128_bmove(struct display *p, int sy, int sx, int dy,
-			       int dx, int height, int width)
-{
-	sx     *= fontwidth(p);
-	sy     *= fontheight(p);
-	dx     *= fontwidth(p);
-	dy     *= fontheight(p);
-	width  *= fontwidth(p);
-	height *= fontheight(p);
-
-	aty128_rectcopy(sx, sy, dx, dy, width, height,
-			(struct fb_info_aty128 *)p->fb_info);
-}
-#endif /* 0 */
-
 static void aty128_set_suspend(struct aty128fb_par *par, int suspend)
 {
 	u32	pmgt;
@@ -2464,7 +2360,7 @@ static void aty128_set_suspend(struct aty128fb_par *par, int suspend)
 		(void)aty_ld_pll(POWER_MANAGEMENT);
 		aty_st_le32(BUS_CNTL1, 0x00000010);
 		aty_st_le32(MEM_POWER_MISC, 0x0c830000);
-		mdelay(100);
+		msleep(100);
 
 		/* Switch PCI power management to D2 */
 		pci_set_power_state(pdev, PCI_D2);
@@ -2625,8 +2521,5 @@ MODULE_DESCRIPTION("FBDev driver for ATI Rage128 / Pro cards");
 MODULE_LICENSE("GPL");
 module_param(mode_option, charp, 0);
 MODULE_PARM_DESC(mode_option, "Specify resolution as \"<xres>x<yres>[-<bpp>][@<refresh>]\" ");
-#ifdef CONFIG_MTRR
 module_param_named(nomtrr, mtrr, invbool, 0);
 MODULE_PARM_DESC(nomtrr, "bool: Disable MTRR support (0 or 1=disabled) (default=0)");
-#endif
-

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #include <linux/linkage.h>
 #include <linux/threads.h>
 #include <asm/asm-offsets.h>
@@ -81,7 +82,7 @@ ENTRY(__cpu_suspend)
 	mov	r1, r4			@ size of save block
 	add	r0, sp, #8		@ pointer to save block
 	bl	__cpu_suspend_save
-	adr	lr, BSYM(cpu_suspend_abort)
+	badr	lr, cpu_suspend_abort
 	ldmfd	sp!, {r0, pc}		@ call suspend fn
 ENDPROC(__cpu_suspend)
 	.ltorg
@@ -118,12 +119,31 @@ ENDPROC(cpu_resume_after_mmu)
 
 	.text
 	.align
+
+#ifdef CONFIG_MCPM
+	.arm
+THUMB(	.thumb			)
+ENTRY(cpu_resume_no_hyp)
+ARM_BE8(setend be)			@ ensure we are in BE mode
+	b	no_hyp
+#endif
+
+#ifdef CONFIG_MMU
+	.arm
+ENTRY(cpu_resume_arm)
+ THUMB(	badr	r9, 1f		)	@ Kernel is entered in ARM.
+ THUMB(	bx	r9		)	@ If this is a Thumb-2 kernel,
+ THUMB(	.thumb			)	@ switch to Thumb now.
+ THUMB(1:			)
+#endif
+
 ENTRY(cpu_resume)
 ARM_BE8(setend be)			@ ensure we are in BE mode
 #ifdef CONFIG_ARM_VIRT_EXT
 	bl	__hyp_stub_install_secondary
 #endif
 	safe_svcmode_maskall r1
+no_hyp:
 	mov	r1, #0
 	ALT_SMP(mrc p15, 0, r0, c0, c0, 5)
 	ALT_UP_B(1f)
@@ -150,6 +170,13 @@ THUMB(	mov	sp, r2			)
 THUMB(	bx	r3			)
 ENDPROC(cpu_resume)
 
+#ifdef CONFIG_MMU
+ENDPROC(cpu_resume_arm)
+#endif
+#ifdef CONFIG_MCPM
+ENDPROC(cpu_resume_no_hyp)
+#endif
+
 	.align 2
 _sleep_save_sp:
 	.long	sleep_save_sp - .
@@ -157,6 +184,7 @@ mpidr_hash_ptr:
 	.long	mpidr_hash - .			@ mpidr_hash struct offset
 
 	.data
+	.align	2
 	.type	sleep_save_sp, #object
 ENTRY(sleep_save_sp)
 	.space	SLEEP_SAVE_SP_SZ		@ struct sleep_save_sp

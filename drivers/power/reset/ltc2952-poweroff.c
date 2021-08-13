@@ -1,18 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * LTC2952 (PowerPath) driver
  *
  * Copyright (C) 2014, Xsens Technologies BV <info@xsens.com>
- * Maintainer: René Moll <linux@r-moll.nl>
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Maintainer: RenÃ© Moll <linux@r-moll.nl>
  *
  * ----------------------------------------
  * - Description
@@ -50,7 +41,6 @@
  *
  * The driver requires a non-shared, edge-triggered interrupt on the trigger
  * GPIO.
- *
  */
 
 #include <linux/kernel.h>
@@ -62,6 +52,7 @@
 #include <linux/slab.h>
 #include <linux/kmod.h>
 #include <linux/module.h>
+#include <linux/mod_devicetable.h>
 #include <linux/gpio/consumer.h>
 #include <linux/reboot.h>
 
@@ -158,7 +149,6 @@ static irqreturn_t ltc2952_poweroff_handler(int irq, void *dev_id)
 			      HRTIMER_MODE_REL);
 	} else {
 		hrtimer_cancel(&data->timer_trigger);
-		/* omitting return value check, timer should have been valid */
 	}
 	return IRQ_HANDLED;
 }
@@ -170,7 +160,7 @@ static void ltc2952_poweroff_kill(void)
 
 static void ltc2952_poweroff_default(struct ltc2952_poweroff *data)
 {
-	data->wde_interval = ktime_set(0, 300L*1E6L);
+	data->wde_interval = 300L * 1E6L;
 	data->trigger_delay = ktime_set(2, 500L*1E6L);
 
 	hrtimer_init(&data->timer_trigger, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
@@ -202,16 +192,15 @@ static int ltc2952_poweroff_init(struct platform_device *pdev)
 		return ret;
 	}
 
-	data->gpio_trigger = devm_gpiod_get(&pdev->dev, "trigger", GPIOD_IN);
+	data->gpio_trigger = devm_gpiod_get_optional(&pdev->dev, "trigger",
+						     GPIOD_IN);
 	if (IS_ERR(data->gpio_trigger)) {
 		/*
 		 * It's not a problem if the trigger gpio isn't available, but
 		 * it is worth a warning if its use was defined in the device
 		 * tree.
 		 */
-		if (PTR_ERR(data->gpio_trigger) != -ENOENT)
-			dev_err(&pdev->dev,
-				"unable to claim gpio \"trigger\"\n");
+		dev_err(&pdev->dev, "unable to claim gpio \"trigger\"\n");
 		data->gpio_trigger = NULL;
 	}
 
@@ -320,6 +309,6 @@ static struct platform_driver ltc2952_poweroff_driver = {
 
 module_platform_driver(ltc2952_poweroff_driver);
 
-MODULE_AUTHOR("René Moll <rene.moll@xsens.com>");
+MODULE_AUTHOR("RenÃ© Moll <rene.moll@xsens.com>");
 MODULE_DESCRIPTION("LTC PowerPath power-off driver");
 MODULE_LICENSE("GPL v2");

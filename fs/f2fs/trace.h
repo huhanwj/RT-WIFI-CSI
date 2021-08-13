@@ -1,12 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * f2fs IO tracer
  *
  * Copyright (c) 2014 Motorola Mobility
  * Copyright (c) 2014 Jaegeuk Kim <jaegeuk@kernel.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 #ifndef __F2FS_TRACE_H__
 #define __F2FS_TRACE_H__
@@ -33,12 +30,12 @@ struct last_io_info {
 };
 
 extern void f2fs_trace_pid(struct page *);
-extern void f2fs_trace_ios(struct page *, struct f2fs_io_info *, int);
+extern void f2fs_trace_ios(struct f2fs_io_info *, int);
 extern void f2fs_build_trace_ios(void);
 extern void f2fs_destroy_trace_ios(void);
 #else
 #define f2fs_trace_pid(p)
-#define f2fs_trace_ios(p, i, n)
+#define f2fs_trace_ios(i, n)
 #define f2fs_build_trace_ios()
 #define f2fs_destroy_trace_ios()
 

@@ -1,19 +1,47 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 2000 - 2007 Jeff Dike (jdike@{addtoit,linux.intel}.com)
- * Licensed under the GPL
  */
 
 #include <linux/module.h>
 #include <linux/ptrace.h>
 #include <linux/sched.h>
+#include <linux/ftrace.h>
 #include <asm/siginfo.h>
 #include <asm/signal.h>
 #include <asm/unistd.h>
 #include <frame_kern.h>
 #include <kern_util.h>
+#include <os.h>
 
 EXPORT_SYMBOL(block_signals);
 EXPORT_SYMBOL(unblock_signals);
+
+void block_signals_trace(void)
+{
+	block_signals();
+	if (current_thread_info())
+		trace_hardirqs_off();
+}
+
+void unblock_signals_trace(void)
+{
+	if (current_thread_info())
+		trace_hardirqs_on();
+	unblock_signals();
+}
+
+void um_trace_signals_on(void)
+{
+	if (current_thread_info())
+		trace_hardirqs_on();
+}
+
+void um_trace_signals_off(void)
+{
+	if (current_thread_info())
+		trace_hardirqs_off();
+}
 
 /*
  * OK, we're invoking a handler
@@ -64,7 +92,7 @@ static void handle_signal(struct ksignal *ksig, struct pt_regs *regs)
 	signal_setup_done(err, ksig, singlestep);
 }
 
-static int kern_do_signal(struct pt_regs *regs)
+void do_signal(struct pt_regs *regs)
 {
 	struct ksignal ksig;
 	int handled_sig = 0;
@@ -110,10 +138,4 @@ static int kern_do_signal(struct pt_regs *regs)
 	 */
 	if (!handled_sig)
 		restore_saved_sigmask();
-	return handled_sig;
-}
-
-int do_signal(void)
-{
-	return kern_do_signal(&current->thread.regs);
 }

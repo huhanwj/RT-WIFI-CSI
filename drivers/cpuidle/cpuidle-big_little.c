@@ -1,13 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2013 ARM/Linaro
  *
  * Authors: Daniel Lezcano <daniel.lezcano@linaro.org>
  *          Lorenzo Pieralisi <lorenzo.pieralisi@arm.com>
  *          Nicolas Pitre <nicolas.pitre@linaro.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  *
  * Maintainer: Lorenzo Pieralisi <lorenzo.pieralisi@arm.com>
  * Maintainer: Daniel Lezcano <daniel.lezcano@linaro.org>
@@ -108,13 +105,7 @@ static int notrace bl_powerdown_finisher(unsigned long arg)
 	unsigned int cpu = MPIDR_AFFINITY_LEVEL(mpidr, 0);
 
 	mcpm_set_entry_vector(cpu, cluster, cpu_resume);
-
-	/*
-	 * Residency value passed to mcpm_cpu_suspend back-end
-	 * has to be given clear semantics. Set to 0 as a
-	 * temporary value.
-	 */
-	mcpm_cpu_suspend(0);
+	mcpm_cpu_suspend();
 
 	/* return value != 0 means failure */
 	return 1;
@@ -173,6 +164,7 @@ static int __init bl_idle_init(void)
 {
 	int ret;
 	struct device_node *root = of_find_node_by_path("/");
+	const struct of_device_id *match_id;
 
 	if (!root)
 		return -ENODEV;
@@ -180,7 +172,11 @@ static int __init bl_idle_init(void)
 	/*
 	 * Initialize the driver just for a compliant set of machines
 	 */
-	if (!of_match_node(compatible_machine_match, root))
+	match_id = of_match_node(compatible_machine_match, root);
+
+	of_node_put(root);
+
+	if (!match_id)
 		return -ENODEV;
 
 	if (!mcpm_is_available())

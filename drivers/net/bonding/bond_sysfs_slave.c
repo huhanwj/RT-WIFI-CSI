@@ -1,11 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*	Sysfs attributes of bond slaves
  *
  *      Copyright (c) 2014 Scott Feldman <sfeldma@cumulusnetworks.com>
- *
- *	This program is free software; you can redistribute it and/or
- *	modify it under the terms of the GNU General Public License
- *	as published by the Free Software Foundation; either version
- *	2 of the License, or (at your option) any later version.
  */
 
 #include <linux/capability.h>
@@ -25,8 +21,8 @@ const struct slave_attribute slave_attr_##_name = {		\
 		 .mode = _mode },				\
 	.show	= _show,					\
 };
-#define SLAVE_ATTR_RO(_name) \
-	SLAVE_ATTR(_name, S_IRUGO, _name##_show)
+#define SLAVE_ATTR_RO(_name)					\
+	SLAVE_ATTR(_name, 0444, _name##_show)
 
 static ssize_t state_show(struct slave *slave, char *buf)
 {
@@ -55,7 +51,9 @@ static SLAVE_ATTR_RO(link_failure_count);
 
 static ssize_t perm_hwaddr_show(struct slave *slave, char *buf)
 {
-	return sprintf(buf, "%pM\n", slave->perm_hwaddr);
+	return sprintf(buf, "%*phC\n",
+		       slave->dev->addr_len,
+		       slave->perm_hwaddr);
 }
 static SLAVE_ATTR_RO(perm_hwaddr);
 
@@ -80,6 +78,36 @@ static ssize_t ad_aggregator_id_show(struct slave *slave, char *buf)
 }
 static SLAVE_ATTR_RO(ad_aggregator_id);
 
+static ssize_t ad_actor_oper_port_state_show(struct slave *slave, char *buf)
+{
+	const struct port *ad_port;
+
+	if (BOND_MODE(slave->bond) == BOND_MODE_8023AD) {
+		ad_port = &SLAVE_AD_INFO(slave)->port;
+		if (ad_port->aggregator)
+			return sprintf(buf, "%u\n",
+				       ad_port->actor_oper_port_state);
+	}
+
+	return sprintf(buf, "N/A\n");
+}
+static SLAVE_ATTR_RO(ad_actor_oper_port_state);
+
+static ssize_t ad_partner_oper_port_state_show(struct slave *slave, char *buf)
+{
+	const struct port *ad_port;
+
+	if (BOND_MODE(slave->bond) == BOND_MODE_8023AD) {
+		ad_port = &SLAVE_AD_INFO(slave)->port;
+		if (ad_port->aggregator)
+			return sprintf(buf, "%u\n",
+				       ad_port->partner_oper.port_state);
+	}
+
+	return sprintf(buf, "N/A\n");
+}
+static SLAVE_ATTR_RO(ad_partner_oper_port_state);
+
 static const struct slave_attribute *slave_attrs[] = {
 	&slave_attr_state,
 	&slave_attr_mii_status,
@@ -87,6 +115,8 @@ static const struct slave_attribute *slave_attrs[] = {
 	&slave_attr_perm_hwaddr,
 	&slave_attr_queue_id,
 	&slave_attr_ad_aggregator_id,
+	&slave_attr_ad_actor_oper_port_state,
+	&slave_attr_ad_partner_oper_port_state,
 	NULL
 };
 

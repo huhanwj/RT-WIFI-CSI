@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  Driver for SiS7019 Audio Accelerator
  *
@@ -6,19 +7,6 @@
  *  Inspired by the Trident 4D-WaveDX/NX driver.
  *
  *  All rights reserved.
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation, version 2.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
 #include <linux/init.h>
@@ -159,7 +147,7 @@ struct sis7019 {
  * We'll add a constraint upon open that limits the period and buffer sample
  * size to values that are legal for the hardware.
  */
-static struct snd_pcm_hardware sis_playback_hw_info = {
+static const struct snd_pcm_hardware sis_playback_hw_info = {
 	.info = (SNDRV_PCM_INFO_MMAP |
 		 SNDRV_PCM_INFO_MMAP_VALID |
 		 SNDRV_PCM_INFO_INTERLEAVED |
@@ -180,7 +168,7 @@ static struct snd_pcm_hardware sis_playback_hw_info = {
 	.periods_max = (0xfff9 / 9),
 };
 
-static struct snd_pcm_hardware sis_capture_hw_info = {
+static const struct snd_pcm_hardware sis_capture_hw_info = {
 	.info = (SNDRV_PCM_INFO_MMAP |
 		 SNDRV_PCM_INFO_MMAP_VALID |
 		 SNDRV_PCM_INFO_INTERLEAVED |
@@ -383,9 +371,9 @@ static void __sis_map_silence(struct sis7019 *sis)
 {
 	/* Helper function: must hold sis->voice_lock on entry */
 	if (!sis->silence_users)
-		sis->silence_dma_addr = pci_map_single(sis->pci,
+		sis->silence_dma_addr = dma_map_single(&sis->pci->dev,
 						sis->suspend_state[0],
-						4096, PCI_DMA_TODEVICE);
+						4096, DMA_TO_DEVICE);
 	sis->silence_users++;
 }
 
@@ -394,8 +382,8 @@ static void __sis_unmap_silence(struct sis7019 *sis)
 	/* Helper function: must hold sis->voice_lock on entry */
 	sis->silence_users--;
 	if (!sis->silence_users)
-		pci_unmap_single(sis->pci, sis->silence_dma_addr, 4096,
-					PCI_DMA_TODEVICE);
+		dma_unmap_single(&sis->pci->dev, sis->silence_dma_addr, 4096,
+					DMA_TO_DEVICE);
 }
 
 static void sis_free_voice(struct sis7019 *sis, struct voice *voice)
@@ -872,7 +860,7 @@ static int sis_pcm_capture_prepare(struct snd_pcm_substream *substream)
 	return 0;
 }
 
-static struct snd_pcm_ops sis_playback_ops = {
+static const struct snd_pcm_ops sis_playback_ops = {
 	.open = sis_playback_open,
 	.close = sis_substream_close,
 	.ioctl = snd_pcm_lib_ioctl,
@@ -883,7 +871,7 @@ static struct snd_pcm_ops sis_playback_ops = {
 	.pointer = sis_pcm_pointer,
 };
 
-static struct snd_pcm_ops sis_capture_ops = {
+static const struct snd_pcm_ops sis_capture_ops = {
 	.open = sis_capture_open,
 	.close = sis_substream_close,
 	.ioctl = snd_pcm_lib_ioctl,
@@ -1214,7 +1202,6 @@ static int sis_suspend(struct device *dev)
 	int i;
 
 	snd_power_change_state(card, SNDRV_CTL_POWER_D3hot);
-	snd_pcm_suspend_all(sis->pcm);
 	if (sis->codecs_present & SIS_PRIMARY_CODEC_PRESENT)
 		snd_ac97_suspend(sis->ac97[0]);
 	if (sis->codecs_present & SIS_SECONDARY_CODEC_PRESENT)
@@ -1325,7 +1312,7 @@ static int sis_chip_create(struct snd_card *card,
 	if (rc)
 		goto error_out;
 
-	rc = pci_set_dma_mask(pci, DMA_BIT_MASK(30));
+	rc = dma_set_mask(&pci->dev, DMA_BIT_MASK(30));
 	if (rc < 0) {
 		dev_err(&pci->dev, "architecture does not support 30-bit PCI busmaster DMA");
 		goto error_out_enabled;

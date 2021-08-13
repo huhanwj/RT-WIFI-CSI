@@ -1,23 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * PTP 1588 support
  *
  * This file implements a BPF that recognizes PTP event messages.
  *
  * Copyright (C) 2010 OMICRON electronics GmbH
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #ifndef _PTP_CLASSIFY_H_
@@ -32,9 +19,9 @@
 #define PTP_CLASS_VMASK 0x0f /* max protocol version is 15 */
 #define PTP_CLASS_IPV4  0x10 /* event in an IPV4 UDP packet */
 #define PTP_CLASS_IPV6  0x20 /* event in an IPV6 UDP packet */
-#define PTP_CLASS_L2    0x30 /* event in a L2 packet */
-#define PTP_CLASS_PMASK 0x30 /* mask for the packet type field */
-#define PTP_CLASS_VLAN  0x40 /* event in a VLAN tagged packet */
+#define PTP_CLASS_L2    0x40 /* event in a L2 packet */
+#define PTP_CLASS_PMASK	0x70 /* mask for the packet type field */
+#define PTP_CLASS_VLAN	0x80 /* event in a VLAN tagged packet */
 
 #define PTP_CLASS_V1_IPV4 (PTP_CLASS_V1 | PTP_CLASS_IPV4)
 #define PTP_CLASS_V1_IPV6 (PTP_CLASS_V1 | PTP_CLASS_IPV6) /* probably DNE */
@@ -42,6 +29,7 @@
 #define PTP_CLASS_V2_IPV6 (PTP_CLASS_V2 | PTP_CLASS_IPV6)
 #define PTP_CLASS_V2_L2   (PTP_CLASS_V2 | PTP_CLASS_L2)
 #define PTP_CLASS_V2_VLAN (PTP_CLASS_V2 | PTP_CLASS_VLAN)
+#define PTP_CLASS_L4      (PTP_CLASS_IPV4 | PTP_CLASS_IPV6)
 
 #define PTP_EV_PORT 319
 #define PTP_GEN_BIT 0x08 /* indicates general message, if set in message type */
@@ -73,6 +61,10 @@ void __init ptp_classifier_init(void);
 #else
 static inline void ptp_classifier_init(void)
 {
+}
+static inline unsigned int ptp_classify_raw(struct sk_buff *skb)
+{
+	return PTP_CLASS_NONE;
 }
 #endif
 #endif /* _PTP_CLASSIFY_H_ */

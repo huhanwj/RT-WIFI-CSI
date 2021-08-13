@@ -57,10 +57,6 @@
 #include <asm/irq.h>
 #include <asm/pgtable.h>
 
-#ifdef CONFIG_MTRR
-#include <asm/mtrr.h>
-#endif
-
 #include "savagefb.h"
 
 
@@ -1664,7 +1660,7 @@ static struct fb_ops savagefb_ops = {
 
 /* --------------------------------------------------------------------- */
 
-static struct fb_var_screeninfo savagefb_var800x600x8 = {
+static const struct fb_var_screeninfo savagefb_var800x600x8 = {
 	.accel_flags =	FB_ACCELF_TEXT,
 	.xres =		800,
 	.yres =		600,
@@ -1775,7 +1771,7 @@ static int savage_map_video(struct fb_info *info, int video_len)
 
 	par->video.pbase = pci_resource_start(par->pcidev, resource);
 	par->video.len   = video_len;
-	par->video.vbase = ioremap(par->video.pbase, par->video.len);
+	par->video.vbase = ioremap_wc(par->video.pbase, par->video.len);
 
 	if (!par->video.vbase) {
 		printk("savagefb: unable to map screen memory\n");
@@ -1787,11 +1783,7 @@ static int savage_map_video(struct fb_info *info, int video_len)
 	info->fix.smem_start = par->video.pbase;
 	info->fix.smem_len   = par->video.len - par->cob_size;
 	info->screen_base    = par->video.vbase;
-
-#ifdef CONFIG_MTRR
-	par->video.mtrr = mtrr_add(par->video.pbase, video_len,
-				   MTRR_TYPE_WRCOMB, 1);
-#endif
+	par->video.wc_cookie = arch_phys_wc_add(par->video.pbase, video_len);
 
 	/* Clear framebuffer, it's all white in memory after boot */
 	memset_io(par->video.vbase, 0, par->video.len);
@@ -1806,10 +1798,7 @@ static void savage_unmap_video(struct fb_info *info)
 	DBG("savage_unmap_video");
 
 	if (par->video.vbase) {
-#ifdef CONFIG_MTRR
-		mtrr_del(par->video.mtrr, par->video.pbase, par->video.len);
-#endif
-
+		arch_phys_wc_del(par->video.wc_cookie);
 		iounmap(par->video.vbase);
 		par->video.vbase = NULL;
 		info->screen_base = NULL;
@@ -1903,11 +1892,11 @@ static int savage_init_hw(struct savagefb_par *par)
 	vga_out8(0x3d4, 0x66, par);
 	cr66 = vga_in8(0x3d5, par);
 	vga_out8(0x3d5, cr66 | 0x02, par);
-	mdelay(10);
+	usleep_range(10000, 11000);
 
 	vga_out8(0x3d4, 0x66, par);
 	vga_out8(0x3d5, cr66 & ~0x02, par);	/* clear reset flag */
-	mdelay(10);
+	usleep_range(10000, 11000);
 
 
 	/*
@@ -1917,11 +1906,11 @@ static int savage_init_hw(struct savagefb_par *par)
 	vga_out8(0x3d4, 0x3f, par);
 	cr3f = vga_in8(0x3d5, par);
 	vga_out8(0x3d5, cr3f | 0x08, par);
-	mdelay(10);
+	usleep_range(10000, 11000);
 
 	vga_out8(0x3d4, 0x3f, par);
 	vga_out8(0x3d5, cr3f & ~0x08, par);	/* clear reset flags */
-	mdelay(10);
+	usleep_range(10000, 11000);
 
 	/* Savage ramdac speeds */
 	par->numClocks = 4;
@@ -2166,9 +2155,9 @@ static int savage_init_fb_info(struct fb_info *info, struct pci_dev *dev,
 
 		err = fb_alloc_cmap(&info->cmap, NR_PALETTE, 0);
 		if (!err)
-		info->flags |= FBINFO_HWACCEL_COPYAREA |
-	                       FBINFO_HWACCEL_FILLRECT |
-		               FBINFO_HWACCEL_IMAGEBLIT;
+			info->flags |= FBINFO_HWACCEL_COPYAREA |
+				       FBINFO_HWACCEL_FILLRECT |
+				       FBINFO_HWACCEL_IMAGEBLIT;
 	}
 #endif
 	return err;
@@ -2344,14 +2333,7 @@ static void savagefb_remove(struct pci_dev *dev)
 	DBG("savagefb_remove");
 
 	if (info) {
-		/*
-		 * If unregister_framebuffer fails, then
-		 * we will be leaving hooks that could cause
-		 * oopsen laying around.
-		 */
-		if (unregister_framebuffer(info))
-			printk(KERN_WARNING "savagefb: danger danger! "
-			       "Oopsen imminent!\n");
+		unregister_framebuffer(info);
 
 #ifdef CONFIG_FB_SAVAGE_I2C
 		savagefb_delete_i2c_busses(info);
@@ -2440,7 +2422,7 @@ static int savagefb_resume(struct pci_dev* dev)
 }
 
 
-static struct pci_device_id savagefb_devices[] = {
+static const struct pci_device_id savagefb_devices[] = {
 	{PCI_VENDOR_ID_S3, PCI_CHIP_SUPSAV_MX128,
 	 PCI_ANY_ID, PCI_ANY_ID, 0, 0, FB_ACCEL_SUPERSAVAGE},
 

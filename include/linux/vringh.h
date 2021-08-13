@@ -1,23 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Linux host-side vring helpers; for when the kernel needs to access
  * someone else's vring.
  *
  * Copyright IBM Corporation, 2013.
  * Parts taken from drivers/vhost/vhost.c Copyright 2009 Red Hat, Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  *
  * Written by: Rusty Russell <rusty@rustcorp.com.au>
  */
@@ -226,33 +213,39 @@ static inline void vringh_notify(struct vringh *vrh)
 		vrh->notify(vrh);
 }
 
+static inline bool vringh_is_little_endian(const struct vringh *vrh)
+{
+	return vrh->little_endian ||
+		virtio_legacy_is_little_endian();
+}
+
 static inline u16 vringh16_to_cpu(const struct vringh *vrh, __virtio16 val)
 {
-	return __virtio16_to_cpu(vrh->little_endian, val);
+	return __virtio16_to_cpu(vringh_is_little_endian(vrh), val);
 }
 
 static inline __virtio16 cpu_to_vringh16(const struct vringh *vrh, u16 val)
 {
-	return __cpu_to_virtio16(vrh->little_endian, val);
+	return __cpu_to_virtio16(vringh_is_little_endian(vrh), val);
 }
 
 static inline u32 vringh32_to_cpu(const struct vringh *vrh, __virtio32 val)
 {
-	return __virtio32_to_cpu(vrh->little_endian, val);
+	return __virtio32_to_cpu(vringh_is_little_endian(vrh), val);
 }
 
 static inline __virtio32 cpu_to_vringh32(const struct vringh *vrh, u32 val)
 {
-	return __cpu_to_virtio32(vrh->little_endian, val);
+	return __cpu_to_virtio32(vringh_is_little_endian(vrh), val);
 }
 
 static inline u64 vringh64_to_cpu(const struct vringh *vrh, __virtio64 val)
 {
-	return __virtio64_to_cpu(vrh->little_endian, val);
+	return __virtio64_to_cpu(vringh_is_little_endian(vrh), val);
 }
 
 static inline __virtio64 cpu_to_vringh64(const struct vringh *vrh, u64 val)
 {
-	return __cpu_to_virtio64(vrh->little_endian, val);
+	return __cpu_to_virtio64(vringh_is_little_endian(vrh), val);
 }
 #endif /* _LINUX_VRINGH_H */

@@ -1,15 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Platform data for WM8904
  *
  * Copyright 2009 Wolfson Microelectronics PLC.
  *
  * Author: Mark Brown <broonie@opensource.wolfsonmicro.com>
- *
- *  This program is free software; you can redistribute  it and/or modify it
- *  under  the terms of  the GNU General  Public License as published by the
- *  Free Software Foundation;  either version 2 of the  License, or (at your
- *  option) any later version.
- *
  */
 
 #ifndef __MFD_WM8994_PDATA_H__
@@ -119,7 +114,7 @@
 #define WM8904_MIC_REGS  2
 #define WM8904_GPIO_REGS 4
 #define WM8904_DRC_REGS  4
-#define WM8904_EQ_REGS   25
+#define WM8904_EQ_REGS   24
 
 /**
  * DRC configurations are specified with a label and a set of register

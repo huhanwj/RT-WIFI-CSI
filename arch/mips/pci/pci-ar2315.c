@@ -1,16 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
 /**
@@ -149,6 +138,13 @@
 #define AR2315_PCI_HOST_SLOT	3
 #define AR2315_PCI_HOST_DEVID	((0xff18 << 16) | PCI_VENDOR_ID_ATHEROS)
 
+/*
+ * We need some arbitrary non-zero value to be programmed to the BAR1 register
+ * of PCI host controller to enable DMA. The same value should be used as the
+ * offset to calculate the physical address of DMA buffer for PCI devices.
+ */
+#define AR2315_PCI_HOST_SDRAM_BASEADDR	0x20000000
+
 /* ??? access BAR */
 #define AR2315_PCI_HOST_MBAR0		0x10000000
 /* RAM access BAR */
@@ -166,6 +162,23 @@ struct ar2315_pci_ctrl {
 	struct resource mem_res;
 	struct resource io_res;
 };
+
+static inline dma_addr_t ar2315_dev_offset(struct device *dev)
+{
+	if (dev && dev_is_pci(dev))
+		return AR2315_PCI_HOST_SDRAM_BASEADDR;
+	return 0;
+}
+
+dma_addr_t __phys_to_dma(struct device *dev, phys_addr_t paddr)
+{
+	return paddr + ar2315_dev_offset(dev);
+}
+
+phys_addr_t __dma_to_phys(struct device *dev, dma_addr_t dma_addr)
+{
+	return dma_addr - ar2315_dev_offset(dev);
+}
 
 static inline struct ar2315_pci_ctrl *ar2315_pci_bus_to_apc(struct pci_bus *bus)
 {
@@ -318,9 +331,9 @@ static int ar2315_pci_host_setup(struct ar2315_pci_ctrl *apc)
 	return 0;
 }
 
-static void ar2315_pci_irq_handler(unsigned irq, struct irq_desc *desc)
+static void ar2315_pci_irq_handler(struct irq_desc *desc)
 {
-	struct ar2315_pci_ctrl *apc = irq_get_handler_data(irq);
+	struct ar2315_pci_ctrl *apc = irq_desc_get_handler_data(desc);
 	u32 pending = ar2315_pci_reg_read(apc, AR2315_PCI_ISR) &
 		      ar2315_pci_reg_read(apc, AR2315_PCI_IMR);
 	unsigned pci_irq = 0;
@@ -384,8 +397,8 @@ static void ar2315_pci_irq_init(struct ar2315_pci_ctrl *apc)
 
 	apc->irq_ext = irq_create_mapping(apc->domain, AR2315_PCI_IRQ_EXT);
 
-	irq_set_chained_handler(apc->irq, ar2315_pci_irq_handler);
-	irq_set_handler_data(apc->irq, apc);
+	irq_set_chained_handler_and_data(apc->irq, ar2315_pci_irq_handler,
+					 apc);
 
 	/* Clear any pending Abort or external Interrupts
 	 * and enable interrupt processing */

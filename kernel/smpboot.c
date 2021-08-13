@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Common SMP CPU bringup/teardown functions
  */
@@ -9,6 +10,7 @@
 #include <linux/list.h>
 #include <linux/slab.h>
 #include <linux/sched.h>
+#include <linux/sched/task.h>
 #include <linux/export.h>
 #include <linux/percpu.h>
 #include <linux/kthread.h>
@@ -113,7 +115,8 @@ static int smpboot_thread_fn(void *data)
 		if (kthread_should_stop()) {
 			__set_current_state(TASK_RUNNING);
 			preempt_enable();
-			if (ht->cleanup)
+			/* cleanup must mirror setup */
+			if (ht->cleanup && td->status != HP_THREAD_NONE)
 				ht->cleanup(td->cpu, cpu_online(td->cpu));
 			kfree(td);
 			return 0;
@@ -185,6 +188,11 @@ __smpboot_create_thread(struct smp_hotplug_thread *ht, unsigned int cpu)
 		kfree(td);
 		return PTR_ERR(tsk);
 	}
+	/*
+	 * Park the thread so that it could start right on the CPU
+	 * when it is available.
+	 */
+	kthread_park(tsk);
 	get_task_struct(tsk);
 	*per_cpu_ptr(ht->store, cpu) = tsk;
 	if (ht->create) {
@@ -221,12 +229,11 @@ static void smpboot_unpark_thread(struct smp_hotplug_thread *ht, unsigned int cp
 {
 	struct task_struct *tsk = *per_cpu_ptr(ht->store, cpu);
 
-	if (ht->pre_unpark)
-		ht->pre_unpark(cpu);
-	kthread_unpark(tsk);
+	if (!ht->selfparking)
+		kthread_unpark(tsk);
 }
 
-void smpboot_unpark_threads(unsigned int cpu)
+int smpboot_unpark_threads(unsigned int cpu)
 {
 	struct smp_hotplug_thread *cur;
 
@@ -234,6 +241,7 @@ void smpboot_unpark_threads(unsigned int cpu)
 	list_for_each_entry(cur, &hotplug_threads, list)
 		smpboot_unpark_thread(cur, cpu);
 	mutex_unlock(&smpboot_threads_lock);
+	return 0;
 }
 
 static void smpboot_park_thread(struct smp_hotplug_thread *ht, unsigned int cpu)
@@ -244,7 +252,7 @@ static void smpboot_park_thread(struct smp_hotplug_thread *ht, unsigned int cpu)
 		kthread_park(tsk);
 }
 
-void smpboot_park_threads(unsigned int cpu)
+int smpboot_park_threads(unsigned int cpu)
 {
 	struct smp_hotplug_thread *cur;
 
@@ -252,6 +260,7 @@ void smpboot_park_threads(unsigned int cpu)
 	list_for_each_entry_reverse(cur, &hotplug_threads, list)
 		smpboot_park_thread(cur, cpu);
 	mutex_unlock(&smpboot_threads_lock);
+	return 0;
 }
 
 static void smpboot_destroy_threads(struct smp_hotplug_thread *ht)
@@ -271,7 +280,8 @@ static void smpboot_destroy_threads(struct smp_hotplug_thread *ht)
 }
 
 /**
- * smpboot_register_percpu_thread - Register a per_cpu thread related to hotplug
+ * smpboot_register_percpu_thread - Register a per_cpu thread related
+ * 					    to hotplug
  * @plug_thread:	Hotplug thread descriptor
  *
  * Creates and starts the threads on all online cpus.

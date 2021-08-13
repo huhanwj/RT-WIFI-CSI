@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Infrastructure for statistic tracing (histogram output).
  *
@@ -8,7 +9,7 @@
  *
  */
 
-
+#include <linux/security.h>
 #include <linux/list.h>
 #include <linux/slab.h>
 #include <linux/rbtree.h>
@@ -237,6 +238,10 @@ static int tracing_stat_open(struct inode *inode, struct file *file)
 	struct seq_file *m;
 	struct stat_session *session = inode->i_private;
 
+	ret = security_locked_down(LOCKDOWN_TRACEFS);
+	if (ret)
+		return ret;
+
 	ret = stat_seq_init(session);
 	if (ret)
 		return ret;
@@ -281,8 +286,7 @@ static int tracing_stat_init(void)
 
 	stat_dir = tracefs_create_dir("trace_stat", d_tracing);
 	if (!stat_dir)
-		pr_warning("Could not create tracefs "
-			   "'trace_stat' entry\n");
+		pr_warn("Could not create tracefs 'trace_stat' entry\n");
 	return 0;
 }
 

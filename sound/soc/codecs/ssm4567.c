@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * SSM4567 amplifier audio driver
  *
@@ -6,10 +7,9 @@
  *
  * Based on code copyright/by:
  *   Copyright 2013 Analog Devices Inc.
- *
- * Licensed under the GPL-2.
  */
 
+#include <linux/acpi.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/i2c.h>
@@ -173,6 +173,12 @@ static const struct snd_soc_dapm_widget ssm4567_dapm_widgets[] = {
 	SND_SOC_DAPM_SWITCH("Amplifier Boost", SSM4567_REG_POWER_CTRL, 3, 1,
 		&ssm4567_amplifier_boost_control),
 
+	SND_SOC_DAPM_SIGGEN("Sense"),
+
+	SND_SOC_DAPM_PGA("Current Sense", SSM4567_REG_POWER_CTRL, 4, 1, NULL, 0),
+	SND_SOC_DAPM_PGA("Voltage Sense", SSM4567_REG_POWER_CTRL, 5, 1, NULL, 0),
+	SND_SOC_DAPM_PGA("VBAT Sense", SSM4567_REG_POWER_CTRL, 6, 1, NULL, 0),
+
 	SND_SOC_DAPM_OUTPUT("OUT"),
 };
 
@@ -180,13 +186,20 @@ static const struct snd_soc_dapm_route ssm4567_routes[] = {
 	{ "OUT", NULL, "Amplifier Boost" },
 	{ "Amplifier Boost", "Switch", "DAC" },
 	{ "OUT", NULL, "DAC" },
+
+	{ "Current Sense", NULL, "Sense" },
+	{ "Voltage Sense", NULL, "Sense" },
+	{ "VBAT Sense", NULL, "Sense" },
+	{ "Capture Sense", NULL, "Current Sense" },
+	{ "Capture Sense", NULL, "Voltage Sense" },
+	{ "Capture Sense", NULL, "VBAT Sense" },
 };
 
 static int ssm4567_hw_params(struct snd_pcm_substream *substream,
 	struct snd_pcm_hw_params *params, struct snd_soc_dai *dai)
 {
-	struct snd_soc_codec *codec = dai->codec;
-	struct ssm4567 *ssm4567 = snd_soc_codec_get_drvdata(codec);
+	struct snd_soc_component *component = dai->component;
+	struct ssm4567 *ssm4567 = snd_soc_component_get_drvdata(component);
 	unsigned int rate = params_rate(params);
 	unsigned int dacfs;
 
@@ -209,7 +222,7 @@ static int ssm4567_hw_params(struct snd_pcm_substream *substream,
 
 static int ssm4567_mute(struct snd_soc_dai *dai, int mute)
 {
-	struct ssm4567 *ssm4567 = snd_soc_codec_get_drvdata(dai->codec);
+	struct ssm4567 *ssm4567 = snd_soc_component_get_drvdata(dai->component);
 	unsigned int val;
 
 	val = mute ? SSM4567_DAC_MUTE : 0;
@@ -338,6 +351,11 @@ static int ssm4567_set_power(struct ssm4567 *ssm4567, bool enable)
 	regcache_cache_only(ssm4567->regmap, !enable);
 
 	if (enable) {
+		ret = regmap_write(ssm4567->regmap, SSM4567_REG_SOFT_RESET,
+			0x00);
+		if (ret)
+			return ret;
+
 		ret = regmap_update_bits(ssm4567->regmap,
 			SSM4567_REG_POWER_CTRL,
 			SSM4567_POWER_SPWDN, 0x00);
@@ -347,10 +365,10 @@ static int ssm4567_set_power(struct ssm4567 *ssm4567, bool enable)
 	return ret;
 }
 
-static int ssm4567_set_bias_level(struct snd_soc_codec *codec,
+static int ssm4567_set_bias_level(struct snd_soc_component *component,
 	enum snd_soc_bias_level level)
 {
-	struct ssm4567 *ssm4567 = snd_soc_codec_get_drvdata(codec);
+	struct ssm4567 *ssm4567 = snd_soc_component_get_drvdata(component);
 	int ret = 0;
 
 	switch (level) {
@@ -359,7 +377,7 @@ static int ssm4567_set_bias_level(struct snd_soc_codec *codec,
 	case SND_SOC_BIAS_PREPARE:
 		break;
 	case SND_SOC_BIAS_STANDBY:
-		if (codec->dapm.bias_level == SND_SOC_BIAS_OFF)
+		if (snd_soc_component_get_bias_level(component) == SND_SOC_BIAS_OFF)
 			ret = ssm4567_set_power(ssm4567, true);
 		break;
 	case SND_SOC_BIAS_OFF:
@@ -367,12 +385,7 @@ static int ssm4567_set_bias_level(struct snd_soc_codec *codec,
 		break;
 	}
 
-	if (ret)
-		return ret;
-
-	codec->dapm.bias_level = level;
-
-	return 0;
+	return ret;
 }
 
 static const struct snd_soc_dai_ops ssm4567_dai_ops = {
@@ -392,19 +405,28 @@ static struct snd_soc_dai_driver ssm4567_dai = {
 		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
 			SNDRV_PCM_FMTBIT_S32,
 	},
+	.capture = {
+		.stream_name = "Capture Sense",
+		.channels_min = 1,
+		.channels_max = 1,
+		.rates = SNDRV_PCM_RATE_8000_192000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S32,
+	},
 	.ops = &ssm4567_dai_ops,
 };
 
-static struct snd_soc_codec_driver ssm4567_codec_driver = {
-	.set_bias_level = ssm4567_set_bias_level,
-	.idle_bias_off = true,
-
-	.controls = ssm4567_snd_controls,
-	.num_controls = ARRAY_SIZE(ssm4567_snd_controls),
-	.dapm_widgets = ssm4567_dapm_widgets,
-	.num_dapm_widgets = ARRAY_SIZE(ssm4567_dapm_widgets),
-	.dapm_routes = ssm4567_routes,
-	.num_dapm_routes = ARRAY_SIZE(ssm4567_routes),
+static const struct snd_soc_component_driver ssm4567_component_driver = {
+	.set_bias_level		= ssm4567_set_bias_level,
+	.controls		= ssm4567_snd_controls,
+	.num_controls		= ARRAY_SIZE(ssm4567_snd_controls),
+	.dapm_widgets		= ssm4567_dapm_widgets,
+	.num_dapm_widgets	= ARRAY_SIZE(ssm4567_dapm_widgets),
+	.dapm_routes		= ssm4567_routes,
+	.num_dapm_routes	= ARRAY_SIZE(ssm4567_routes),
+	.use_pmdown_time	= 1,
+	.endianness		= 1,
+	.non_legacy_dai_naming	= 1,
 };
 
 static const struct regmap_config ssm4567_regmap_config = {
@@ -445,14 +467,8 @@ static int ssm4567_i2c_probe(struct i2c_client *i2c,
 	if (ret)
 		return ret;
 
-	return snd_soc_register_codec(&i2c->dev, &ssm4567_codec_driver,
+	return devm_snd_soc_register_component(&i2c->dev, &ssm4567_component_driver,
 			&ssm4567_dai, 1);
-}
-
-static int ssm4567_i2c_remove(struct i2c_client *client)
-{
-	snd_soc_unregister_codec(&client->dev);
-	return 0;
 }
 
 static const struct i2c_device_id ssm4567_i2c_ids[] = {
@@ -461,13 +477,31 @@ static const struct i2c_device_id ssm4567_i2c_ids[] = {
 };
 MODULE_DEVICE_TABLE(i2c, ssm4567_i2c_ids);
 
+#ifdef CONFIG_OF
+static const struct of_device_id ssm4567_of_match[] = {
+	{ .compatible = "adi,ssm4567", },
+	{ }
+};
+MODULE_DEVICE_TABLE(of, ssm4567_of_match);
+#endif
+
+#ifdef CONFIG_ACPI
+
+static const struct acpi_device_id ssm4567_acpi_match[] = {
+	{ "INT343B", 0 },
+	{},
+};
+MODULE_DEVICE_TABLE(acpi, ssm4567_acpi_match);
+
+#endif
+
 static struct i2c_driver ssm4567_driver = {
 	.driver = {
 		.name = "ssm4567",
-		.owner = THIS_MODULE,
+		.of_match_table = of_match_ptr(ssm4567_of_match),
+		.acpi_match_table = ACPI_PTR(ssm4567_acpi_match),
 	},
 	.probe = ssm4567_i2c_probe,
-	.remove = ssm4567_i2c_remove,
 	.id_table = ssm4567_i2c_ids,
 };
 module_i2c_driver(ssm4567_driver);

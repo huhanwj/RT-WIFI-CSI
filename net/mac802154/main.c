@@ -1,17 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2007-2012 Siemens AG
  *
  * Written by:
  * Alexander Smirnov <alex.bluesman.smirnov@gmail.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2
- * as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #include <linux/kernel.h>
@@ -40,7 +32,7 @@ static void ieee802154_tasklet_handler(unsigned long data)
 			 * netstack.
 			 */
 			skb->pkt_type = 0;
-			ieee802154_rx(&local->hw, skb);
+			ieee802154_rx(local, skb);
 			break;
 		default:
 			WARN(1, "mac802154: Packet is of unknown type %d\n",
@@ -58,11 +50,9 @@ ieee802154_alloc_hw(size_t priv_data_len, const struct ieee802154_ops *ops)
 	struct ieee802154_local *local;
 	size_t priv_size;
 
-	if (!ops || !(ops->xmit_async || ops->xmit_sync) || !ops->ed ||
-	    !ops->start || !ops->stop || !ops->set_channel) {
-		pr_err("undefined IEEE802.15.4 device operations\n");
+	if (WARN_ON(!ops || !(ops->xmit_async || ops->xmit_sync) || !ops->ed ||
+		    !ops->start || !ops->stop || !ops->set_channel))
 		return NULL;
-	}
 
 	/* Ensure 32-byte alignment of our private data and hw private data.
 	 * We use the wpan_phy priv data for both our ieee802154_local and for
@@ -106,6 +96,20 @@ ieee802154_alloc_hw(size_t priv_data_len, const struct ieee802154_ops *ops)
 		     (unsigned long)local);
 
 	skb_queue_head_init(&local->skb_queue);
+
+	INIT_WORK(&local->tx_work, ieee802154_xmit_worker);
+
+	/* init supported flags with 802.15.4 default ranges */
+	phy->supported.max_minbe = 8;
+	phy->supported.min_maxbe = 3;
+	phy->supported.max_maxbe = 8;
+	phy->supported.min_frame_retries = 0;
+	phy->supported.max_frame_retries = 7;
+	phy->supported.max_csma_backoffs = 5;
+	phy->supported.lbt = NL802154_SUPPORTED_BOOL_FALSE;
+
+	/* always supported */
+	phy->supported.iftypes = BIT(NL802154_IFTYPE_NODE);
 
 	return &local->hw;
 }
@@ -155,6 +159,23 @@ int ieee802154_register_hw(struct ieee802154_hw *hw)
 
 	ieee802154_setup_wpan_phy_pib(local->phy);
 
+	if (!(hw->flags & IEEE802154_HW_CSMA_PARAMS)) {
+		local->phy->supported.min_csma_backoffs = 4;
+		local->phy->supported.max_csma_backoffs = 4;
+		local->phy->supported.min_maxbe = 5;
+		local->phy->supported.max_maxbe = 5;
+		local->phy->supported.min_minbe = 3;
+		local->phy->supported.max_minbe = 3;
+	}
+
+	if (!(hw->flags & IEEE802154_HW_FRAME_RETRIES)) {
+		local->phy->supported.min_frame_retries = 3;
+		local->phy->supported.max_frame_retries = 3;
+	}
+
+	if (hw->flags & IEEE802154_HW_PROMISCUOUS)
+		local->phy->supported.iftypes |= BIT(NL802154_IFTYPE_MONITOR);
+
 	rc = wpan_phy_register(local->phy);
 	if (rc < 0)
 		goto out_wq;
@@ -189,7 +210,6 @@ void ieee802154_unregister_hw(struct ieee802154_hw *hw)
 
 	tasklet_kill(&local->tasklet);
 	flush_workqueue(local->workqueue);
-	destroy_workqueue(local->workqueue);
 
 	rtnl_lock();
 
@@ -197,6 +217,7 @@ void ieee802154_unregister_hw(struct ieee802154_hw *hw)
 
 	rtnl_unlock();
 
+	destroy_workqueue(local->workqueue);
 	wpan_phy_unregister(local->phy);
 }
 EXPORT_SYMBOL(ieee802154_unregister_hw);

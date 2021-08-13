@@ -1,17 +1,13 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2014 STMicroelectronics (R&D) Limited
  * Author: Giuseppe Cavallaro <peppe.cavallaro@st.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
-#include <dt-bindings/reset-controller/stih407-resets.h>
+#include <dt-bindings/reset/stih407-resets.h>
 #include "reset-syscfg.h"
 
 /* STiH407 Peripheral powerdown definitions. */
@@ -52,6 +48,7 @@ static const struct syscfg_reset_channel_data stih407_powerdowns[] = {
 };
 
 /* Reset Generator control 0/1 */
+#define SYSCFG_5128	0x200
 #define SYSCFG_5131	0x20c
 #define SYSCFG_5132	0x210
 
@@ -96,6 +93,10 @@ static const struct syscfg_reset_channel_data stih407_softresets[] = {
 	[STIH407_ERAM_HVA_SOFTRESET] = STIH407_SRST_CORE(SYSCFG_5132, 1),
 	[STIH407_LPM_SOFTRESET] = STIH407_SRST_SBC(SYSCFG_4002, 2),
 	[STIH407_KEYSCAN_SOFTRESET] = STIH407_SRST_LPM(LPM_SYSCFG_1, 8),
+	[STIH407_ST231_AUD_SOFTRESET] = STIH407_SRST_CORE(SYSCFG_5131, 26),
+	[STIH407_ST231_DMU_SOFTRESET] = STIH407_SRST_CORE(SYSCFG_5131, 27),
+	[STIH407_ST231_GP0_SOFTRESET] = STIH407_SRST_CORE(SYSCFG_5131, 28),
+	[STIH407_ST231_GP1_SOFTRESET] = STIH407_SRST_CORE(SYSCFG_5128, 2),
 };
 
 /* PicoPHY reset/control */
@@ -126,7 +127,7 @@ static const struct syscfg_reset_controller_data stih407_picophyreset_controller
 	.channels = stih407_picophyresets,
 };
 
-static struct of_device_id stih407_reset_match[] = {
+static const struct of_device_id stih407_reset_match[] = {
 	{
 		.compatible = "st,stih407-powerdown",
 		.data = &stih407_powerdown_controller,

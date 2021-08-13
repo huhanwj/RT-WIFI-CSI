@@ -1,12 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2011-2014 NVIDIA CORPORATION.  All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/bitops.h>
+#include <linux/debugfs.h>
 #include <linux/err.h>
 #include <linux/iommu.h>
 #include <linux/kernel.h>
@@ -14,9 +12,16 @@
 #include <linux/of_device.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
+#include <linux/dma-mapping.h>
 
 #include <soc/tegra/ahb.h>
 #include <soc/tegra/mc.h>
+
+struct tegra_smmu_group {
+	struct list_head list;
+	const struct tegra_smmu_group_soc *soc;
+	struct iommu_group *group;
+};
 
 struct tegra_smmu {
 	void __iomem *regs;
@@ -25,6 +30,8 @@ struct tegra_smmu {
 	struct tegra_mc *mc;
 	const struct tegra_smmu_soc *soc;
 
+	struct list_head groups;
+
 	unsigned long pfn_mask;
 	unsigned long tlb_mask;
 
@@ -32,14 +39,20 @@ struct tegra_smmu {
 	struct mutex lock;
 
 	struct list_head list;
+
+	struct dentry *debugfs;
+
+	struct iommu_device iommu;	/* IOMMU Core code handle */
 };
 
 struct tegra_smmu_as {
 	struct iommu_domain domain;
 	struct tegra_smmu *smmu;
 	unsigned int use_count;
-	struct page *count;
+	u32 *count;
+	struct page **pts;
 	struct page *pd;
+	dma_addr_t pd_dma;
 	unsigned id;
 	u32 attr;
 };
@@ -78,15 +91,14 @@ static inline u32 smmu_readl(struct tegra_smmu *smmu, unsigned long offset)
 #define  SMMU_PTB_ASID_VALUE(x) ((x) & 0x7f)
 
 #define SMMU_PTB_DATA 0x020
-#define  SMMU_PTB_DATA_VALUE(page, attr) (page_to_phys(page) >> 12 | (attr))
+#define  SMMU_PTB_DATA_VALUE(dma, attr) ((dma) >> 12 | (attr))
 
-#define SMMU_MK_PDE(page, attr) (page_to_phys(page) >> SMMU_PTE_SHIFT | (attr))
+#define SMMU_MK_PDE(dma, attr) ((dma) >> SMMU_PTE_SHIFT | (attr))
 
 #define SMMU_TLB_FLUSH 0x030
 #define  SMMU_TLB_FLUSH_VA_MATCH_ALL     (0 << 0)
 #define  SMMU_TLB_FLUSH_VA_MATCH_SECTION (2 << 0)
 #define  SMMU_TLB_FLUSH_VA_MATCH_GROUP   (3 << 0)
-#define  SMMU_TLB_FLUSH_ASID(x)          (((x) & 0x7f) << 24)
 #define  SMMU_TLB_FLUSH_VA_SECTION(addr) ((((addr) & 0xffc00000) >> 12) | \
 					  SMMU_TLB_FLUSH_VA_MATCH_SECTION)
 #define  SMMU_TLB_FLUSH_VA_GROUP(addr)   ((((addr) & 0xffffc000) >> 12) | \
@@ -130,32 +142,50 @@ static inline u32 smmu_readl(struct tegra_smmu *smmu, unsigned long offset)
 
 #define SMMU_PDE_ATTR		(SMMU_PDE_READABLE | SMMU_PDE_WRITABLE | \
 				 SMMU_PDE_NONSECURE)
-#define SMMU_PTE_ATTR		(SMMU_PTE_READABLE | SMMU_PTE_WRITABLE | \
-				 SMMU_PTE_NONSECURE)
 
-static inline void smmu_flush_ptc(struct tegra_smmu *smmu, struct page *page,
+static unsigned int iova_pd_index(unsigned long iova)
+{
+	return (iova >> SMMU_PDE_SHIFT) & (SMMU_NUM_PDE - 1);
+}
+
+static unsigned int iova_pt_index(unsigned long iova)
+{
+	return (iova >> SMMU_PTE_SHIFT) & (SMMU_NUM_PTE - 1);
+}
+
+static bool smmu_dma_addr_valid(struct tegra_smmu *smmu, dma_addr_t addr)
+{
+	addr >>= 12;
+	return (addr & smmu->pfn_mask) == addr;
+}
+
+static dma_addr_t smmu_pde_to_dma(u32 pde)
+{
+	return pde << 12;
+}
+
+static void smmu_flush_ptc_all(struct tegra_smmu *smmu)
+{
+	smmu_writel(smmu, SMMU_PTC_FLUSH_TYPE_ALL, SMMU_PTC_FLUSH);
+}
+
+static inline void smmu_flush_ptc(struct tegra_smmu *smmu, dma_addr_t dma,
 				  unsigned long offset)
 {
-	phys_addr_t phys = page ? page_to_phys(page) : 0;
 	u32 value;
 
-	if (page) {
-		offset &= ~(smmu->mc->soc->atom_size - 1);
+	offset &= ~(smmu->mc->soc->atom_size - 1);
 
-		if (smmu->mc->soc->num_address_bits > 32) {
-#ifdef CONFIG_PHYS_ADDR_T_64BIT
-			value = (phys >> 32) & SMMU_PTC_FLUSH_HI_MASK;
+	if (smmu->mc->soc->num_address_bits > 32) {
+#ifdef CONFIG_ARCH_DMA_ADDR_T_64BIT
+		value = (dma >> 32) & SMMU_PTC_FLUSH_HI_MASK;
 #else
-			value = 0;
+		value = 0;
 #endif
-			smmu_writel(smmu, value, SMMU_PTC_FLUSH_HI);
-		}
-
-		value = (phys + offset) | SMMU_PTC_FLUSH_TYPE_ADR;
-	} else {
-		value = SMMU_PTC_FLUSH_TYPE_ALL;
+		smmu_writel(smmu, value, SMMU_PTC_FLUSH_HI);
 	}
 
+	value = (dma + offset) | SMMU_PTC_FLUSH_TYPE_ADR;
 	smmu_writel(smmu, value, SMMU_PTC_FLUSH);
 }
 
@@ -169,8 +199,12 @@ static inline void smmu_flush_tlb_asid(struct tegra_smmu *smmu,
 {
 	u32 value;
 
-	value = SMMU_TLB_FLUSH_ASID_MATCH | SMMU_TLB_FLUSH_ASID(asid) |
-		SMMU_TLB_FLUSH_VA_MATCH_ALL;
+	if (smmu->soc->num_asids == 4)
+		value = (asid & 0x3) << 29;
+	else
+		value = (asid & 0x7f) << 24;
+
+	value |= SMMU_TLB_FLUSH_ASID_MATCH | SMMU_TLB_FLUSH_VA_MATCH_ALL;
 	smmu_writel(smmu, value, SMMU_TLB_FLUSH);
 }
 
@@ -180,8 +214,12 @@ static inline void smmu_flush_tlb_section(struct tegra_smmu *smmu,
 {
 	u32 value;
 
-	value = SMMU_TLB_FLUSH_ASID_MATCH | SMMU_TLB_FLUSH_ASID(asid) |
-		SMMU_TLB_FLUSH_VA_SECTION(iova);
+	if (smmu->soc->num_asids == 4)
+		value = (asid & 0x3) << 29;
+	else
+		value = (asid & 0x7f) << 24;
+
+	value |= SMMU_TLB_FLUSH_ASID_MATCH | SMMU_TLB_FLUSH_VA_SECTION(iova);
 	smmu_writel(smmu, value, SMMU_TLB_FLUSH);
 }
 
@@ -191,8 +229,12 @@ static inline void smmu_flush_tlb_group(struct tegra_smmu *smmu,
 {
 	u32 value;
 
-	value = SMMU_TLB_FLUSH_ASID_MATCH | SMMU_TLB_FLUSH_ASID(asid) |
-		SMMU_TLB_FLUSH_VA_GROUP(iova);
+	if (smmu->soc->num_asids == 4)
+		value = (asid & 0x3) << 29;
+	else
+		value = (asid & 0x7f) << 24;
+
+	value |= SMMU_TLB_FLUSH_ASID_MATCH | SMMU_TLB_FLUSH_VA_GROUP(iova);
 	smmu_writel(smmu, value, SMMU_TLB_FLUSH);
 }
 
@@ -235,8 +277,6 @@ static bool tegra_smmu_capable(enum iommu_cap cap)
 static struct iommu_domain *tegra_smmu_domain_alloc(unsigned type)
 {
 	struct tegra_smmu_as *as;
-	unsigned int i;
-	uint32_t *pd;
 
 	if (type != IOMMU_DOMAIN_UNMANAGED)
 		return NULL;
@@ -247,32 +287,26 @@ static struct iommu_domain *tegra_smmu_domain_alloc(unsigned type)
 
 	as->attr = SMMU_PD_READABLE | SMMU_PD_WRITABLE | SMMU_PD_NONSECURE;
 
-	as->pd = alloc_page(GFP_KERNEL | __GFP_DMA);
+	as->pd = alloc_page(GFP_KERNEL | __GFP_DMA | __GFP_ZERO);
 	if (!as->pd) {
 		kfree(as);
 		return NULL;
 	}
 
-	as->count = alloc_page(GFP_KERNEL);
+	as->count = kcalloc(SMMU_NUM_PDE, sizeof(u32), GFP_KERNEL);
 	if (!as->count) {
 		__free_page(as->pd);
 		kfree(as);
 		return NULL;
 	}
 
-	/* clear PDEs */
-	pd = page_address(as->pd);
-	SetPageReserved(as->pd);
-
-	for (i = 0; i < SMMU_NUM_PDE; i++)
-		pd[i] = 0;
-
-	/* clear PDE usage counters */
-	pd = page_address(as->count);
-	SetPageReserved(as->count);
-
-	for (i = 0; i < SMMU_NUM_PDE; i++)
-		pd[i] = 0;
+	as->pts = kcalloc(SMMU_NUM_PDE, sizeof(*as->pts), GFP_KERNEL);
+	if (!as->pts) {
+		kfree(as->count);
+		__free_page(as->pd);
+		kfree(as);
+		return NULL;
+	}
 
 	/* setup aperture */
 	as->domain.geometry.aperture_start = 0;
@@ -287,8 +321,10 @@ static void tegra_smmu_domain_free(struct iommu_domain *domain)
 	struct tegra_smmu_as *as = to_smmu_as(domain);
 
 	/* TODO: free page directory and page tables */
-	ClearPageReserved(as->pd);
 
+	WARN_ON_ONCE(as->use_count);
+	kfree(as->count);
+	kfree(as->pts);
 	kfree(as);
 }
 
@@ -375,16 +411,26 @@ static int tegra_smmu_as_prepare(struct tegra_smmu *smmu,
 		return 0;
 	}
 
+	as->pd_dma = dma_map_page(smmu->dev, as->pd, 0, SMMU_SIZE_PD,
+				  DMA_TO_DEVICE);
+	if (dma_mapping_error(smmu->dev, as->pd_dma))
+		return -ENOMEM;
+
+	/* We can't handle 64-bit DMA addresses */
+	if (!smmu_dma_addr_valid(smmu, as->pd_dma)) {
+		err = -ENOMEM;
+		goto err_unmap;
+	}
+
 	err = tegra_smmu_alloc_asid(smmu, &as->id);
 	if (err < 0)
-		return err;
+		goto err_unmap;
 
-	smmu->soc->ops->flush_dcache(as->pd, 0, SMMU_SIZE_PD);
-	smmu_flush_ptc(smmu, as->pd, 0);
+	smmu_flush_ptc(smmu, as->pd_dma, 0);
 	smmu_flush_tlb_asid(smmu, as->id);
 
 	smmu_writel(smmu, as->id & 0x7f, SMMU_PTB_ASID);
-	value = SMMU_PTB_DATA_VALUE(as->pd, as->attr);
+	value = SMMU_PTB_DATA_VALUE(as->pd_dma, as->attr);
 	smmu_writel(smmu, value, SMMU_PTB_DATA);
 	smmu_flush(smmu);
 
@@ -392,6 +438,10 @@ static int tegra_smmu_as_prepare(struct tegra_smmu *smmu,
 	as->use_count++;
 
 	return 0;
+
+err_unmap:
+	dma_unmap_page(smmu->dev, as->pd_dma, SMMU_SIZE_PD, DMA_TO_DEVICE);
+	return err;
 }
 
 static void tegra_smmu_as_unprepare(struct tegra_smmu *smmu,
@@ -401,6 +451,9 @@ static void tegra_smmu_as_unprepare(struct tegra_smmu *smmu,
 		return;
 
 	tegra_smmu_free_asid(smmu, as->id);
+
+	dma_unmap_page(smmu->dev, as->pd_dma, SMMU_SIZE_PD, DMA_TO_DEVICE);
+
 	as->smmu = NULL;
 }
 
@@ -464,120 +517,181 @@ static void tegra_smmu_detach_dev(struct iommu_domain *domain, struct device *de
 	}
 }
 
-static u32 *as_get_pte(struct tegra_smmu_as *as, dma_addr_t iova,
-		       struct page **pagep)
+static void tegra_smmu_set_pde(struct tegra_smmu_as *as, unsigned long iova,
+			       u32 value)
 {
-	u32 *pd = page_address(as->pd), *pt, *count;
-	u32 pde = (iova >> SMMU_PDE_SHIFT) & 0x3ff;
-	u32 pte = (iova >> SMMU_PTE_SHIFT) & 0x3ff;
+	unsigned int pd_index = iova_pd_index(iova);
 	struct tegra_smmu *smmu = as->smmu;
-	struct page *page;
-	unsigned int i;
+	u32 *pd = page_address(as->pd);
+	unsigned long offset = pd_index * sizeof(*pd);
 
-	if (pd[pde] == 0) {
-		page = alloc_page(GFP_KERNEL | __GFP_DMA);
+	/* Set the page directory entry first */
+	pd[pd_index] = value;
+
+	/* The flush the page directory entry from caches */
+	dma_sync_single_range_for_device(smmu->dev, as->pd_dma, offset,
+					 sizeof(*pd), DMA_TO_DEVICE);
+
+	/* And flush the iommu */
+	smmu_flush_ptc(smmu, as->pd_dma, offset);
+	smmu_flush_tlb_section(smmu, as->id, iova);
+	smmu_flush(smmu);
+}
+
+static u32 *tegra_smmu_pte_offset(struct page *pt_page, unsigned long iova)
+{
+	u32 *pt = page_address(pt_page);
+
+	return pt + iova_pt_index(iova);
+}
+
+static u32 *tegra_smmu_pte_lookup(struct tegra_smmu_as *as, unsigned long iova,
+				  dma_addr_t *dmap)
+{
+	unsigned int pd_index = iova_pd_index(iova);
+	struct page *pt_page;
+	u32 *pd;
+
+	pt_page = as->pts[pd_index];
+	if (!pt_page)
+		return NULL;
+
+	pd = page_address(as->pd);
+	*dmap = smmu_pde_to_dma(pd[pd_index]);
+
+	return tegra_smmu_pte_offset(pt_page, iova);
+}
+
+static u32 *as_get_pte(struct tegra_smmu_as *as, dma_addr_t iova,
+		       dma_addr_t *dmap)
+{
+	unsigned int pde = iova_pd_index(iova);
+	struct tegra_smmu *smmu = as->smmu;
+
+	if (!as->pts[pde]) {
+		struct page *page;
+		dma_addr_t dma;
+
+		page = alloc_page(GFP_KERNEL | __GFP_DMA | __GFP_ZERO);
 		if (!page)
 			return NULL;
 
-		pt = page_address(page);
-		SetPageReserved(page);
+		dma = dma_map_page(smmu->dev, page, 0, SMMU_SIZE_PT,
+				   DMA_TO_DEVICE);
+		if (dma_mapping_error(smmu->dev, dma)) {
+			__free_page(page);
+			return NULL;
+		}
 
-		for (i = 0; i < SMMU_NUM_PTE; i++)
-			pt[i] = 0;
+		if (!smmu_dma_addr_valid(smmu, dma)) {
+			dma_unmap_page(smmu->dev, dma, SMMU_SIZE_PT,
+				       DMA_TO_DEVICE);
+			__free_page(page);
+			return NULL;
+		}
 
-		smmu->soc->ops->flush_dcache(page, 0, SMMU_SIZE_PT);
+		as->pts[pde] = page;
 
-		pd[pde] = SMMU_MK_PDE(page, SMMU_PDE_ATTR | SMMU_PDE_NEXT);
+		tegra_smmu_set_pde(as, iova, SMMU_MK_PDE(dma, SMMU_PDE_ATTR |
+							      SMMU_PDE_NEXT));
 
-		smmu->soc->ops->flush_dcache(as->pd, pde << 2, 4);
-		smmu_flush_ptc(smmu, as->pd, pde << 2);
-		smmu_flush_tlb_section(smmu, as->id, iova);
-		smmu_flush(smmu);
+		*dmap = dma;
 	} else {
-		page = pfn_to_page(pd[pde] & smmu->pfn_mask);
-		pt = page_address(page);
+		u32 *pd = page_address(as->pd);
+
+		*dmap = smmu_pde_to_dma(pd[pde]);
 	}
 
-	*pagep = page;
-
-	/* Keep track of entries in this page table. */
-	count = page_address(as->count);
-	if (pt[pte] == 0)
-		count[pde]++;
-
-	return &pt[pte];
+	return tegra_smmu_pte_offset(as->pts[pde], iova);
 }
 
-static void as_put_pte(struct tegra_smmu_as *as, dma_addr_t iova)
+static void tegra_smmu_pte_get_use(struct tegra_smmu_as *as, unsigned long iova)
 {
-	u32 pde = (iova >> SMMU_PDE_SHIFT) & 0x3ff;
-	u32 pte = (iova >> SMMU_PTE_SHIFT) & 0x3ff;
-	u32 *count = page_address(as->count);
-	u32 *pd = page_address(as->pd), *pt;
-	struct page *page;
+	unsigned int pd_index = iova_pd_index(iova);
 
-	page = pfn_to_page(pd[pde] & as->smmu->pfn_mask);
-	pt = page_address(page);
+	as->count[pd_index]++;
+}
+
+static void tegra_smmu_pte_put_use(struct tegra_smmu_as *as, unsigned long iova)
+{
+	unsigned int pde = iova_pd_index(iova);
+	struct page *page = as->pts[pde];
 
 	/*
 	 * When no entries in this page table are used anymore, return the
 	 * memory page to the system.
 	 */
-	if (pt[pte] != 0) {
-		if (--count[pde] == 0) {
-			ClearPageReserved(page);
-			__free_page(page);
-			pd[pde] = 0;
-		}
+	if (--as->count[pde] == 0) {
+		struct tegra_smmu *smmu = as->smmu;
+		u32 *pd = page_address(as->pd);
+		dma_addr_t pte_dma = smmu_pde_to_dma(pd[pde]);
 
-		pt[pte] = 0;
+		tegra_smmu_set_pde(as, iova, 0);
+
+		dma_unmap_page(smmu->dev, pte_dma, SMMU_SIZE_PT, DMA_TO_DEVICE);
+		__free_page(page);
+		as->pts[pde] = NULL;
 	}
+}
+
+static void tegra_smmu_set_pte(struct tegra_smmu_as *as, unsigned long iova,
+			       u32 *pte, dma_addr_t pte_dma, u32 val)
+{
+	struct tegra_smmu *smmu = as->smmu;
+	unsigned long offset = offset_in_page(pte);
+
+	*pte = val;
+
+	dma_sync_single_range_for_device(smmu->dev, pte_dma, offset,
+					 4, DMA_TO_DEVICE);
+	smmu_flush_ptc(smmu, pte_dma, offset);
+	smmu_flush_tlb_group(smmu, as->id, iova);
+	smmu_flush(smmu);
 }
 
 static int tegra_smmu_map(struct iommu_domain *domain, unsigned long iova,
 			  phys_addr_t paddr, size_t size, int prot)
 {
 	struct tegra_smmu_as *as = to_smmu_as(domain);
-	struct tegra_smmu *smmu = as->smmu;
-	unsigned long offset;
-	struct page *page;
+	dma_addr_t pte_dma;
+	u32 pte_attrs;
 	u32 *pte;
 
-	pte = as_get_pte(as, iova, &page);
+	pte = as_get_pte(as, iova, &pte_dma);
 	if (!pte)
 		return -ENOMEM;
 
-	*pte = __phys_to_pfn(paddr) | SMMU_PTE_ATTR;
-	offset = offset_in_page(pte);
+	/* If we aren't overwriting a pre-existing entry, increment use */
+	if (*pte == 0)
+		tegra_smmu_pte_get_use(as, iova);
 
-	smmu->soc->ops->flush_dcache(page, offset, 4);
-	smmu_flush_ptc(smmu, page, offset);
-	smmu_flush_tlb_group(smmu, as->id, iova);
-	smmu_flush(smmu);
+	pte_attrs = SMMU_PTE_NONSECURE;
+
+	if (prot & IOMMU_READ)
+		pte_attrs |= SMMU_PTE_READABLE;
+
+	if (prot & IOMMU_WRITE)
+		pte_attrs |= SMMU_PTE_WRITABLE;
+
+	tegra_smmu_set_pte(as, iova, pte, pte_dma,
+			   __phys_to_pfn(paddr) | pte_attrs);
 
 	return 0;
 }
 
 static size_t tegra_smmu_unmap(struct iommu_domain *domain, unsigned long iova,
-			       size_t size)
+			       size_t size, struct iommu_iotlb_gather *gather)
 {
 	struct tegra_smmu_as *as = to_smmu_as(domain);
-	struct tegra_smmu *smmu = as->smmu;
-	unsigned long offset;
-	struct page *page;
+	dma_addr_t pte_dma;
 	u32 *pte;
 
-	pte = as_get_pte(as, iova, &page);
-	if (!pte)
+	pte = tegra_smmu_pte_lookup(as, iova, &pte_dma);
+	if (!pte || !*pte)
 		return 0;
 
-	offset = offset_in_page(pte);
-	as_put_pte(as, iova);
-
-	smmu->soc->ops->flush_dcache(page, offset, 4);
-	smmu_flush_ptc(smmu, page, offset);
-	smmu_flush_tlb_group(smmu, as->id, iova);
-	smmu_flush(smmu);
+	tegra_smmu_set_pte(as, iova, pte, pte_dma, 0);
+	tegra_smmu_pte_put_use(as, iova);
 
 	return size;
 }
@@ -586,11 +700,14 @@ static phys_addr_t tegra_smmu_iova_to_phys(struct iommu_domain *domain,
 					   dma_addr_t iova)
 {
 	struct tegra_smmu_as *as = to_smmu_as(domain);
-	struct page *page;
 	unsigned long pfn;
+	dma_addr_t pte_dma;
 	u32 *pte;
 
-	pte = as_get_pte(as, iova, &page);
+	pte = tegra_smmu_pte_lookup(as, iova, &pte_dma);
+	if (!pte || !*pte)
+		return 0;
+
 	pfn = *pte & as->smmu->pfn_mask;
 
 	return PFN_PHYS(pfn);
@@ -612,36 +729,158 @@ static struct tegra_smmu *tegra_smmu_find(struct device_node *np)
 	return mc->smmu;
 }
 
+static int tegra_smmu_configure(struct tegra_smmu *smmu, struct device *dev,
+				struct of_phandle_args *args)
+{
+	const struct iommu_ops *ops = smmu->iommu.ops;
+	int err;
+
+	err = iommu_fwspec_init(dev, &dev->of_node->fwnode, ops);
+	if (err < 0) {
+		dev_err(dev, "failed to initialize fwspec: %d\n", err);
+		return err;
+	}
+
+	err = ops->of_xlate(dev, args);
+	if (err < 0) {
+		dev_err(dev, "failed to parse SW group ID: %d\n", err);
+		iommu_fwspec_free(dev);
+		return err;
+	}
+
+	return 0;
+}
+
 static int tegra_smmu_add_device(struct device *dev)
 {
 	struct device_node *np = dev->of_node;
+	struct tegra_smmu *smmu = NULL;
+	struct iommu_group *group;
 	struct of_phandle_args args;
 	unsigned int index = 0;
+	int err;
 
 	while (of_parse_phandle_with_args(np, "iommus", "#iommu-cells", index,
 					  &args) == 0) {
-		struct tegra_smmu *smmu;
-
 		smmu = tegra_smmu_find(args.np);
 		if (smmu) {
+			err = tegra_smmu_configure(smmu, dev, &args);
+			of_node_put(args.np);
+
+			if (err < 0)
+				return err;
+
 			/*
 			 * Only a single IOMMU master interface is currently
 			 * supported by the Linux kernel, so abort after the
 			 * first match.
 			 */
 			dev->archdata.iommu = smmu;
+
+			iommu_device_link(&smmu->iommu, dev);
+
 			break;
 		}
 
+		of_node_put(args.np);
 		index++;
 	}
+
+	if (!smmu)
+		return -ENODEV;
+
+	group = iommu_group_get_for_dev(dev);
+	if (IS_ERR(group))
+		return PTR_ERR(group);
+
+	iommu_group_put(group);
 
 	return 0;
 }
 
 static void tegra_smmu_remove_device(struct device *dev)
 {
+	struct tegra_smmu *smmu = dev->archdata.iommu;
+
+	if (smmu)
+		iommu_device_unlink(&smmu->iommu, dev);
+
 	dev->archdata.iommu = NULL;
+	iommu_group_remove_device(dev);
+}
+
+static const struct tegra_smmu_group_soc *
+tegra_smmu_find_group(struct tegra_smmu *smmu, unsigned int swgroup)
+{
+	unsigned int i, j;
+
+	for (i = 0; i < smmu->soc->num_groups; i++)
+		for (j = 0; j < smmu->soc->groups[i].num_swgroups; j++)
+			if (smmu->soc->groups[i].swgroups[j] == swgroup)
+				return &smmu->soc->groups[i];
+
+	return NULL;
+}
+
+static struct iommu_group *tegra_smmu_group_get(struct tegra_smmu *smmu,
+						unsigned int swgroup)
+{
+	const struct tegra_smmu_group_soc *soc;
+	struct tegra_smmu_group *group;
+
+	soc = tegra_smmu_find_group(smmu, swgroup);
+	if (!soc)
+		return NULL;
+
+	mutex_lock(&smmu->lock);
+
+	list_for_each_entry(group, &smmu->groups, list)
+		if (group->soc == soc) {
+			mutex_unlock(&smmu->lock);
+			return group->group;
+		}
+
+	group = devm_kzalloc(smmu->dev, sizeof(*group), GFP_KERNEL);
+	if (!group) {
+		mutex_unlock(&smmu->lock);
+		return NULL;
+	}
+
+	INIT_LIST_HEAD(&group->list);
+	group->soc = soc;
+
+	group->group = iommu_group_alloc();
+	if (IS_ERR(group->group)) {
+		devm_kfree(smmu->dev, group);
+		mutex_unlock(&smmu->lock);
+		return NULL;
+	}
+
+	list_add_tail(&group->list, &smmu->groups);
+	mutex_unlock(&smmu->lock);
+
+	return group->group;
+}
+
+static struct iommu_group *tegra_smmu_device_group(struct device *dev)
+{
+	struct iommu_fwspec *fwspec = dev_iommu_fwspec_get(dev);
+	struct tegra_smmu *smmu = dev->archdata.iommu;
+	struct iommu_group *group;
+
+	group = tegra_smmu_group_get(smmu, fwspec->ids[0]);
+	if (!group)
+		group = generic_device_group(dev);
+
+	return group;
+}
+
+static int tegra_smmu_of_xlate(struct device *dev,
+			       struct of_phandle_args *args)
+{
+	u32 id = args->args[0];
+
+	return iommu_fwspec_add_ids(dev, &id, 1);
 }
 
 static const struct iommu_ops tegra_smmu_ops = {
@@ -652,11 +891,11 @@ static const struct iommu_ops tegra_smmu_ops = {
 	.detach_dev = tegra_smmu_detach_dev,
 	.add_device = tegra_smmu_add_device,
 	.remove_device = tegra_smmu_remove_device,
+	.device_group = tegra_smmu_device_group,
 	.map = tegra_smmu_map,
 	.unmap = tegra_smmu_unmap,
-	.map_sg = default_iommu_map_sg,
 	.iova_to_phys = tegra_smmu_iova_to_phys,
-
+	.of_xlate = tegra_smmu_of_xlate,
 	.pgsize_bitmap = SZ_4K,
 };
 
@@ -675,6 +914,83 @@ static void tegra_smmu_ahb_enable(void)
 	}
 }
 
+static int tegra_smmu_swgroups_show(struct seq_file *s, void *data)
+{
+	struct tegra_smmu *smmu = s->private;
+	unsigned int i;
+	u32 value;
+
+	seq_printf(s, "swgroup    enabled  ASID\n");
+	seq_printf(s, "------------------------\n");
+
+	for (i = 0; i < smmu->soc->num_swgroups; i++) {
+		const struct tegra_smmu_swgroup *group = &smmu->soc->swgroups[i];
+		const char *status;
+		unsigned int asid;
+
+		value = smmu_readl(smmu, group->reg);
+
+		if (value & SMMU_ASID_ENABLE)
+			status = "yes";
+		else
+			status = "no";
+
+		asid = value & SMMU_ASID_MASK;
+
+		seq_printf(s, "%-9s  %-7s  %#04x\n", group->name, status,
+			   asid);
+	}
+
+	return 0;
+}
+
+DEFINE_SHOW_ATTRIBUTE(tegra_smmu_swgroups);
+
+static int tegra_smmu_clients_show(struct seq_file *s, void *data)
+{
+	struct tegra_smmu *smmu = s->private;
+	unsigned int i;
+	u32 value;
+
+	seq_printf(s, "client       enabled\n");
+	seq_printf(s, "--------------------\n");
+
+	for (i = 0; i < smmu->soc->num_clients; i++) {
+		const struct tegra_mc_client *client = &smmu->soc->clients[i];
+		const char *status;
+
+		value = smmu_readl(smmu, client->smmu.reg);
+
+		if (value & BIT(client->smmu.bit))
+			status = "yes";
+		else
+			status = "no";
+
+		seq_printf(s, "%-12s %s\n", client->name, status);
+	}
+
+	return 0;
+}
+
+DEFINE_SHOW_ATTRIBUTE(tegra_smmu_clients);
+
+static void tegra_smmu_debugfs_init(struct tegra_smmu *smmu)
+{
+	smmu->debugfs = debugfs_create_dir("smmu", NULL);
+	if (!smmu->debugfs)
+		return;
+
+	debugfs_create_file("swgroups", S_IRUGO, smmu->debugfs, smmu,
+			    &tegra_smmu_swgroups_fops);
+	debugfs_create_file("clients", S_IRUGO, smmu->debugfs, smmu,
+			    &tegra_smmu_clients_fops);
+}
+
+static void tegra_smmu_debugfs_exit(struct tegra_smmu *smmu)
+{
+	debugfs_remove_recursive(smmu->debugfs);
+}
+
 struct tegra_smmu *tegra_smmu_probe(struct device *dev,
 				    const struct tegra_smmu_soc *soc,
 				    struct tegra_mc *mc)
@@ -683,10 +999,6 @@ struct tegra_smmu *tegra_smmu_probe(struct device *dev,
 	size_t size;
 	u32 value;
 	int err;
-
-	/* This can happen on Tegra20 which doesn't have an SMMU */
-	if (!soc)
-		return NULL;
 
 	smmu = devm_kzalloc(dev, sizeof(*smmu), GFP_KERNEL);
 	if (!smmu)
@@ -708,6 +1020,7 @@ struct tegra_smmu *tegra_smmu_probe(struct device *dev,
 	if (!smmu->asids)
 		return ERR_PTR(-ENOMEM);
 
+	INIT_LIST_HEAD(&smmu->groups);
 	mutex_init(&smmu->lock);
 
 	smmu->regs = mc->regs;
@@ -737,16 +1050,44 @@ struct tegra_smmu *tegra_smmu_probe(struct device *dev,
 
 	smmu_writel(smmu, value, SMMU_TLB_CONFIG);
 
-	smmu_flush_ptc(smmu, NULL, 0);
+	smmu_flush_ptc_all(smmu);
 	smmu_flush_tlb(smmu);
 	smmu_writel(smmu, SMMU_CONFIG_ENABLE, SMMU_CONFIG);
 	smmu_flush(smmu);
 
 	tegra_smmu_ahb_enable();
 
-	err = bus_set_iommu(&platform_bus_type, &tegra_smmu_ops);
-	if (err < 0)
+	err = iommu_device_sysfs_add(&smmu->iommu, dev, NULL, dev_name(dev));
+	if (err)
 		return ERR_PTR(err);
 
+	iommu_device_set_ops(&smmu->iommu, &tegra_smmu_ops);
+	iommu_device_set_fwnode(&smmu->iommu, dev->fwnode);
+
+	err = iommu_device_register(&smmu->iommu);
+	if (err) {
+		iommu_device_sysfs_remove(&smmu->iommu);
+		return ERR_PTR(err);
+	}
+
+	err = bus_set_iommu(&platform_bus_type, &tegra_smmu_ops);
+	if (err < 0) {
+		iommu_device_unregister(&smmu->iommu);
+		iommu_device_sysfs_remove(&smmu->iommu);
+		return ERR_PTR(err);
+	}
+
+	if (IS_ENABLED(CONFIG_DEBUG_FS))
+		tegra_smmu_debugfs_init(smmu);
+
 	return smmu;
+}
+
+void tegra_smmu_remove(struct tegra_smmu *smmu)
+{
+	iommu_device_unregister(&smmu->iommu);
+	iommu_device_sysfs_remove(&smmu->iommu);
+
+	if (IS_ENABLED(CONFIG_DEBUG_FS))
+		tegra_smmu_debugfs_exit(smmu);
 }

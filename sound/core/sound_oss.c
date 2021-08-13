@@ -1,29 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Advanced Linux Sound Architecture
  *  Copyright (c) by Jaroslav Kysela <perex@perex.cz>
- *
- *
- *   This program is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
- *
  */
-
-#ifdef CONFIG_SND_OSSEMUL
-
-#if !IS_ENABLED(CONFIG_SOUND)
-#error "Enable the OSS soundcore multiplexer (CONFIG_SOUND) in the kernel."
-#endif
 
 #include <linux/init.h>
 #include <linux/export.h>
@@ -61,7 +40,6 @@ void *snd_lookup_oss_minor_data(unsigned int minor, int type)
 	mutex_unlock(&sound_oss_mutex);
 	return private_data;
 }
-
 EXPORT_SYMBOL(snd_lookup_oss_minor_data);
 
 static int snd_oss_kernel_minor(int type, struct snd_card *card, int dev)
@@ -165,7 +143,6 @@ int snd_register_oss_device(int type, struct snd_card *card, int dev,
 	kfree(preg);
       	return -EBUSY;
 }
-
 EXPORT_SYMBOL(snd_register_oss_device);
 
 int snd_unregister_oss_device(int type, struct snd_card *card, int dev)
@@ -206,17 +183,13 @@ int snd_unregister_oss_device(int type, struct snd_card *card, int dev)
 	kfree(mptr);
 	return 0;
 }
-
 EXPORT_SYMBOL(snd_unregister_oss_device);
 
 /*
  *  INFO PART
  */
 
-#ifdef CONFIG_PROC_FS
-
-static struct snd_info_entry *snd_minor_info_oss_entry;
-
+#ifdef CONFIG_SND_PROC_FS
 static const char *snd_oss_device_type_name(int type)
 {
 	switch (type) {
@@ -263,22 +236,9 @@ int __init snd_minor_info_oss_init(void)
 	struct snd_info_entry *entry;
 
 	entry = snd_info_create_module_entry(THIS_MODULE, "devices", snd_oss_root);
-	if (entry) {
-		entry->c.text.read = snd_minor_info_oss_read;
-		if (snd_info_register(entry) < 0) {
-			snd_info_free_entry(entry);
-			entry = NULL;
-		}
-	}
-	snd_minor_info_oss_entry = entry;
-	return 0;
+	if (!entry)
+		return -ENOMEM;
+	entry->c.text.read = snd_minor_info_oss_read;
+	return snd_info_register(entry); /* freed in error path */
 }
-
-int __exit snd_minor_info_oss_done(void)
-{
-	snd_info_free_entry(snd_minor_info_oss_entry);
-	return 0;
-}
-#endif /* CONFIG_PROC_FS */
-
-#endif /* CONFIG_SND_OSSEMUL */
+#endif /* CONFIG_SND_PROC_FS */

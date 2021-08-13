@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * comedi_bond.c
  * A Comedi driver to 'bond' or merge multiple drivers and devices as one.
@@ -5,16 +6,6 @@
  * COMEDI - Linux Control and Measurement Device Interface
  * Copyright (C) 2000 David A. Schleef <ds@schleef.org>
  * Copyright (C) 2005 Calin A. Culianu <calin@ajvar.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 /*
@@ -55,16 +46,16 @@
 
 struct bonded_device {
 	struct comedi_device *dev;
-	unsigned minor;
-	unsigned subdev;
-	unsigned nchans;
+	unsigned int minor;
+	unsigned int subdev;
+	unsigned int nchans;
 };
 
 struct comedi_bond_private {
 	char name[256];
 	struct bonded_device **devs;
-	unsigned ndevs;
-	unsigned nchans;
+	unsigned int ndevs;
+	unsigned int nchans;
 };
 
 static int bonding_dio_insn_bits(struct comedi_device *dev,
@@ -101,7 +92,8 @@ static int bonding_dio_insn_bits(struct comedi_device *dev,
 			b_chans = bdev->nchans - base_chan;
 			if (b_chans > n_left)
 				b_chans = n_left;
-			b_mask = (1U << b_chans) - 1;
+			b_mask = (b_chans < 32) ? ((1 << b_chans) - 1)
+						: 0xffffffff;
 			b_write_mask = (write_mask >> n_done) & b_mask;
 			b_data_bits = (data_bits >> n_done) & b_mask;
 			/* Read/Write the new digital lines. */

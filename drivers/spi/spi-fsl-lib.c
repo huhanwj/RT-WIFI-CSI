@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Freescale SPI/eSPI controller driver library.
  *
@@ -10,11 +11,6 @@
  * Author: Anton Vorontsov <avorontsov@ru.mvista.com>
  *
  * Copyright 2010 Freescale Semiconductor, Inc.
- *
- * This program is free software; you can redistribute  it and/or modify it
- * under  the terms of  the GNU General  Public License as published by the
- * Free Software Foundation;  either version 2 of the  License, or (at your
- * option) any later version.
  */
 #include <linux/dma-mapping.h>
 #include <linux/fsl_devices.h>
@@ -113,25 +109,6 @@ void mpc8xxx_spi_probe(struct device *dev, struct resource *mem,
 	init_completion(&mpc8xxx_spi->done);
 }
 EXPORT_SYMBOL_GPL(mpc8xxx_spi_probe);
-
-int mpc8xxx_spi_remove(struct device *dev)
-{
-	struct mpc8xxx_spi *mpc8xxx_spi;
-	struct spi_master *master;
-
-	master = dev_get_drvdata(dev);
-	mpc8xxx_spi = spi_master_get_devdata(master);
-
-	spi_unregister_master(master);
-
-	free_irq(mpc8xxx_spi->irq, mpc8xxx_spi);
-
-	if (mpc8xxx_spi->spi_remove)
-		mpc8xxx_spi->spi_remove(mpc8xxx_spi);
-
-	return 0;
-}
-EXPORT_SYMBOL_GPL(mpc8xxx_spi_remove);
 
 int of_mpc8xxx_spi_probe(struct platform_device *ofdev)
 {

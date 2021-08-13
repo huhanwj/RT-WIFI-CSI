@@ -1,10 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright 2009-2010 Creative Product Design
  * Marc Reilly marc@cpdesign.com.au
- *
- * This program is free software; you can redistribute it and/or modify it under
- * the terms of the GNU General Public License version 2 as published by the
- * Free Software Foundation.
  */
 
 #include <linux/slab.h>
@@ -96,7 +93,6 @@ static int mc13xxx_i2c_remove(struct i2c_client *client)
 static struct i2c_driver mc13xxx_i2c_driver = {
 	.id_table = mc13xxx_i2c_device_id,
 	.driver = {
-		.owner = THIS_MODULE,
 		.name = "mc13xxx",
 		.of_match_table = mc13xxx_dt_ids,
 	},

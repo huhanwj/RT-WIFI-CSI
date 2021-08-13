@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * tick internal variable and functions used by low/high res code
  */
@@ -36,11 +37,22 @@ static inline int tick_device_is_functional(struct clock_event_device *dev)
 	return !(dev->features & CLOCK_EVT_FEAT_DUMMY);
 }
 
+static inline enum clock_event_state clockevent_get_state(struct clock_event_device *dev)
+{
+	return dev->state_use_accessors;
+}
+
+static inline void clockevent_set_state(struct clock_event_device *dev,
+					enum clock_event_state state)
+{
+	dev->state_use_accessors = state;
+}
+
 extern void clockevents_shutdown(struct clock_event_device *dev);
 extern void clockevents_exchange_device(struct clock_event_device *old,
 					struct clock_event_device *new);
-extern void clockevents_set_state(struct clock_event_device *dev,
-				 enum clock_event_state state);
+extern void clockevents_switch_state(struct clock_event_device *dev,
+				     enum clock_event_state state);
 extern int clockevents_program_event(struct clock_event_device *dev,
 				     ktime_t expires, bool force);
 extern void clockevents_handle_noop(struct clock_event_device *dev);
@@ -52,7 +64,6 @@ extern ssize_t sysfs_get_uname(const char *buf, char *dst, size_t cnt);
 extern int tick_device_uses_broadcast(struct clock_event_device *dev, int cpu);
 extern void tick_install_broadcast_device(struct clock_event_device *dev);
 extern int tick_is_broadcast_device(struct clock_event_device *dev);
-extern void tick_shutdown_broadcast(unsigned int cpu);
 extern void tick_suspend_broadcast(void);
 extern void tick_resume_broadcast(void);
 extern bool tick_resume_check_broadcast(void);
@@ -66,7 +77,6 @@ static inline void tick_install_broadcast_device(struct clock_event_device *dev)
 static inline int tick_is_broadcast_device(struct clock_event_device *dev) { return 0; }
 static inline int tick_device_uses_broadcast(struct clock_event_device *dev, int cpu) { return 0; }
 static inline void tick_do_periodic_broadcast(struct clock_event_device *d) { }
-static inline void tick_shutdown_broadcast(unsigned int cpu) { }
 static inline void tick_suspend_broadcast(void) { }
 static inline void tick_resume_broadcast(void) { }
 static inline bool tick_resume_check_broadcast(void) { return false; }
@@ -115,21 +125,23 @@ static inline int tick_check_oneshot_change(int allow_nohz) { return 0; }
 
 /* Functions related to oneshot broadcasting */
 #if defined(CONFIG_GENERIC_CLOCKEVENTS_BROADCAST) && defined(CONFIG_TICK_ONESHOT)
-extern void tick_broadcast_setup_oneshot(struct clock_event_device *bc);
 extern void tick_broadcast_switch_to_oneshot(void);
-extern void tick_shutdown_broadcast_oneshot(unsigned int cpu);
 extern int tick_broadcast_oneshot_active(void);
 extern void tick_check_oneshot_broadcast_this_cpu(void);
 bool tick_broadcast_oneshot_available(void);
 extern struct cpumask *tick_get_broadcast_oneshot_mask(void);
 #else /* !(BROADCAST && ONESHOT): */
-static inline void tick_broadcast_setup_oneshot(struct clock_event_device *bc) { BUG(); }
 static inline void tick_broadcast_switch_to_oneshot(void) { }
-static inline void tick_shutdown_broadcast_oneshot(unsigned int cpu) { }
 static inline int tick_broadcast_oneshot_active(void) { return 0; }
 static inline void tick_check_oneshot_broadcast_this_cpu(void) { }
 static inline bool tick_broadcast_oneshot_available(void) { return tick_oneshot_possible(); }
 #endif /* !(BROADCAST && ONESHOT) */
+
+#if defined(CONFIG_GENERIC_CLOCKEVENTS_BROADCAST) && defined(CONFIG_HOTPLUG_CPU)
+extern void tick_broadcast_offline(unsigned int cpu);
+#else
+static inline void tick_broadcast_offline(unsigned int cpu) { }
+#endif
 
 /* NO_HZ_FULL internal */
 #ifdef CONFIG_NO_HZ_FULL
@@ -137,3 +149,19 @@ extern void tick_nohz_init(void);
 # else
 static inline void tick_nohz_init(void) { }
 #endif
+
+#ifdef CONFIG_NO_HZ_COMMON
+extern unsigned long tick_nohz_active;
+extern void timers_update_nohz(void);
+# ifdef CONFIG_SMP
+extern struct static_key_false timers_migration_enabled;
+# endif
+#else /* CONFIG_NO_HZ_COMMON */
+static inline void timers_update_nohz(void) { }
+#define tick_nohz_active (0)
+#endif
+
+DECLARE_PER_CPU(struct hrtimer_cpu_base, hrtimer_bases);
+
+extern u64 get_next_timer_interrupt(unsigned long basej, u64 basem);
+void timer_clear_idle(void);

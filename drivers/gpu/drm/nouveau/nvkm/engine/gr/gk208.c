@@ -29,19 +29,6 @@
 #include <nvif/class.h>
 
 /*******************************************************************************
- * Graphics object classes
- ******************************************************************************/
-
-static struct nvkm_oclass
-gk208_gr_sclass[] = {
-	{ FERMI_TWOD_A, &nvkm_object_ofuncs },
-	{ KEPLER_INLINE_TO_MEMORY_B, &nvkm_object_ofuncs },
-	{ KEPLER_B, &gf100_fermi_ofuncs },
-	{ KEPLER_COMPUTE_B, &nvkm_object_ofuncs },
-	{}
-};
-
-/*******************************************************************************
  * PGRAPH register lists
  ******************************************************************************/
 
@@ -134,6 +121,7 @@ gk208_gr_pack_mmio[] = {
 	{ gf119_gr_init_gpm_0 },
 	{ gk110_gr_init_gpc_unk_1 },
 	{ gf100_gr_init_gcc_0 },
+	{ gk104_gr_init_gpc_unk_2 },
 	{ gk104_gr_init_tpccs_0 },
 	{ gk208_gr_init_tex_0 },
 	{ gk104_gr_init_pe_0 },
@@ -172,19 +160,42 @@ gk208_gr_gpccs_ucode = {
 	.data.size = sizeof(gk208_grgpc_data),
 };
 
-struct nvkm_oclass *
-gk208_gr_oclass = &(struct gf100_gr_oclass) {
-	.base.handle = NV_ENGINE(GR, 0x08),
-	.base.ofuncs = &(struct nvkm_ofuncs) {
-		.ctor = gk104_gr_ctor,
-		.dtor = gf100_gr_dtor,
-		.init = gk104_gr_init,
-		.fini = _nvkm_gr_fini,
-	},
-	.cclass = &gk208_grctx_oclass,
-	.sclass =  gk208_gr_sclass,
+static const struct gf100_gr_func
+gk208_gr = {
+	.oneinit_tiles = gf100_gr_oneinit_tiles,
+	.oneinit_sm_id = gf100_gr_oneinit_sm_id,
+	.init = gf100_gr_init,
+	.init_gpc_mmu = gf100_gr_init_gpc_mmu,
+	.init_vsc_stream_master = gk104_gr_init_vsc_stream_master,
+	.init_zcull = gf117_gr_init_zcull,
+	.init_num_active_ltcs = gf100_gr_init_num_active_ltcs,
+	.init_rop_active_fbps = gk104_gr_init_rop_active_fbps,
+	.init_fecs_exceptions = gf100_gr_init_fecs_exceptions,
+	.init_sked_hww_esr = gk104_gr_init_sked_hww_esr,
+	.init_419cc0 = gf100_gr_init_419cc0,
+	.init_ppc_exceptions = gk104_gr_init_ppc_exceptions,
+	.init_tex_hww_esr = gf100_gr_init_tex_hww_esr,
+	.init_shader_exceptions = gf100_gr_init_shader_exceptions,
+	.init_400054 = gf100_gr_init_400054,
+	.trap_mp = gf100_gr_trap_mp,
 	.mmio = gk208_gr_pack_mmio,
 	.fecs.ucode = &gk208_gr_fecs_ucode,
 	.gpccs.ucode = &gk208_gr_gpccs_ucode,
+	.rops = gf100_gr_rops,
 	.ppc_nr = 1,
-}.base;
+	.grctx = &gk208_grctx,
+	.zbc = &gf100_gr_zbc,
+	.sclass = {
+		{ -1, -1, FERMI_TWOD_A },
+		{ -1, -1, KEPLER_INLINE_TO_MEMORY_B },
+		{ -1, -1, KEPLER_B, &gf100_fermi },
+		{ -1, -1, KEPLER_COMPUTE_B },
+		{}
+	}
+};
+
+int
+gk208_gr_new(struct nvkm_device *device, int index, struct nvkm_gr **pgr)
+{
+	return gf100_gr_new_(&gk208_gr, device, index, pgr);
+}

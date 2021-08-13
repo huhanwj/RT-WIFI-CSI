@@ -1,14 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2014, The Linux Foundation. All rights reserved.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #include <linux/kernel.h>
@@ -71,7 +63,7 @@ static const struct parent_map lcc_pxo_pll4_map[] = {
 	{ P_PLL4, 2 }
 };
 
-static const char *lcc_pxo_pll4[] = {
+static const char * const lcc_pxo_pll4[] = {
 	"pxo",
 	"pll4_vote",
 };
@@ -146,7 +138,7 @@ static struct clk_rcg mi2s_osr_src = {
 	},
 };
 
-static const char *lcc_mi2s_parents[] = {
+static const char * const lcc_mi2s_parents[] = {
 	"mi2s_osr_src",
 };
 
@@ -340,7 +332,7 @@ static struct clk_rcg spdif_src = {
 	},
 };
 
-static const char *lcc_spdif_parents[] = {
+static const char * const lcc_spdif_parents[] = {
 	"spdif_src",
 };
 
@@ -443,7 +435,7 @@ static int lcc_ipq806x_probe(struct platform_device *pdev)
 		return PTR_ERR(regmap);
 
 	/* Configure the rate of PLL4 if the bootloader hasn't already */
-	val = regmap_read(regmap, 0x0, &val);
+	regmap_read(regmap, 0x0, &val);
 	if (!val)
 		clk_pll_configure_sr(&pll4, regmap, &pll4_config, true);
 	/* Enable PLL4 source on the LPASS Primary PLL Mux */
@@ -452,15 +444,8 @@ static int lcc_ipq806x_probe(struct platform_device *pdev)
 	return qcom_cc_really_probe(pdev, &lcc_ipq806x_desc, regmap);
 }
 
-static int lcc_ipq806x_remove(struct platform_device *pdev)
-{
-	qcom_cc_remove(pdev);
-	return 0;
-}
-
 static struct platform_driver lcc_ipq806x_driver = {
 	.probe		= lcc_ipq806x_probe,
-	.remove		= lcc_ipq806x_remove,
 	.driver		= {
 		.name	= "lcc-ipq806x",
 		.of_match_table = lcc_ipq806x_match_table,

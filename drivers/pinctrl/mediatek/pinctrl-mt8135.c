@@ -1,18 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2014 MediaTek Inc.
  * Author: Hongzhou.Yang <hongzhou.yang@mediatek.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
-#include <linux/module.h>
+#include <linux/init.h>
 #include <linux/platform_device.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
@@ -32,12 +24,12 @@
 #define R1_BASE2				0x250
 
 struct mtk_spec_pull_set {
-	unsigned int pin;
-	unsigned int pupd_offset;
+	unsigned char pin;
 	unsigned char pupd_bit;
-	unsigned int r0_offset;
+	unsigned short pupd_offset;
+	unsigned short r0_offset;
+	unsigned short r1_offset;
 	unsigned char r0_bit;
-	unsigned int r1_offset;
 	unsigned char r1_bit;
 };
 
@@ -305,7 +297,6 @@ static const struct mtk_pinctrl_devdata mt8135_pinctrl_data = {
 	.pullen_offset = 0x0200,
 	.smt_offset = 0x0300,
 	.pullsel_offset = 0x0400,
-	.invser_offset = 0x0600,
 	.dout_offset = 0x0800,
 	.din_offset = 0x0A00,
 	.pinmux_offset = 0x0C00,
@@ -314,37 +305,17 @@ static const struct mtk_pinctrl_devdata mt8135_pinctrl_data = {
 	.port_shf = 4,
 	.port_mask = 0xf,
 	.port_align = 4,
-	.chip_type = MTK_CHIP_TYPE_BASE,
-	.eint_offsets = {
-		.name = "mt8135_eint",
-		.stat      = 0x000,
-		.ack       = 0x040,
-		.mask      = 0x080,
-		.mask_set  = 0x0c0,
-		.mask_clr  = 0x100,
-		.sens      = 0x140,
-		.sens_set  = 0x180,
-		.sens_clr  = 0x1c0,
-		.soft      = 0x200,
-		.soft_set  = 0x240,
-		.soft_clr  = 0x280,
-		.pol       = 0x300,
-		.pol_set   = 0x340,
-		.pol_clr   = 0x380,
-		.dom_en    = 0x400,
-		.dbnc_ctrl = 0x500,
-		.dbnc_set  = 0x600,
-		.dbnc_clr  = 0x700,
+	.eint_hw = {
 		.port_mask = 7,
 		.ports     = 6,
+		.ap_num    = 192,
+		.db_cnt    = 16,
 	},
-	.ap_num = 192,
-	.db_cnt = 16,
 };
 
 static int mt8135_pinctrl_probe(struct platform_device *pdev)
 {
-	return mtk_pctrl_init(pdev, &mt8135_pinctrl_data);
+	return mtk_pctrl_init(pdev, &mt8135_pinctrl_data, NULL);
 }
 
 static const struct of_device_id mt8135_pctrl_match[] = {
@@ -353,13 +324,11 @@ static const struct of_device_id mt8135_pctrl_match[] = {
 	},
 	{ }
 };
-MODULE_DEVICE_TABLE(of, mt8135_pctrl_match);
 
 static struct platform_driver mtk_pinctrl_driver = {
 	.probe = mt8135_pinctrl_probe,
 	.driver = {
 		.name = "mediatek-mt8135-pinctrl",
-		.owner = THIS_MODULE,
 		.of_match_table = mt8135_pctrl_match,
 	},
 };
@@ -368,9 +337,4 @@ static int __init mtk_pinctrl_init(void)
 {
 	return platform_driver_register(&mtk_pinctrl_driver);
 }
-
-module_init(mtk_pinctrl_init);
-
-MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("MediaTek Pinctrl Driver");
-MODULE_AUTHOR("Hongzhou Yang <hongzhou.yang@mediatek.com>");
+arch_initcall(mtk_pinctrl_init);

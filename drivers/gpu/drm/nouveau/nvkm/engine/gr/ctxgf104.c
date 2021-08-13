@@ -79,21 +79,13 @@ gf104_grctx_pack_tpc[] = {
  * PGRAPH context implementation
  ******************************************************************************/
 
-struct nvkm_oclass *
-gf104_grctx_oclass = &(struct gf100_grctx_oclass) {
-	.base.handle = NV_ENGCTX(GR, 0xc3),
-	.base.ofuncs = &(struct nvkm_ofuncs) {
-		.ctor = gf100_gr_context_ctor,
-		.dtor = gf100_gr_context_dtor,
-		.init = _nvkm_gr_context_init,
-		.fini = _nvkm_gr_context_fini,
-		.rd32 = _nvkm_gr_context_rd32,
-		.wr32 = _nvkm_gr_context_wr32,
-	},
+const struct gf100_grctx_func
+gf104_grctx = {
 	.main  = gf100_grctx_generate_main,
 	.unkn  = gf100_grctx_generate_unkn,
 	.hub   = gf100_grctx_pack_hub,
-	.gpc   = gf100_grctx_pack_gpc,
+	.gpc_0 = gf100_grctx_pack_gpc_0,
+	.gpc_1 = gf100_grctx_pack_gpc_1,
 	.zcull = gf100_grctx_pack_zcull,
 	.tpc   = gf104_grctx_pack_tpc,
 	.icmd  = gf100_grctx_pack_icmd,
@@ -105,4 +97,11 @@ gf104_grctx_oclass = &(struct gf100_grctx_oclass) {
 	.attrib = gf100_grctx_generate_attrib,
 	.attrib_nr_max = 0x324,
 	.attrib_nr = 0x218,
-}.base;
+	.sm_id = gf100_grctx_generate_sm_id,
+	.tpc_nr = gf100_grctx_generate_tpc_nr,
+	.r4060a8 = gf100_grctx_generate_r4060a8,
+	.rop_mapping = gf100_grctx_generate_rop_mapping,
+	.alpha_beta_tables = gf100_grctx_generate_alpha_beta_tables,
+	.max_ways_evict = gf100_grctx_generate_max_ways_evict,
+	.r419cb8 = gf100_grctx_generate_r419cb8,
+};

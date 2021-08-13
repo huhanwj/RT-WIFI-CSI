@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 
 #include <linux/module.h>
 #include <sound/soc.h>
@@ -42,20 +43,23 @@ static int imote2_asoc_hw_params(struct snd_pcm_substream *substream,
 	return ret;
 }
 
-static struct snd_soc_ops imote2_asoc_ops = {
+static const struct snd_soc_ops imote2_asoc_ops = {
 	.hw_params = imote2_asoc_hw_params,
 };
+
+SND_SOC_DAILINK_DEFS(wm8940,
+	DAILINK_COMP_ARRAY(COMP_CPU("pxa2xx-i2s")),
+	DAILINK_COMP_ARRAY(COMP_CODEC("wm8940-codec.0-0034",
+				      "wm8940-hifi")),
+	DAILINK_COMP_ARRAY(COMP_PLATFORM("pxa-pcm-audio")));
 
 static struct snd_soc_dai_link imote2_dai = {
 	.name = "WM8940",
 	.stream_name = "WM8940",
-	.cpu_dai_name = "pxa2xx-i2s",
-	.codec_dai_name = "wm8940-hifi",
-	.platform_name = "pxa-pcm-audio",
-	.codec_name = "wm8940-codec.0-0034",
 	.dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF |
 		   SND_SOC_DAIFMT_CBS_CFS,
 	.ops = &imote2_asoc_ops,
+	SND_SOC_DAILINK_REG(wm8940),
 };
 
 static struct snd_soc_card imote2 = {
@@ -72,19 +76,11 @@ static int imote2_probe(struct platform_device *pdev)
 
 	card->dev = &pdev->dev;
 
-	ret = snd_soc_register_card(card);
+	ret = devm_snd_soc_register_card(&pdev->dev, card);
 	if (ret)
 		dev_err(&pdev->dev, "snd_soc_register_card() failed: %d\n",
 			ret);
 	return ret;
-}
-
-static int imote2_remove(struct platform_device *pdev)
-{
-	struct snd_soc_card *card = platform_get_drvdata(pdev);
-
-	snd_soc_unregister_card(card);
-	return 0;
 }
 
 static struct platform_driver imote2_driver = {
@@ -93,7 +89,6 @@ static struct platform_driver imote2_driver = {
 		.pm     = &snd_soc_pm_ops,
 	},
 	.probe		= imote2_probe,
-	.remove		= imote2_remove,
 };
 
 module_platform_driver(imote2_driver);

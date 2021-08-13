@@ -1,23 +1,7 @@
-/*
- * cros_ec_sysfs - expose the Chrome OS EC through sysfs
- *
- * Copyright (C) 2014 Google, Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <http://www.gnu.org/licenses/>.
- */
-
-#define pr_fmt(fmt) "cros_ec_sysfs: " fmt
+// SPDX-License-Identifier: GPL-2.0+
+// Expose the ChromeOS EC through sysfs
+//
+// Copyright (C) 2014 Google, Inc.
 
 #include <linux/ctype.h>
 #include <linux/delay.h>
@@ -25,20 +9,22 @@
 #include <linux/fs.h>
 #include <linux/kobject.h>
 #include <linux/mfd/cros_ec.h>
-#include <linux/mfd/cros_ec_commands.h>
 #include <linux/module.h>
+#include <linux/platform_data/cros_ec_commands.h>
+#include <linux/platform_data/cros_ec_proto.h>
 #include <linux/platform_device.h>
 #include <linux/printk.h>
+#include <linux/slab.h>
 #include <linux/stat.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
 
-#include "cros_ec_dev.h"
+#define DRV_NAME "cros-ec-sysfs"
 
 /* Accessor functions */
 
-static ssize_t show_ec_reboot(struct device *dev,
-			      struct device_attribute *attr, char *buf)
+static ssize_t reboot_show(struct device *dev,
+			   struct device_attribute *attr, char *buf)
 {
 	int count = 0;
 
@@ -49,9 +35,9 @@ static ssize_t show_ec_reboot(struct device *dev,
 	return count;
 }
 
-static ssize_t store_ec_reboot(struct device *dev,
-			       struct device_attribute *attr,
-			       const char *buf, size_t count)
+static ssize_t reboot_store(struct device *dev,
+			    struct device_attribute *attr,
+			    const char *buf, size_t count)
 {
 	static const struct {
 		const char * const str;
@@ -66,13 +52,18 @@ static ssize_t store_ec_reboot(struct device *dev,
 		{"hibernate",    EC_REBOOT_HIBERNATE, 0},
 		{"at-shutdown",  -1, EC_REBOOT_FLAG_ON_AP_SHUTDOWN},
 	};
-	struct cros_ec_command msg = { 0 };
-	struct ec_params_reboot_ec *param =
-		(struct ec_params_reboot_ec *)msg.outdata;
+	struct cros_ec_command *msg;
+	struct ec_params_reboot_ec *param;
 	int got_cmd = 0, offset = 0;
 	int i;
 	int ret;
-	struct cros_ec_device *ec = dev_get_drvdata(dev);
+	struct cros_ec_dev *ec = to_cros_ec_dev(dev);
+
+	msg = kmalloc(sizeof(*msg) + sizeof(*param), GFP_KERNEL);
+	if (!msg)
+		return -ENOMEM;
+
+	param = (struct ec_params_reboot_ec *)msg->data;
 
 	param->flags = 0;
 	while (1) {
@@ -100,45 +91,50 @@ static ssize_t store_ec_reboot(struct device *dev,
 			offset++;
 	}
 
-	if (!got_cmd)
-		return -EINVAL;
-
-	msg.command = EC_CMD_REBOOT_EC;
-	msg.outsize = sizeof(param);
-	ret = cros_ec_cmd_xfer(ec, &msg);
-	if (ret < 0)
-		return ret;
-	if (msg.result != EC_RES_SUCCESS) {
-		dev_dbg(ec->dev, "EC result %d\n", msg.result);
-		return -EINVAL;
+	if (!got_cmd) {
+		count = -EINVAL;
+		goto exit;
 	}
 
+	msg->version = 0;
+	msg->command = EC_CMD_REBOOT_EC + ec->cmd_offset;
+	msg->outsize = sizeof(*param);
+	msg->insize = 0;
+	ret = cros_ec_cmd_xfer_status(ec->ec_dev, msg);
+	if (ret < 0)
+		count = ret;
+exit:
+	kfree(msg);
 	return count;
 }
 
-static ssize_t show_ec_version(struct device *dev,
-			       struct device_attribute *attr, char *buf)
+static ssize_t version_show(struct device *dev,
+			    struct device_attribute *attr, char *buf)
 {
 	static const char * const image_names[] = {"unknown", "RO", "RW"};
 	struct ec_response_get_version *r_ver;
 	struct ec_response_get_chip_info *r_chip;
 	struct ec_response_board_version *r_board;
-	struct cros_ec_command msg = { 0 };
+	struct cros_ec_command *msg;
 	int ret;
 	int count = 0;
-	struct cros_ec_device *ec = dev_get_drvdata(dev);
+	struct cros_ec_dev *ec = to_cros_ec_dev(dev);
+
+	msg = kmalloc(sizeof(*msg) + EC_HOST_PARAM_SIZE, GFP_KERNEL);
+	if (!msg)
+		return -ENOMEM;
 
 	/* Get versions. RW may change. */
-	msg.command = EC_CMD_GET_VERSION;
-	msg.insize = sizeof(*r_ver);
-	ret = cros_ec_cmd_xfer(ec, &msg);
-	if (ret < 0)
-		return ret;
-	if (msg.result != EC_RES_SUCCESS)
-		return scnprintf(buf, PAGE_SIZE,
-				 "ERROR: EC returned %d\n", msg.result);
-
-	r_ver = (struct ec_response_get_version *)msg.indata;
+	msg->version = 0;
+	msg->command = EC_CMD_GET_VERSION + ec->cmd_offset;
+	msg->insize = sizeof(*r_ver);
+	msg->outsize = 0;
+	ret = cros_ec_cmd_xfer_status(ec->ec_dev, msg);
+	if (ret < 0) {
+		count = ret;
+		goto exit;
+	}
+	r_ver = (struct ec_response_get_version *)msg->data;
 	/* Strings should be null-terminated, but let's be sure. */
 	r_ver->version_string_ro[sizeof(r_ver->version_string_ro) - 1] = '\0';
 	r_ver->version_string_rw[sizeof(r_ver->version_string_rw) - 1] = '\0';
@@ -152,33 +148,33 @@ static ssize_t show_ec_version(struct device *dev,
 			    image_names[r_ver->current_image] : "?"));
 
 	/* Get build info. */
-	msg.command = EC_CMD_GET_BUILD_INFO;
-	msg.insize = sizeof(msg.indata);
-	ret = cros_ec_cmd_xfer(ec, &msg);
+	msg->command = EC_CMD_GET_BUILD_INFO + ec->cmd_offset;
+	msg->insize = EC_HOST_PARAM_SIZE;
+	ret = cros_ec_cmd_xfer(ec->ec_dev, msg);
 	if (ret < 0)
 		count += scnprintf(buf + count, PAGE_SIZE - count,
 				   "Build info:    XFER ERROR %d\n", ret);
-	else if (msg.result != EC_RES_SUCCESS)
+	else if (msg->result != EC_RES_SUCCESS)
 		count += scnprintf(buf + count, PAGE_SIZE - count,
-				   "Build info:    EC error %d\n", msg.result);
+				   "Build info:    EC error %d\n", msg->result);
 	else {
-		msg.indata[sizeof(msg.indata) - 1] = '\0';
+		msg->data[EC_HOST_PARAM_SIZE - 1] = '\0';
 		count += scnprintf(buf + count, PAGE_SIZE - count,
-				   "Build info:    %s\n", msg.indata);
+				   "Build info:    %s\n", msg->data);
 	}
 
 	/* Get chip info. */
-	msg.command = EC_CMD_GET_CHIP_INFO;
-	msg.insize = sizeof(*r_chip);
-	ret = cros_ec_cmd_xfer(ec, &msg);
+	msg->command = EC_CMD_GET_CHIP_INFO + ec->cmd_offset;
+	msg->insize = sizeof(*r_chip);
+	ret = cros_ec_cmd_xfer(ec->ec_dev, msg);
 	if (ret < 0)
 		count += scnprintf(buf + count, PAGE_SIZE - count,
 				   "Chip info:     XFER ERROR %d\n", ret);
-	else if (msg.result != EC_RES_SUCCESS)
+	else if (msg->result != EC_RES_SUCCESS)
 		count += scnprintf(buf + count, PAGE_SIZE - count,
-				   "Chip info:     EC error %d\n", msg.result);
+				   "Chip info:     EC error %d\n", msg->result);
 	else {
-		r_chip = (struct ec_response_get_chip_info *)msg.indata;
+		r_chip = (struct ec_response_get_chip_info *)msg->data;
 
 		r_chip->vendor[sizeof(r_chip->vendor) - 1] = '\0';
 		r_chip->name[sizeof(r_chip->name) - 1] = '\0';
@@ -192,80 +188,191 @@ static ssize_t show_ec_version(struct device *dev,
 	}
 
 	/* Get board version */
-	msg.command = EC_CMD_GET_BOARD_VERSION;
-	msg.insize = sizeof(*r_board);
-	ret = cros_ec_cmd_xfer(ec, &msg);
+	msg->command = EC_CMD_GET_BOARD_VERSION + ec->cmd_offset;
+	msg->insize = sizeof(*r_board);
+	ret = cros_ec_cmd_xfer(ec->ec_dev, msg);
 	if (ret < 0)
 		count += scnprintf(buf + count, PAGE_SIZE - count,
 				   "Board version: XFER ERROR %d\n", ret);
-	else if (msg.result != EC_RES_SUCCESS)
+	else if (msg->result != EC_RES_SUCCESS)
 		count += scnprintf(buf + count, PAGE_SIZE - count,
-				   "Board version: EC error %d\n", msg.result);
+				   "Board version: EC error %d\n", msg->result);
 	else {
-		r_board = (struct ec_response_board_version *)msg.indata;
+		r_board = (struct ec_response_board_version *)msg->data;
 
 		count += scnprintf(buf + count, PAGE_SIZE - count,
 				   "Board version: %d\n",
 				   r_board->board_version);
 	}
 
+exit:
+	kfree(msg);
 	return count;
 }
 
-static ssize_t show_ec_flashinfo(struct device *dev,
-				 struct device_attribute *attr, char *buf)
+static ssize_t flashinfo_show(struct device *dev,
+			      struct device_attribute *attr, char *buf)
 {
 	struct ec_response_flash_info *resp;
-	struct cros_ec_command msg = { 0 };
+	struct cros_ec_command *msg;
 	int ret;
-	struct cros_ec_device *ec = dev_get_drvdata(dev);
+	struct cros_ec_dev *ec = to_cros_ec_dev(dev);
+
+	msg = kmalloc(sizeof(*msg) + sizeof(*resp), GFP_KERNEL);
+	if (!msg)
+		return -ENOMEM;
 
 	/* The flash info shouldn't ever change, but ask each time anyway. */
-	msg.command = EC_CMD_FLASH_INFO;
-	msg.insize = sizeof(*resp);
-	ret = cros_ec_cmd_xfer(ec, &msg);
+	msg->version = 0;
+	msg->command = EC_CMD_FLASH_INFO + ec->cmd_offset;
+	msg->insize = sizeof(*resp);
+	msg->outsize = 0;
+	ret = cros_ec_cmd_xfer_status(ec->ec_dev, msg);
+	if (ret < 0)
+		goto exit;
+
+	resp = (struct ec_response_flash_info *)msg->data;
+
+	ret = scnprintf(buf, PAGE_SIZE,
+			"FlashSize %d\nWriteSize %d\n"
+			"EraseSize %d\nProtectSize %d\n",
+			resp->flash_size, resp->write_block_size,
+			resp->erase_block_size, resp->protect_block_size);
+exit:
+	kfree(msg);
+	return ret;
+}
+
+/* Keyboard wake angle control */
+static ssize_t kb_wake_angle_show(struct device *dev,
+				  struct device_attribute *attr, char *buf)
+{
+	struct cros_ec_dev *ec = to_cros_ec_dev(dev);
+	struct ec_response_motion_sense *resp;
+	struct ec_params_motion_sense *param;
+	struct cros_ec_command *msg;
+	int ret;
+
+	msg = kmalloc(sizeof(*msg) + EC_HOST_PARAM_SIZE, GFP_KERNEL);
+	if (!msg)
+		return -ENOMEM;
+
+	param = (struct ec_params_motion_sense *)msg->data;
+	msg->command = EC_CMD_MOTION_SENSE_CMD + ec->cmd_offset;
+	msg->version = 2;
+	param->cmd = MOTIONSENSE_CMD_KB_WAKE_ANGLE;
+	param->kb_wake_angle.data = EC_MOTION_SENSE_NO_VALUE;
+	msg->outsize = sizeof(*param);
+	msg->insize = sizeof(*resp);
+
+	ret = cros_ec_cmd_xfer_status(ec->ec_dev, msg);
+	if (ret < 0)
+		goto exit;
+
+	resp = (struct ec_response_motion_sense *)msg->data;
+	ret = scnprintf(buf, PAGE_SIZE, "%d\n", resp->kb_wake_angle.ret);
+exit:
+	kfree(msg);
+	return ret;
+}
+
+static ssize_t kb_wake_angle_store(struct device *dev,
+				   struct device_attribute *attr,
+				   const char *buf, size_t count)
+{
+	struct cros_ec_dev *ec = to_cros_ec_dev(dev);
+	struct ec_params_motion_sense *param;
+	struct cros_ec_command *msg;
+	u16 angle;
+	int ret;
+
+	ret = kstrtou16(buf, 0, &angle);
+	if (ret)
+		return ret;
+
+	msg = kmalloc(sizeof(*msg) + EC_HOST_PARAM_SIZE, GFP_KERNEL);
+	if (!msg)
+		return -ENOMEM;
+
+	param = (struct ec_params_motion_sense *)msg->data;
+	msg->command = EC_CMD_MOTION_SENSE_CMD + ec->cmd_offset;
+	msg->version = 2;
+	param->cmd = MOTIONSENSE_CMD_KB_WAKE_ANGLE;
+	param->kb_wake_angle.data = angle;
+	msg->outsize = sizeof(*param);
+	msg->insize = sizeof(struct ec_response_motion_sense);
+
+	ret = cros_ec_cmd_xfer_status(ec->ec_dev, msg);
+	kfree(msg);
 	if (ret < 0)
 		return ret;
-	if (msg.result != EC_RES_SUCCESS)
-		return scnprintf(buf, PAGE_SIZE,
-				 "ERROR: EC returned %d\n", msg.result);
-
-	resp = (struct ec_response_flash_info *)msg.indata;
-
-	return scnprintf(buf, PAGE_SIZE,
-			 "FlashSize %d\nWriteSize %d\n"
-			 "EraseSize %d\nProtectSize %d\n",
-			 resp->flash_size, resp->write_block_size,
-			 resp->erase_block_size, resp->protect_block_size);
+	return count;
 }
 
 /* Module initialization */
 
-static DEVICE_ATTR(reboot, S_IWUSR | S_IRUGO, show_ec_reboot, store_ec_reboot);
-static DEVICE_ATTR(version, S_IRUGO, show_ec_version, NULL);
-static DEVICE_ATTR(flashinfo, S_IRUGO, show_ec_flashinfo, NULL);
+static DEVICE_ATTR_RW(reboot);
+static DEVICE_ATTR_RO(version);
+static DEVICE_ATTR_RO(flashinfo);
+static DEVICE_ATTR_RW(kb_wake_angle);
 
 static struct attribute *__ec_attrs[] = {
+	&dev_attr_kb_wake_angle.attr,
 	&dev_attr_reboot.attr,
 	&dev_attr_version.attr,
 	&dev_attr_flashinfo.attr,
 	NULL,
 };
 
-static struct attribute_group ec_attr_group = {
+static umode_t cros_ec_ctrl_visible(struct kobject *kobj,
+				    struct attribute *a, int n)
+{
+	struct device *dev = container_of(kobj, struct device, kobj);
+	struct cros_ec_dev *ec = to_cros_ec_dev(dev);
+
+	if (a == &dev_attr_kb_wake_angle.attr && !ec->has_kb_wake_angle)
+		return 0;
+
+	return a->mode;
+}
+
+static struct attribute_group cros_ec_attr_group = {
 	.attrs = __ec_attrs,
+	.is_visible = cros_ec_ctrl_visible,
 };
 
-void ec_dev_sysfs_init(struct cros_ec_device *ec)
+static int cros_ec_sysfs_probe(struct platform_device *pd)
 {
-	int error;
+	struct cros_ec_dev *ec_dev = dev_get_drvdata(pd->dev.parent);
+	struct device *dev = &pd->dev;
+	int ret;
 
-	error = sysfs_create_group(&ec->vdev->kobj, &ec_attr_group);
-	if (error)
-		pr_warn("failed to create group: %d\n", error);
+	ret = sysfs_create_group(&ec_dev->class_dev.kobj, &cros_ec_attr_group);
+	if (ret < 0)
+		dev_err(dev, "failed to create attributes. err=%d\n", ret);
+
+	return ret;
 }
 
-void ec_dev_sysfs_remove(struct cros_ec_device *ec)
+static int cros_ec_sysfs_remove(struct platform_device *pd)
 {
-	sysfs_remove_group(&ec->vdev->kobj, &ec_attr_group);
+	struct cros_ec_dev *ec_dev = dev_get_drvdata(pd->dev.parent);
+
+	sysfs_remove_group(&ec_dev->class_dev.kobj, &cros_ec_attr_group);
+
+	return 0;
 }
+
+static struct platform_driver cros_ec_sysfs_driver = {
+	.driver = {
+		.name = DRV_NAME,
+	},
+	.probe = cros_ec_sysfs_probe,
+	.remove = cros_ec_sysfs_remove,
+};
+
+module_platform_driver(cros_ec_sysfs_driver);
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Expose the ChromeOS EC through sysfs");
+MODULE_ALIAS("platform:" DRV_NAME);

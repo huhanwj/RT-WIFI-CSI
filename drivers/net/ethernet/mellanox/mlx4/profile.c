@@ -82,7 +82,6 @@ u64 mlx4_make_profile(struct mlx4_dev *dev,
 
 	u64 total_size = 0;
 	struct mlx4_resource *profile;
-	struct mlx4_resource tmp;
 	struct sysinfo si;
 	int i, j;
 
@@ -106,7 +105,8 @@ u64 mlx4_make_profile(struct mlx4_dev *dev,
 	request->num_mtt =
 		roundup_pow_of_two(max_t(unsigned, request->num_mtt,
 					 min(1UL << (31 - log_mtts_per_seg),
-					     si.totalram >> (log_mtts_per_seg - 1))));
+					     (si.totalram << 1) >> log_mtts_per_seg)));
+
 
 	profile[MLX4_RES_QP].size     = dev_cap->qpc_entry_sz;
 	profile[MLX4_RES_RDMARC].size = dev_cap->rdmarc_entry_sz;
@@ -149,11 +149,8 @@ u64 mlx4_make_profile(struct mlx4_dev *dev,
 	 */
 	for (i = MLX4_RES_NUM; i > 0; --i)
 		for (j = 1; j < i; ++j) {
-			if (profile[j].size > profile[j - 1].size) {
-				tmp	       = profile[j];
-				profile[j]     = profile[j - 1];
-				profile[j - 1] = tmp;
-			}
+			if (profile[j].size > profile[j - 1].size)
+				swap(profile[j], profile[j - 1]);
 		}
 
 	for (i = 0; i < MLX4_RES_NUM; ++i) {

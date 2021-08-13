@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * PCMCIA socket code for the MyCable XXS1500 system.
  *
@@ -11,6 +12,7 @@
 #include <linux/io.h>
 #include <linux/ioport.h>
 #include <linux/mm.h>
+#include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/pm.h>
 #include <linux/resource.h>

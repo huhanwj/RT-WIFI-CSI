@@ -1,14 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Wacom Penabled Driver for I2C
  *
  * Copyright (c) 2011 - 2013 Tatsunosuke Tobita, Wacom.
  * <tobita.tatsunosuke@wacom.co.jp>
- *
- * This program is free software; you can redistribute it
- * and/or modify it under the terms of the GNU General
- * Public License as published by the Free Software
- * Foundation; either version of 2 of the License,
- * or (at your option) any later version.
  */
 
 #include <linux/module.h>
@@ -271,7 +266,6 @@ MODULE_DEVICE_TABLE(i2c, wacom_i2c_id);
 static struct i2c_driver wacom_i2c_driver = {
 	.driver	= {
 		.name	= "wacom_i2c",
-		.owner	= THIS_MODULE,
 		.pm	= &wacom_i2c_pm,
 	},
 

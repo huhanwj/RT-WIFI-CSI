@@ -1,9 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /**
  * Copyright (C) 2008, Creative Technology Ltd. All Rights Reserved.
- *
- * This source file is released under GPL v2 license (no other versions).
- * See the COPYING file included in the main directory of this source
- * distribution for the license terms and conditions.
  *
  * @File	ctsrc.c
  *
@@ -13,7 +10,6 @@
  *
  * @Author	Liu Chun
  * @Date 	May 13 2008
- *
  */
 
 #include "ctsrc.h"
@@ -335,7 +331,7 @@ static int src_default_config_arcrw(struct src *src)
 	return 0;
 }
 
-static struct src_rsc_ops src_rsc_ops = {
+static const struct src_rsc_ops src_rsc_ops = {
 	.set_state		= src_set_state,
 	.set_bm			= src_set_bm,
 	.set_sf			= src_set_sf,
@@ -611,7 +607,7 @@ static int srcimp_index(const struct rsc *rsc)
 	return container_of(rsc, struct srcimp, rsc)->idx[rsc->conj];
 }
 
-static struct rsc_ops srcimp_basic_rsc_ops = {
+static const struct rsc_ops srcimp_basic_rsc_ops = {
 	.master		= srcimp_master,
 	.next_conj	= srcimp_next_conj,
 	.index		= srcimp_index,
@@ -662,7 +658,7 @@ static int srcimp_unmap(struct srcimp *srcimp)
 	return 0;
 }
 
-static struct srcimp_rsc_ops srcimp_ops = {
+static const struct srcimp_rsc_ops srcimp_ops = {
 	.map = srcimp_map,
 	.unmap = srcimp_unmap
 };
@@ -679,7 +675,7 @@ static int srcimp_rsc_init(struct srcimp *srcimp,
 		return err;
 
 	/* Reserve memory for imapper nodes */
-	srcimp->imappers = kzalloc(sizeof(struct imapper)*desc->msr,
+	srcimp->imappers = kcalloc(desc->msr, sizeof(struct imapper),
 				   GFP_KERNEL);
 	if (!srcimp->imappers) {
 		err = -ENOMEM;
@@ -702,10 +698,8 @@ error1:
 
 static int srcimp_rsc_uninit(struct srcimp *srcimp)
 {
-	if (NULL != srcimp->imappers) {
-		kfree(srcimp->imappers);
-		srcimp->imappers = NULL;
-	}
+	kfree(srcimp->imappers);
+	srcimp->imappers = NULL;
 	srcimp->ops = NULL;
 	srcimp->mgr = NULL;
 	rsc_uninit(&srcimp->rsc);

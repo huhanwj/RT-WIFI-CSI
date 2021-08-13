@@ -1,12 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * net/switchdev/switchdev.c - Switch device API
- * Copyright (c) 2014 Jiri Pirko <jiri@resnulli.us>
+ * Copyright (c) 2014-2015 Jiri Pirko <jiri@resnulli.us>
  * Copyright (c) 2014-2015 Scott Feldman <sfeldma@gmail.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
 
 #include <linux/kernel.h>
@@ -15,390 +11,593 @@
 #include <linux/mutex.h>
 #include <linux/notifier.h>
 #include <linux/netdevice.h>
-#include <net/ip_fib.h>
+#include <linux/etherdevice.h>
+#include <linux/if_bridge.h>
+#include <linux/list.h>
+#include <linux/workqueue.h>
+#include <linux/if_vlan.h>
+#include <linux/rtnetlink.h>
 #include <net/switchdev.h>
 
-/**
- *	netdev_switch_parent_id_get - Get ID of a switch
- *	@dev: port device
- *	@psid: switch ID
- *
- *	Get ID of a switch this port is part of.
- */
-int netdev_switch_parent_id_get(struct net_device *dev,
-				struct netdev_phys_item_id *psid)
-{
-	const struct swdev_ops *ops = dev->swdev_ops;
+static LIST_HEAD(deferred);
+static DEFINE_SPINLOCK(deferred_lock);
 
-	if (!ops || !ops->swdev_parent_id_get)
-		return -EOPNOTSUPP;
-	return ops->swdev_parent_id_get(dev, psid);
+typedef void switchdev_deferred_func_t(struct net_device *dev,
+				       const void *data);
+
+struct switchdev_deferred_item {
+	struct list_head list;
+	struct net_device *dev;
+	switchdev_deferred_func_t *func;
+	unsigned long data[0];
+};
+
+static struct switchdev_deferred_item *switchdev_deferred_dequeue(void)
+{
+	struct switchdev_deferred_item *dfitem;
+
+	spin_lock_bh(&deferred_lock);
+	if (list_empty(&deferred)) {
+		dfitem = NULL;
+		goto unlock;
+	}
+	dfitem = list_first_entry(&deferred,
+				  struct switchdev_deferred_item, list);
+	list_del(&dfitem->list);
+unlock:
+	spin_unlock_bh(&deferred_lock);
+	return dfitem;
 }
-EXPORT_SYMBOL_GPL(netdev_switch_parent_id_get);
 
 /**
- *	netdev_switch_port_stp_update - Notify switch device port of STP
- *					state change
- *	@dev: port device
- *	@state: port STP state
+ *	switchdev_deferred_process - Process ops in deferred queue
  *
- *	Notify switch device port of bridge port STP state change.
+ *	Called to flush the ops currently queued in deferred ops queue.
+ *	rtnl_lock must be held.
  */
-int netdev_switch_port_stp_update(struct net_device *dev, u8 state)
+void switchdev_deferred_process(void)
 {
-	const struct swdev_ops *ops = dev->swdev_ops;
+	struct switchdev_deferred_item *dfitem;
+
+	ASSERT_RTNL();
+
+	while ((dfitem = switchdev_deferred_dequeue())) {
+		dfitem->func(dfitem->dev, dfitem->data);
+		dev_put(dfitem->dev);
+		kfree(dfitem);
+	}
+}
+EXPORT_SYMBOL_GPL(switchdev_deferred_process);
+
+static void switchdev_deferred_process_work(struct work_struct *work)
+{
+	rtnl_lock();
+	switchdev_deferred_process();
+	rtnl_unlock();
+}
+
+static DECLARE_WORK(deferred_process_work, switchdev_deferred_process_work);
+
+static int switchdev_deferred_enqueue(struct net_device *dev,
+				      const void *data, size_t data_len,
+				      switchdev_deferred_func_t *func)
+{
+	struct switchdev_deferred_item *dfitem;
+
+	dfitem = kmalloc(sizeof(*dfitem) + data_len, GFP_ATOMIC);
+	if (!dfitem)
+		return -ENOMEM;
+	dfitem->dev = dev;
+	dfitem->func = func;
+	memcpy(dfitem->data, data, data_len);
+	dev_hold(dev);
+	spin_lock_bh(&deferred_lock);
+	list_add_tail(&dfitem->list, &deferred);
+	spin_unlock_bh(&deferred_lock);
+	schedule_work(&deferred_process_work);
+	return 0;
+}
+
+static int switchdev_port_attr_notify(enum switchdev_notifier_type nt,
+				      struct net_device *dev,
+				      const struct switchdev_attr *attr,
+				      struct switchdev_trans *trans)
+{
+	int err;
+	int rc;
+
+	struct switchdev_notifier_port_attr_info attr_info = {
+		.attr = attr,
+		.trans = trans,
+		.handled = false,
+	};
+
+	rc = call_switchdev_blocking_notifiers(nt, dev,
+					       &attr_info.info, NULL);
+	err = notifier_to_errno(rc);
+	if (err) {
+		WARN_ON(!attr_info.handled);
+		return err;
+	}
+
+	if (!attr_info.handled)
+		return -EOPNOTSUPP;
+
+	return 0;
+}
+
+static int switchdev_port_attr_set_now(struct net_device *dev,
+				       const struct switchdev_attr *attr)
+{
+	struct switchdev_trans trans;
+	int err;
+
+	/* Phase I: prepare for attr set. Driver/device should fail
+	 * here if there are going to be issues in the commit phase,
+	 * such as lack of resources or support.  The driver/device
+	 * should reserve resources needed for the commit phase here,
+	 * but should not commit the attr.
+	 */
+
+	trans.ph_prepare = true;
+	err = switchdev_port_attr_notify(SWITCHDEV_PORT_ATTR_SET, dev, attr,
+					 &trans);
+	if (err)
+		return err;
+
+	/* Phase II: commit attr set.  This cannot fail as a fault
+	 * of driver/device.  If it does, it's a bug in the driver/device
+	 * because the driver said everythings was OK in phase I.
+	 */
+
+	trans.ph_prepare = false;
+	err = switchdev_port_attr_notify(SWITCHDEV_PORT_ATTR_SET, dev, attr,
+					 &trans);
+	WARN(err, "%s: Commit of attribute (id=%d) failed.\n",
+	     dev->name, attr->id);
+
+	return err;
+}
+
+static void switchdev_port_attr_set_deferred(struct net_device *dev,
+					     const void *data)
+{
+	const struct switchdev_attr *attr = data;
+	int err;
+
+	err = switchdev_port_attr_set_now(dev, attr);
+	if (err && err != -EOPNOTSUPP)
+		netdev_err(dev, "failed (err=%d) to set attribute (id=%d)\n",
+			   err, attr->id);
+	if (attr->complete)
+		attr->complete(dev, err, attr->complete_priv);
+}
+
+static int switchdev_port_attr_set_defer(struct net_device *dev,
+					 const struct switchdev_attr *attr)
+{
+	return switchdev_deferred_enqueue(dev, attr, sizeof(*attr),
+					  switchdev_port_attr_set_deferred);
+}
+
+/**
+ *	switchdev_port_attr_set - Set port attribute
+ *
+ *	@dev: port device
+ *	@attr: attribute to set
+ *
+ *	Use a 2-phase prepare-commit transaction model to ensure
+ *	system is not left in a partially updated state due to
+ *	failure from driver/device.
+ *
+ *	rtnl_lock must be held and must not be in atomic section,
+ *	in case SWITCHDEV_F_DEFER flag is not set.
+ */
+int switchdev_port_attr_set(struct net_device *dev,
+			    const struct switchdev_attr *attr)
+{
+	if (attr->flags & SWITCHDEV_F_DEFER)
+		return switchdev_port_attr_set_defer(dev, attr);
+	ASSERT_RTNL();
+	return switchdev_port_attr_set_now(dev, attr);
+}
+EXPORT_SYMBOL_GPL(switchdev_port_attr_set);
+
+static size_t switchdev_obj_size(const struct switchdev_obj *obj)
+{
+	switch (obj->id) {
+	case SWITCHDEV_OBJ_ID_PORT_VLAN:
+		return sizeof(struct switchdev_obj_port_vlan);
+	case SWITCHDEV_OBJ_ID_PORT_MDB:
+		return sizeof(struct switchdev_obj_port_mdb);
+	case SWITCHDEV_OBJ_ID_HOST_MDB:
+		return sizeof(struct switchdev_obj_port_mdb);
+	default:
+		BUG();
+	}
+	return 0;
+}
+
+static int switchdev_port_obj_notify(enum switchdev_notifier_type nt,
+				     struct net_device *dev,
+				     const struct switchdev_obj *obj,
+				     struct switchdev_trans *trans,
+				     struct netlink_ext_ack *extack)
+{
+	int rc;
+	int err;
+
+	struct switchdev_notifier_port_obj_info obj_info = {
+		.obj = obj,
+		.trans = trans,
+		.handled = false,
+	};
+
+	rc = call_switchdev_blocking_notifiers(nt, dev, &obj_info.info, extack);
+	err = notifier_to_errno(rc);
+	if (err) {
+		WARN_ON(!obj_info.handled);
+		return err;
+	}
+	if (!obj_info.handled)
+		return -EOPNOTSUPP;
+	return 0;
+}
+
+static int switchdev_port_obj_add_now(struct net_device *dev,
+				      const struct switchdev_obj *obj,
+				      struct netlink_ext_ack *extack)
+{
+	struct switchdev_trans trans;
+	int err;
+
+	ASSERT_RTNL();
+
+	/* Phase I: prepare for obj add. Driver/device should fail
+	 * here if there are going to be issues in the commit phase,
+	 * such as lack of resources or support.  The driver/device
+	 * should reserve resources needed for the commit phase here,
+	 * but should not commit the obj.
+	 */
+
+	trans.ph_prepare = true;
+	err = switchdev_port_obj_notify(SWITCHDEV_PORT_OBJ_ADD,
+					dev, obj, &trans, extack);
+	if (err)
+		return err;
+
+	/* Phase II: commit obj add.  This cannot fail as a fault
+	 * of driver/device.  If it does, it's a bug in the driver/device
+	 * because the driver said everythings was OK in phase I.
+	 */
+
+	trans.ph_prepare = false;
+	err = switchdev_port_obj_notify(SWITCHDEV_PORT_OBJ_ADD,
+					dev, obj, &trans, extack);
+	WARN(err, "%s: Commit of object (id=%d) failed.\n", dev->name, obj->id);
+
+	return err;
+}
+
+static void switchdev_port_obj_add_deferred(struct net_device *dev,
+					    const void *data)
+{
+	const struct switchdev_obj *obj = data;
+	int err;
+
+	err = switchdev_port_obj_add_now(dev, obj, NULL);
+	if (err && err != -EOPNOTSUPP)
+		netdev_err(dev, "failed (err=%d) to add object (id=%d)\n",
+			   err, obj->id);
+	if (obj->complete)
+		obj->complete(dev, err, obj->complete_priv);
+}
+
+static int switchdev_port_obj_add_defer(struct net_device *dev,
+					const struct switchdev_obj *obj)
+{
+	return switchdev_deferred_enqueue(dev, obj, switchdev_obj_size(obj),
+					  switchdev_port_obj_add_deferred);
+}
+
+/**
+ *	switchdev_port_obj_add - Add port object
+ *
+ *	@dev: port device
+ *	@id: object ID
+ *	@obj: object to add
+ *
+ *	Use a 2-phase prepare-commit transaction model to ensure
+ *	system is not left in a partially updated state due to
+ *	failure from driver/device.
+ *
+ *	rtnl_lock must be held and must not be in atomic section,
+ *	in case SWITCHDEV_F_DEFER flag is not set.
+ */
+int switchdev_port_obj_add(struct net_device *dev,
+			   const struct switchdev_obj *obj,
+			   struct netlink_ext_ack *extack)
+{
+	if (obj->flags & SWITCHDEV_F_DEFER)
+		return switchdev_port_obj_add_defer(dev, obj);
+	ASSERT_RTNL();
+	return switchdev_port_obj_add_now(dev, obj, extack);
+}
+EXPORT_SYMBOL_GPL(switchdev_port_obj_add);
+
+static int switchdev_port_obj_del_now(struct net_device *dev,
+				      const struct switchdev_obj *obj)
+{
+	return switchdev_port_obj_notify(SWITCHDEV_PORT_OBJ_DEL,
+					 dev, obj, NULL, NULL);
+}
+
+static void switchdev_port_obj_del_deferred(struct net_device *dev,
+					    const void *data)
+{
+	const struct switchdev_obj *obj = data;
+	int err;
+
+	err = switchdev_port_obj_del_now(dev, obj);
+	if (err && err != -EOPNOTSUPP)
+		netdev_err(dev, "failed (err=%d) to del object (id=%d)\n",
+			   err, obj->id);
+	if (obj->complete)
+		obj->complete(dev, err, obj->complete_priv);
+}
+
+static int switchdev_port_obj_del_defer(struct net_device *dev,
+					const struct switchdev_obj *obj)
+{
+	return switchdev_deferred_enqueue(dev, obj, switchdev_obj_size(obj),
+					  switchdev_port_obj_del_deferred);
+}
+
+/**
+ *	switchdev_port_obj_del - Delete port object
+ *
+ *	@dev: port device
+ *	@id: object ID
+ *	@obj: object to delete
+ *
+ *	rtnl_lock must be held and must not be in atomic section,
+ *	in case SWITCHDEV_F_DEFER flag is not set.
+ */
+int switchdev_port_obj_del(struct net_device *dev,
+			   const struct switchdev_obj *obj)
+{
+	if (obj->flags & SWITCHDEV_F_DEFER)
+		return switchdev_port_obj_del_defer(dev, obj);
+	ASSERT_RTNL();
+	return switchdev_port_obj_del_now(dev, obj);
+}
+EXPORT_SYMBOL_GPL(switchdev_port_obj_del);
+
+static ATOMIC_NOTIFIER_HEAD(switchdev_notif_chain);
+static BLOCKING_NOTIFIER_HEAD(switchdev_blocking_notif_chain);
+
+/**
+ *	register_switchdev_notifier - Register notifier
+ *	@nb: notifier_block
+ *
+ *	Register switch device notifier.
+ */
+int register_switchdev_notifier(struct notifier_block *nb)
+{
+	return atomic_notifier_chain_register(&switchdev_notif_chain, nb);
+}
+EXPORT_SYMBOL_GPL(register_switchdev_notifier);
+
+/**
+ *	unregister_switchdev_notifier - Unregister notifier
+ *	@nb: notifier_block
+ *
+ *	Unregister switch device notifier.
+ */
+int unregister_switchdev_notifier(struct notifier_block *nb)
+{
+	return atomic_notifier_chain_unregister(&switchdev_notif_chain, nb);
+}
+EXPORT_SYMBOL_GPL(unregister_switchdev_notifier);
+
+/**
+ *	call_switchdev_notifiers - Call notifiers
+ *	@val: value passed unmodified to notifier function
+ *	@dev: port device
+ *	@info: notifier information data
+ *
+ *	Call all network notifier blocks.
+ */
+int call_switchdev_notifiers(unsigned long val, struct net_device *dev,
+			     struct switchdev_notifier_info *info,
+			     struct netlink_ext_ack *extack)
+{
+	info->dev = dev;
+	info->extack = extack;
+	return atomic_notifier_call_chain(&switchdev_notif_chain, val, info);
+}
+EXPORT_SYMBOL_GPL(call_switchdev_notifiers);
+
+int register_switchdev_blocking_notifier(struct notifier_block *nb)
+{
+	struct blocking_notifier_head *chain = &switchdev_blocking_notif_chain;
+
+	return blocking_notifier_chain_register(chain, nb);
+}
+EXPORT_SYMBOL_GPL(register_switchdev_blocking_notifier);
+
+int unregister_switchdev_blocking_notifier(struct notifier_block *nb)
+{
+	struct blocking_notifier_head *chain = &switchdev_blocking_notif_chain;
+
+	return blocking_notifier_chain_unregister(chain, nb);
+}
+EXPORT_SYMBOL_GPL(unregister_switchdev_blocking_notifier);
+
+int call_switchdev_blocking_notifiers(unsigned long val, struct net_device *dev,
+				      struct switchdev_notifier_info *info,
+				      struct netlink_ext_ack *extack)
+{
+	info->dev = dev;
+	info->extack = extack;
+	return blocking_notifier_call_chain(&switchdev_blocking_notif_chain,
+					    val, info);
+}
+EXPORT_SYMBOL_GPL(call_switchdev_blocking_notifiers);
+
+static int __switchdev_handle_port_obj_add(struct net_device *dev,
+			struct switchdev_notifier_port_obj_info *port_obj_info,
+			bool (*check_cb)(const struct net_device *dev),
+			int (*add_cb)(struct net_device *dev,
+				      const struct switchdev_obj *obj,
+				      struct switchdev_trans *trans,
+				      struct netlink_ext_ack *extack))
+{
+	struct netlink_ext_ack *extack;
 	struct net_device *lower_dev;
 	struct list_head *iter;
 	int err = -EOPNOTSUPP;
 
-	if (ops && ops->swdev_port_stp_update)
-		return ops->swdev_port_stp_update(dev, state);
+	extack = switchdev_notifier_info_to_extack(&port_obj_info->info);
 
+	if (check_cb(dev)) {
+		/* This flag is only checked if the return value is success. */
+		port_obj_info->handled = true;
+		return add_cb(dev, port_obj_info->obj, port_obj_info->trans,
+			      extack);
+	}
+
+	/* Switch ports might be stacked under e.g. a LAG. Ignore the
+	 * unsupported devices, another driver might be able to handle them. But
+	 * propagate to the callers any hard errors.
+	 *
+	 * If the driver does its own bookkeeping of stacked ports, it's not
+	 * necessary to go through this helper.
+	 */
 	netdev_for_each_lower_dev(dev, lower_dev, iter) {
-		err = netdev_switch_port_stp_update(lower_dev, state);
+		err = __switchdev_handle_port_obj_add(lower_dev, port_obj_info,
+						      check_cb, add_cb);
 		if (err && err != -EOPNOTSUPP)
 			return err;
 	}
 
 	return err;
 }
-EXPORT_SYMBOL_GPL(netdev_switch_port_stp_update);
 
-static DEFINE_MUTEX(netdev_switch_mutex);
-static RAW_NOTIFIER_HEAD(netdev_switch_notif_chain);
-
-/**
- *	register_netdev_switch_notifier - Register notifier
- *	@nb: notifier_block
- *
- *	Register switch device notifier. This should be used by code
- *	which needs to monitor events happening in particular device.
- *	Return values are same as for atomic_notifier_chain_register().
- */
-int register_netdev_switch_notifier(struct notifier_block *nb)
+int switchdev_handle_port_obj_add(struct net_device *dev,
+			struct switchdev_notifier_port_obj_info *port_obj_info,
+			bool (*check_cb)(const struct net_device *dev),
+			int (*add_cb)(struct net_device *dev,
+				      const struct switchdev_obj *obj,
+				      struct switchdev_trans *trans,
+				      struct netlink_ext_ack *extack))
 {
 	int err;
 
-	mutex_lock(&netdev_switch_mutex);
-	err = raw_notifier_chain_register(&netdev_switch_notif_chain, nb);
-	mutex_unlock(&netdev_switch_mutex);
+	err = __switchdev_handle_port_obj_add(dev, port_obj_info, check_cb,
+					      add_cb);
+	if (err == -EOPNOTSUPP)
+		err = 0;
 	return err;
 }
-EXPORT_SYMBOL_GPL(register_netdev_switch_notifier);
+EXPORT_SYMBOL_GPL(switchdev_handle_port_obj_add);
 
-/**
- *	unregister_netdev_switch_notifier - Unregister notifier
- *	@nb: notifier_block
- *
- *	Unregister switch device notifier.
- *	Return values are same as for atomic_notifier_chain_unregister().
- */
-int unregister_netdev_switch_notifier(struct notifier_block *nb)
-{
-	int err;
-
-	mutex_lock(&netdev_switch_mutex);
-	err = raw_notifier_chain_unregister(&netdev_switch_notif_chain, nb);
-	mutex_unlock(&netdev_switch_mutex);
-	return err;
-}
-EXPORT_SYMBOL_GPL(unregister_netdev_switch_notifier);
-
-/**
- *	call_netdev_switch_notifiers - Call notifiers
- *	@val: value passed unmodified to notifier function
- *	@dev: port device
- *	@info: notifier information data
- *
- *	Call all network notifier blocks. This should be called by driver
- *	when it needs to propagate hardware event.
- *	Return values are same as for atomic_notifier_call_chain().
- */
-int call_netdev_switch_notifiers(unsigned long val, struct net_device *dev,
-				 struct netdev_switch_notifier_info *info)
-{
-	int err;
-
-	info->dev = dev;
-	mutex_lock(&netdev_switch_mutex);
-	err = raw_notifier_call_chain(&netdev_switch_notif_chain, val, info);
-	mutex_unlock(&netdev_switch_mutex);
-	return err;
-}
-EXPORT_SYMBOL_GPL(call_netdev_switch_notifiers);
-
-/**
- *	netdev_switch_port_bridge_setlink - Notify switch device port of bridge
- *	port attributes
- *
- *	@dev: port device
- *	@nlh: netlink msg with bridge port attributes
- *	@flags: bridge setlink flags
- *
- *	Notify switch device port of bridge port attributes
- */
-int netdev_switch_port_bridge_setlink(struct net_device *dev,
-				      struct nlmsghdr *nlh, u16 flags)
-{
-	const struct net_device_ops *ops = dev->netdev_ops;
-
-	if (!(dev->features & NETIF_F_HW_SWITCH_OFFLOAD))
-		return 0;
-
-	if (!ops->ndo_bridge_setlink)
-		return -EOPNOTSUPP;
-
-	return ops->ndo_bridge_setlink(dev, nlh, flags);
-}
-EXPORT_SYMBOL_GPL(netdev_switch_port_bridge_setlink);
-
-/**
- *	netdev_switch_port_bridge_dellink - Notify switch device port of bridge
- *	port attribute delete
- *
- *	@dev: port device
- *	@nlh: netlink msg with bridge port attributes
- *	@flags: bridge setlink flags
- *
- *	Notify switch device port of bridge port attribute delete
- */
-int netdev_switch_port_bridge_dellink(struct net_device *dev,
-				      struct nlmsghdr *nlh, u16 flags)
-{
-	const struct net_device_ops *ops = dev->netdev_ops;
-
-	if (!(dev->features & NETIF_F_HW_SWITCH_OFFLOAD))
-		return 0;
-
-	if (!ops->ndo_bridge_dellink)
-		return -EOPNOTSUPP;
-
-	return ops->ndo_bridge_dellink(dev, nlh, flags);
-}
-EXPORT_SYMBOL_GPL(netdev_switch_port_bridge_dellink);
-
-/**
- *	ndo_dflt_netdev_switch_port_bridge_setlink - default ndo bridge setlink
- *						     op for master devices
- *
- *	@dev: port device
- *	@nlh: netlink msg with bridge port attributes
- *	@flags: bridge setlink flags
- *
- *	Notify master device slaves of bridge port attributes
- */
-int ndo_dflt_netdev_switch_port_bridge_setlink(struct net_device *dev,
-					       struct nlmsghdr *nlh, u16 flags)
+static int __switchdev_handle_port_obj_del(struct net_device *dev,
+			struct switchdev_notifier_port_obj_info *port_obj_info,
+			bool (*check_cb)(const struct net_device *dev),
+			int (*del_cb)(struct net_device *dev,
+				      const struct switchdev_obj *obj))
 {
 	struct net_device *lower_dev;
 	struct list_head *iter;
-	int ret = 0, err = 0;
+	int err = -EOPNOTSUPP;
 
-	if (!(dev->features & NETIF_F_HW_SWITCH_OFFLOAD))
-		return ret;
+	if (check_cb(dev)) {
+		/* This flag is only checked if the return value is success. */
+		port_obj_info->handled = true;
+		return del_cb(dev, port_obj_info->obj);
+	}
 
+	/* Switch ports might be stacked under e.g. a LAG. Ignore the
+	 * unsupported devices, another driver might be able to handle them. But
+	 * propagate to the callers any hard errors.
+	 *
+	 * If the driver does its own bookkeeping of stacked ports, it's not
+	 * necessary to go through this helper.
+	 */
 	netdev_for_each_lower_dev(dev, lower_dev, iter) {
-		err = netdev_switch_port_bridge_setlink(lower_dev, nlh, flags);
+		err = __switchdev_handle_port_obj_del(lower_dev, port_obj_info,
+						      check_cb, del_cb);
 		if (err && err != -EOPNOTSUPP)
-			ret = err;
+			return err;
 	}
 
-	return ret;
+	return err;
 }
-EXPORT_SYMBOL_GPL(ndo_dflt_netdev_switch_port_bridge_setlink);
 
-/**
- *	ndo_dflt_netdev_switch_port_bridge_dellink - default ndo bridge dellink
- *						     op for master devices
- *
- *	@dev: port device
- *	@nlh: netlink msg with bridge port attributes
- *	@flags: bridge dellink flags
- *
- *	Notify master device slaves of bridge port attribute deletes
- */
-int ndo_dflt_netdev_switch_port_bridge_dellink(struct net_device *dev,
-					       struct nlmsghdr *nlh, u16 flags)
+int switchdev_handle_port_obj_del(struct net_device *dev,
+			struct switchdev_notifier_port_obj_info *port_obj_info,
+			bool (*check_cb)(const struct net_device *dev),
+			int (*del_cb)(struct net_device *dev,
+				      const struct switchdev_obj *obj))
+{
+	int err;
+
+	err = __switchdev_handle_port_obj_del(dev, port_obj_info, check_cb,
+					      del_cb);
+	if (err == -EOPNOTSUPP)
+		err = 0;
+	return err;
+}
+EXPORT_SYMBOL_GPL(switchdev_handle_port_obj_del);
+
+static int __switchdev_handle_port_attr_set(struct net_device *dev,
+			struct switchdev_notifier_port_attr_info *port_attr_info,
+			bool (*check_cb)(const struct net_device *dev),
+			int (*set_cb)(struct net_device *dev,
+				      const struct switchdev_attr *attr,
+				      struct switchdev_trans *trans))
 {
 	struct net_device *lower_dev;
 	struct list_head *iter;
-	int ret = 0, err = 0;
+	int err = -EOPNOTSUPP;
 
-	if (!(dev->features & NETIF_F_HW_SWITCH_OFFLOAD))
-		return ret;
+	if (check_cb(dev)) {
+		port_attr_info->handled = true;
+		return set_cb(dev, port_attr_info->attr,
+			      port_attr_info->trans);
+	}
 
+	/* Switch ports might be stacked under e.g. a LAG. Ignore the
+	 * unsupported devices, another driver might be able to handle them. But
+	 * propagate to the callers any hard errors.
+	 *
+	 * If the driver does its own bookkeeping of stacked ports, it's not
+	 * necessary to go through this helper.
+	 */
 	netdev_for_each_lower_dev(dev, lower_dev, iter) {
-		err = netdev_switch_port_bridge_dellink(lower_dev, nlh, flags);
+		err = __switchdev_handle_port_attr_set(lower_dev, port_attr_info,
+						       check_cb, set_cb);
 		if (err && err != -EOPNOTSUPP)
-			ret = err;
-	}
-
-	return ret;
-}
-EXPORT_SYMBOL_GPL(ndo_dflt_netdev_switch_port_bridge_dellink);
-
-static struct net_device *netdev_switch_get_lowest_dev(struct net_device *dev)
-{
-	const struct swdev_ops *ops = dev->swdev_ops;
-	struct net_device *lower_dev;
-	struct net_device *port_dev;
-	struct list_head *iter;
-
-	/* Recusively search down until we find a sw port dev.
-	 * (A sw port dev supports swdev_parent_id_get).
-	 */
-
-	if (dev->features & NETIF_F_HW_SWITCH_OFFLOAD &&
-	    ops && ops->swdev_parent_id_get)
-		return dev;
-
-	netdev_for_each_lower_dev(dev, lower_dev, iter) {
-		port_dev = netdev_switch_get_lowest_dev(lower_dev);
-		if (port_dev)
-			return port_dev;
-	}
-
-	return NULL;
-}
-
-static struct net_device *netdev_switch_get_dev_by_nhs(struct fib_info *fi)
-{
-	struct netdev_phys_item_id psid;
-	struct netdev_phys_item_id prev_psid;
-	struct net_device *dev = NULL;
-	int nhsel;
-
-	/* For this route, all nexthop devs must be on the same switch. */
-
-	for (nhsel = 0; nhsel < fi->fib_nhs; nhsel++) {
-		const struct fib_nh *nh = &fi->fib_nh[nhsel];
-
-		if (!nh->nh_dev)
-			return NULL;
-
-		dev = netdev_switch_get_lowest_dev(nh->nh_dev);
-		if (!dev)
-			return NULL;
-
-		if (netdev_switch_parent_id_get(dev, &psid))
-			return NULL;
-
-		if (nhsel > 0) {
-			if (prev_psid.id_len != psid.id_len)
-				return NULL;
-			if (memcmp(prev_psid.id, psid.id, psid.id_len))
-				return NULL;
-		}
-
-		prev_psid = psid;
-	}
-
-	return dev;
-}
-
-/**
- *	netdev_switch_fib_ipv4_add - Add IPv4 route entry to switch
- *
- *	@dst: route's IPv4 destination address
- *	@dst_len: destination address length (prefix length)
- *	@fi: route FIB info structure
- *	@tos: route TOS
- *	@type: route type
- *	@nlflags: netlink flags passed in (NLM_F_*)
- *	@tb_id: route table ID
- *
- *	Add IPv4 route entry to switch device.
- */
-int netdev_switch_fib_ipv4_add(u32 dst, int dst_len, struct fib_info *fi,
-			       u8 tos, u8 type, u32 nlflags, u32 tb_id)
-{
-	struct net_device *dev;
-	const struct swdev_ops *ops;
-	int err = 0;
-
-	/* Don't offload route if using custom ip rules or if
-	 * IPv4 FIB offloading has been disabled completely.
-	 */
-
-#ifdef CONFIG_IP_MULTIPLE_TABLES
-	if (fi->fib_net->ipv4.fib_has_custom_rules)
-		return 0;
-#endif
-
-	if (fi->fib_net->ipv4.fib_offload_disabled)
-		return 0;
-
-	dev = netdev_switch_get_dev_by_nhs(fi);
-	if (!dev)
-		return 0;
-	ops = dev->swdev_ops;
-
-	if (ops->swdev_fib_ipv4_add) {
-		err = ops->swdev_fib_ipv4_add(dev, htonl(dst), dst_len,
-					      fi, tos, type, nlflags,
-					      tb_id);
-		if (!err)
-			fi->fib_flags |= RTNH_F_OFFLOAD;
+			return err;
 	}
 
 	return err;
 }
-EXPORT_SYMBOL_GPL(netdev_switch_fib_ipv4_add);
 
-/**
- *	netdev_switch_fib_ipv4_del - Delete IPv4 route entry from switch
- *
- *	@dst: route's IPv4 destination address
- *	@dst_len: destination address length (prefix length)
- *	@fi: route FIB info structure
- *	@tos: route TOS
- *	@type: route type
- *	@tb_id: route table ID
- *
- *	Delete IPv4 route entry from switch device.
- */
-int netdev_switch_fib_ipv4_del(u32 dst, int dst_len, struct fib_info *fi,
-			       u8 tos, u8 type, u32 tb_id)
+int switchdev_handle_port_attr_set(struct net_device *dev,
+			struct switchdev_notifier_port_attr_info *port_attr_info,
+			bool (*check_cb)(const struct net_device *dev),
+			int (*set_cb)(struct net_device *dev,
+				      const struct switchdev_attr *attr,
+				      struct switchdev_trans *trans))
 {
-	struct net_device *dev;
-	const struct swdev_ops *ops;
-	int err = 0;
+	int err;
 
-	if (!(fi->fib_flags & RTNH_F_OFFLOAD))
-		return 0;
-
-	dev = netdev_switch_get_dev_by_nhs(fi);
-	if (!dev)
-		return 0;
-	ops = dev->swdev_ops;
-
-	if (ops->swdev_fib_ipv4_del) {
-		err = ops->swdev_fib_ipv4_del(dev, htonl(dst), dst_len,
-					      fi, tos, type, tb_id);
-		if (!err)
-			fi->fib_flags &= ~RTNH_F_OFFLOAD;
-	}
-
+	err = __switchdev_handle_port_attr_set(dev, port_attr_info, check_cb,
+					       set_cb);
+	if (err == -EOPNOTSUPP)
+		err = 0;
 	return err;
 }
-EXPORT_SYMBOL_GPL(netdev_switch_fib_ipv4_del);
-
-/**
- *	netdev_switch_fib_ipv4_abort - Abort an IPv4 FIB operation
- *
- *	@fi: route FIB info structure
- */
-void netdev_switch_fib_ipv4_abort(struct fib_info *fi)
-{
-	/* There was a problem installing this route to the offload
-	 * device.  For now, until we come up with more refined
-	 * policy handling, abruptly end IPv4 fib offloading for
-	 * for entire net by flushing offload device(s) of all
-	 * IPv4 routes, and mark IPv4 fib offloading broken from
-	 * this point forward.
-	 */
-
-	fib_flush_external(fi->fib_net);
-	fi->fib_net->ipv4.fib_offload_disabled = true;
-}
-EXPORT_SYMBOL_GPL(netdev_switch_fib_ipv4_abort);
+EXPORT_SYMBOL_GPL(switchdev_handle_port_attr_set);

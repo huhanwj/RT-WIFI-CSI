@@ -1,19 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * comedi/range.c
  * comedi routines for voltage ranges
  *
  * COMEDI - Linux Control and Measurement Device Interface
  * Copyright (C) 1997-8 David A. Schleef <ds@schleef.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #include <linux/uaccess.h>
@@ -102,7 +93,18 @@ int do_rangeinfo_ioctl(struct comedi_device *dev,
  * @s: comedi_subdevice struct
  * @n: number of elements in the chanlist
  * @chanlist: the chanlist to validate
-*/
+ *
+ * Each element consists of a channel number, a range index, an analog
+ * reference type and some flags, all packed into an unsigned int.
+ *
+ * This checks that the channel number and range index are supported by
+ * the comedi subdevice.  It does not check whether the analog reference
+ * type and the flags are supported.  Drivers that care should check those
+ * themselves.
+ *
+ * Return: %0 if all @chanlist elements are valid (success),
+ *         %-EINVAL if one or more elements are invalid.
+ */
 int comedi_check_chanlist(struct comedi_subdevice *s, int n,
 			  unsigned int *chanlist)
 {

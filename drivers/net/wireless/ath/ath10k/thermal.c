@@ -1,17 +1,6 @@
+// SPDX-License-Identifier: ISC
 /*
- * Copyright (c) 2014 Qualcomm Atheros, Inc.
- *
- * Permission to use, copy, modify, and/or distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ * Copyright (c) 2014-2015 Qualcomm Atheros, Inc.
  */
 
 #include <linux/device.h>
@@ -23,102 +12,50 @@
 #include "debug.h"
 #include "wmi-ops.h"
 
-static int ath10k_thermal_get_active_vifs(struct ath10k *ar,
-					  enum wmi_vdev_type type)
+static int
+ath10k_thermal_get_max_throttle_state(struct thermal_cooling_device *cdev,
+				      unsigned long *state)
 {
-	struct ath10k_vif *arvif;
-	int count = 0;
-
-	lockdep_assert_held(&ar->conf_mutex);
-
-	list_for_each_entry(arvif, &ar->arvifs, list) {
-		if (!arvif->is_started)
-			continue;
-
-		if (!arvif->is_up)
-			continue;
-
-		if (arvif->vdev_type != type)
-			continue;
-
-		count++;
-	}
-	return count;
-}
-
-static int ath10k_thermal_get_max_dutycycle(struct thermal_cooling_device *cdev,
-					    unsigned long *state)
-{
-	*state = ATH10K_QUIET_DUTY_CYCLE_MAX;
+	*state = ATH10K_THERMAL_THROTTLE_MAX;
 
 	return 0;
 }
 
-static int ath10k_thermal_get_cur_dutycycle(struct thermal_cooling_device *cdev,
-					    unsigned long *state)
+static int
+ath10k_thermal_get_cur_throttle_state(struct thermal_cooling_device *cdev,
+				      unsigned long *state)
 {
 	struct ath10k *ar = cdev->devdata;
 
 	mutex_lock(&ar->conf_mutex);
-	*state = ar->thermal.duty_cycle;
+	*state = ar->thermal.throttle_state;
 	mutex_unlock(&ar->conf_mutex);
 
 	return 0;
 }
 
-static int ath10k_thermal_set_cur_dutycycle(struct thermal_cooling_device *cdev,
-					    unsigned long duty_cycle)
+static int
+ath10k_thermal_set_cur_throttle_state(struct thermal_cooling_device *cdev,
+				      unsigned long throttle_state)
 {
 	struct ath10k *ar = cdev->devdata;
-	u32 period, duration, enabled;
-	int num_bss, ret = 0;
 
+	if (throttle_state > ATH10K_THERMAL_THROTTLE_MAX) {
+		ath10k_warn(ar, "throttle state %ld is exceeding the limit %d\n",
+			    throttle_state, ATH10K_THERMAL_THROTTLE_MAX);
+		return -EINVAL;
+	}
 	mutex_lock(&ar->conf_mutex);
-	if (ar->state != ATH10K_STATE_ON) {
-		ret = -ENETDOWN;
-		goto out;
-	}
-
-	if (duty_cycle > ATH10K_QUIET_DUTY_CYCLE_MAX) {
-		ath10k_warn(ar, "duty cycle %ld is exceeding the limit %d\n",
-			    duty_cycle, ATH10K_QUIET_DUTY_CYCLE_MAX);
-		ret = -EINVAL;
-		goto out;
-	}
-	/* TODO: Right now, thermal mitigation is handled only for single/multi
-	 * vif AP mode. Since quiet param is not validated in STA mode, it needs
-	 * to be investigated further to handle multi STA and multi-vif (AP+STA)
-	 * mode properly.
-	 */
-	num_bss = ath10k_thermal_get_active_vifs(ar, WMI_VDEV_TYPE_AP);
-	if (!num_bss) {
-		ath10k_warn(ar, "no active AP interfaces\n");
-		ret = -ENETDOWN;
-		goto out;
-	}
-	period = max(ATH10K_QUIET_PERIOD_MIN,
-		     (ATH10K_QUIET_PERIOD_DEFAULT / num_bss));
-	duration = (period * duty_cycle) / 100;
-	enabled = duration ? 1 : 0;
-
-	ret = ath10k_wmi_pdev_set_quiet_mode(ar, period, duration,
-					     ATH10K_QUIET_START_OFFSET,
-					     enabled);
-	if (ret) {
-		ath10k_warn(ar, "failed to set quiet mode period %u duarion %u enabled %u ret %d\n",
-			    period, duration, enabled, ret);
-		goto out;
-	}
-	ar->thermal.duty_cycle = duty_cycle;
-out:
+	ar->thermal.throttle_state = throttle_state;
+	ath10k_thermal_set_throttling(ar);
 	mutex_unlock(&ar->conf_mutex);
-	return ret;
+	return 0;
 }
 
-static struct thermal_cooling_device_ops ath10k_thermal_ops = {
-	.get_max_state = ath10k_thermal_get_max_dutycycle,
-	.get_cur_state = ath10k_thermal_get_cur_dutycycle,
-	.set_cur_state = ath10k_thermal_set_cur_dutycycle,
+static const struct thermal_cooling_device_ops ath10k_thermal_ops = {
+	.get_max_state = ath10k_thermal_get_max_throttle_state,
+	.get_cur_state = ath10k_thermal_get_cur_throttle_state,
+	.set_cur_state = ath10k_thermal_set_cur_throttle_state,
 };
 
 static ssize_t ath10k_thermal_show_temp(struct device *dev,
@@ -127,6 +64,7 @@ static ssize_t ath10k_thermal_show_temp(struct device *dev,
 {
 	struct ath10k *ar = dev_get_drvdata(dev);
 	int ret, temperature;
+	unsigned long time_left;
 
 	mutex_lock(&ar->conf_mutex);
 
@@ -148,9 +86,9 @@ static ssize_t ath10k_thermal_show_temp(struct device *dev,
 		goto out;
 	}
 
-	ret = wait_for_completion_timeout(&ar->thermal.wmi_sync,
-					  ATH10K_THERMAL_SYNC_TIMEOUT_HZ);
-	if (ret == 0) {
+	time_left = wait_for_completion_timeout(&ar->thermal.wmi_sync,
+						ATH10K_THERMAL_SYNC_TIMEOUT_HZ);
+	if (!time_left) {
 		ath10k_warn(ar, "failed to synchronize thermal read\n");
 		ret = -ETIMEDOUT;
 		goto out;
@@ -175,7 +113,7 @@ void ath10k_thermal_event_temperature(struct ath10k *ar, int temperature)
 	complete(&ar->thermal.wmi_sync);
 }
 
-static SENSOR_DEVICE_ATTR(temp1_input, S_IRUGO, ath10k_thermal_show_temp,
+static SENSOR_DEVICE_ATTR(temp1_input, 0444, ath10k_thermal_show_temp,
 			  NULL, 0);
 
 static struct attribute *ath10k_hwmon_attrs[] = {
@@ -184,11 +122,43 @@ static struct attribute *ath10k_hwmon_attrs[] = {
 };
 ATTRIBUTE_GROUPS(ath10k_hwmon);
 
+void ath10k_thermal_set_throttling(struct ath10k *ar)
+{
+	u32 period, duration, enabled;
+	int ret;
+
+	lockdep_assert_held(&ar->conf_mutex);
+
+	if (!test_bit(WMI_SERVICE_THERM_THROT, ar->wmi.svc_map))
+		return;
+
+	if (!ar->wmi.ops->gen_pdev_set_quiet_mode)
+		return;
+
+	if (ar->state != ATH10K_STATE_ON)
+		return;
+
+	period = ar->thermal.quiet_period;
+	duration = (period * ar->thermal.throttle_state) / 100;
+	enabled = duration ? 1 : 0;
+
+	ret = ath10k_wmi_pdev_set_quiet_mode(ar, period, duration,
+					     ATH10K_QUIET_START_OFFSET,
+					     enabled);
+	if (ret) {
+		ath10k_warn(ar, "failed to set quiet mode period %u duarion %u enabled %u ret %d\n",
+			    period, duration, enabled, ret);
+	}
+}
+
 int ath10k_thermal_register(struct ath10k *ar)
 {
 	struct thermal_cooling_device *cdev;
 	struct device *hwmon_dev;
 	int ret;
+
+	if (!test_bit(WMI_SERVICE_THERM_THROT, ar->wmi.svc_map))
+		return 0;
 
 	cdev = thermal_cooling_device_register("ath10k_thermal", ar,
 					       &ath10k_thermal_ops);
@@ -202,21 +172,23 @@ int ath10k_thermal_register(struct ath10k *ar)
 	ret = sysfs_create_link(&ar->dev->kobj, &cdev->device.kobj,
 				"cooling_device");
 	if (ret) {
-		ath10k_err(ar, "failed to create thermal symlink\n");
+		ath10k_err(ar, "failed to create cooling device symlink\n");
 		goto err_cooling_destroy;
 	}
 
 	ar->thermal.cdev = cdev;
+	ar->thermal.quiet_period = ATH10K_QUIET_PERIOD_DEFAULT;
 
 	/* Do not register hwmon device when temperature reading is not
 	 * supported by firmware
 	 */
-	if (ar->wmi.op_version != ATH10K_FW_WMI_OP_VERSION_10_2_4)
+	if (!(ar->wmi.ops->gen_pdev_get_temperature))
 		return 0;
 
 	/* Avoid linking error on devm_hwmon_device_register_with_groups, I
-	 * guess linux/hwmon.h is missing proper stubs. */
-	if (!config_enabled(CONFIG_HWMON))
+	 * guess linux/hwmon.h is missing proper stubs.
+	 */
+	if (!IS_REACHABLE(CONFIG_HWMON))
 		return 0;
 
 	hwmon_dev = devm_hwmon_device_register_with_groups(ar->dev,
@@ -231,7 +203,7 @@ int ath10k_thermal_register(struct ath10k *ar)
 	return 0;
 
 err_remove_link:
-	sysfs_remove_link(&ar->dev->kobj, "thermal_sensor");
+	sysfs_remove_link(&ar->dev->kobj, "cooling_device");
 err_cooling_destroy:
 	thermal_cooling_device_unregister(cdev);
 	return ret;
@@ -239,6 +211,9 @@ err_cooling_destroy:
 
 void ath10k_thermal_unregister(struct ath10k *ar)
 {
-	thermal_cooling_device_unregister(ar->thermal.cdev);
+	if (!test_bit(WMI_SERVICE_THERM_THROT, ar->wmi.svc_map))
+		return;
+
 	sysfs_remove_link(&ar->dev->kobj, "cooling_device");
+	thermal_cooling_device_unregister(ar->thermal.cdev);
 }

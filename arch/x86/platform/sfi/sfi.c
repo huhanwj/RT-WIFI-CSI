@@ -1,21 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * sfi.c - x86 architecture SFI support.
  *
  * Copyright (c) 2009, Intel Corporation.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
- *
  */
 
 #define KMSG_COMPONENT "SFI"
@@ -25,8 +12,8 @@
 #include <linux/init.h>
 #include <linux/sfi.h>
 #include <linux/io.h>
-#include <linux/irqdomain.h>
 
+#include <asm/irqdomain.h>
 #include <asm/io_apic.h>
 #include <asm/mpspec.h>
 #include <asm/setup.h>
@@ -71,9 +58,6 @@ static int __init sfi_parse_cpus(struct sfi_table_header *table)
 #endif /* CONFIG_X86_LOCAL_APIC */
 
 #ifdef CONFIG_X86_IO_APIC
-static struct irq_domain_ops sfi_ioapic_irqdomain_ops = {
-	.map = mp_irqdomain_map,
-};
 
 static int __init sfi_parse_ioapic(struct sfi_table_header *table)
 {
@@ -82,7 +66,7 @@ static int __init sfi_parse_ioapic(struct sfi_table_header *table)
 	int i, num;
 	struct ioapic_domain_cfg cfg = {
 		.type = IOAPIC_DOMAIN_STRICT,
-		.ops = &sfi_ioapic_irqdomain_ops,
+		.ops = &mp_ioapic_irqdomain_ops,
 	};
 
 	sb = (struct sfi_table_simple *)table;

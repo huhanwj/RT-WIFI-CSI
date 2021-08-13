@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  linux/arch/arm/kernel/entry-armv.S
  *
@@ -5,22 +6,20 @@
  *  ARM700 fix by Matthew Godbolt (linux-user@willothewisp.demon.co.uk)
  *  nommu support by Hyok S. Choi (hyok.choi@samsung.com)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
  *  Low-level vector interface routines
  *
  *  Note:  there is a StrongARM bug in the STMIA rn, {regs}^ instruction
  *  that causes it to save wrong values...  Be aware!
  */
 
+#include <linux/init.h>
+
 #include <asm/assembler.h>
 #include <asm/memory.h>
 #include <asm/glue-df.h>
 #include <asm/glue-pf.h>
 #include <asm/vfpmacros.h>
-#ifndef CONFIG_MULTI_IRQ_HANDLER
+#ifndef CONFIG_GENERIC_IRQ_MULTI_HANDLER
 #include <mach/entry-macro.S>
 #endif
 #include <asm/thread_notify.h>
@@ -37,10 +36,10 @@
  * Interrupt handling.
  */
 	.macro	irq_handler
-#ifdef CONFIG_MULTI_IRQ_HANDLER
+#ifdef CONFIG_GENERIC_IRQ_MULTI_HANDLER
 	ldr	r1, =handle_arch_irq
 	mov	r0, sp
-	adr	lr, BSYM(9997f)
+	badr	lr, 9997f
 	ldr	pc, [r1]
 #else
 	arch_irq_handler_default
@@ -80,17 +79,13 @@
 #endif
 	.endm
 
-#ifdef CONFIG_KPROBES
-	.section	.kprobes.text,"ax",%progbits
-#else
-	.text
-#endif
+	.section	.entry.text,"ax",%progbits
 
 /*
  * Invalid mode handlers
  */
 	.macro	inv_entry, reason
-	sub	sp, sp, #S_FRAME_SIZE
+	sub	sp, sp, #PT_REGS_SIZE
  ARM(	stmib	sp, {r1 - lr}		)
  THUMB(	stmia	sp, {r0 - r12}		)
  THUMB(	str	sp, [sp, #S_SP]		)
@@ -147,10 +142,10 @@ ENDPROC(__und_invalid)
 #define SPFIX(code...)
 #endif
 
-	.macro	svc_entry, stack_hole=0, trace=1
+	.macro	svc_entry, stack_hole=0, trace=1, uaccess=1
  UNWIND(.fnstart		)
  UNWIND(.save {r0 - pc}		)
-	sub	sp, sp, #(S_FRAME_SIZE + \stack_hole - 4)
+	sub	sp, sp, #(SVC_REGS_SIZE + \stack_hole - 4)
 #ifdef CONFIG_THUMB2_KERNEL
  SPFIX(	str	r0, [sp]	)	@ temporarily saved
  SPFIX(	mov	r0, sp		)
@@ -165,7 +160,7 @@ ENDPROC(__und_invalid)
 	ldmia	r0, {r3 - r5}
 	add	r7, sp, #S_SP - 4	@ here for interlock avoidance
 	mov	r6, #-1			@  ""  ""      ""       ""
-	add	r2, sp, #(S_FRAME_SIZE + \stack_hole - 4)
+	add	r2, sp, #(SVC_REGS_SIZE + \stack_hole - 4)
  SPFIX(	addeq	r2, r2, #4	)
 	str	r3, [sp, #-4]!		@ save the "real" r0 copied
 					@ from the exception stack
@@ -183,6 +178,17 @@ ENDPROC(__und_invalid)
 	@
 	stmia	r7, {r2 - r6}
 
+	get_thread_info tsk
+	ldr	r0, [tsk, #TI_ADDR_LIMIT]
+	mov	r1, #TASK_SIZE
+	str	r1, [tsk, #TI_ADDR_LIMIT]
+	str	r0, [sp, #SVC_ADDR_LIMIT]
+
+	uaccess_save r0
+	.if \uaccess
+	uaccess_disable r0
+	.endif
+
 	.if \trace
 #ifdef CONFIG_TRACE_IRQFLAGS
 	bl	trace_hardirqs_off
@@ -192,7 +198,7 @@ ENDPROC(__und_invalid)
 
 	.align	5
 __dabt_svc:
-	svc_entry
+	svc_entry uaccess=0
 	mov	r2, sp
 	dabt_helper
  THUMB(	ldr	r5, [sp, #S_PSR]	)	@ potentially updated CPSR
@@ -206,7 +212,6 @@ __irq_svc:
 	irq_handler
 
 #ifdef CONFIG_PREEMPT
-	get_thread_info tsk
 	ldr	r8, [tsk, #TI_PREEMPT]		@ get preempt count
 	ldr	r0, [tsk, #TI_FLAGS]		@ get flags
 	teq	r8, #0				@ if preempt count != 0
@@ -273,7 +278,7 @@ __und_svc:
 	str	r4, [sp, #S_PC]
 	orr	r0, r9, r0, lsl #16
 #endif
-	adr	r9, BSYM(__und_svc_finish)
+	badr	r9, __und_svc_finish
 	mov	r2, r4
 	bl	call_fpe
 
@@ -283,6 +288,7 @@ __und_svc_fault:
 	bl	__und_fault
 
 __und_svc_finish:
+	get_thread_info tsk
 	ldr	r5, [sp, #S_PSR]		@ Get SVC cpsr
 	svc_exit r5				@ return from exception
  UNWIND(.fnend		)
@@ -359,17 +365,17 @@ ENDPROC(__fiq_abt)
 /*
  * User mode handlers
  *
- * EABI note: sp_svc is always 64-bit aligned here, so should S_FRAME_SIZE
+ * EABI note: sp_svc is always 64-bit aligned here, so should PT_REGS_SIZE
  */
 
-#if defined(CONFIG_AEABI) && (__LINUX_ARM_ARCH__ >= 5) && (S_FRAME_SIZE & 7)
+#if defined(CONFIG_AEABI) && (__LINUX_ARM_ARCH__ >= 5) && (PT_REGS_SIZE & 7)
 #error "sizeof(struct pt_regs) must be a multiple of 8"
 #endif
 
-	.macro	usr_entry, trace=1
+	.macro	usr_entry, trace=1, uaccess=1
  UNWIND(.fnstart	)
  UNWIND(.cantunwind	)	@ don't unwind the user space
-	sub	sp, sp, #S_FRAME_SIZE
+	sub	sp, sp, #PT_REGS_SIZE
  ARM(	stmib	sp, {r1 - r12}	)
  THUMB(	stmia	sp, {r0 - r12}	)
 
@@ -398,6 +404,10 @@ ENDPROC(__fiq_abt)
  ARM(	stmdb	r0, {sp, lr}^			)
  THUMB(	store_user_sp_lr r0, r1, S_SP - S_PC	)
 
+	.if \uaccess
+	uaccess_disable ip
+	.endif
+
 	@ Enable the alignment trap while in kernel mode
  ATRAP(	teq	r8, r7)
  ATRAP( mcrne	p15, 0, r8, c1, c0, 0)
@@ -408,7 +418,7 @@ ENDPROC(__fiq_abt)
 	zero_fp
 
 	.if	\trace
-#ifdef CONFIG_IRQSOFF_TRACER
+#ifdef CONFIG_TRACE_IRQFLAGS
 	bl	trace_hardirqs_off
 #endif
 	ct_user_exit save = 0
@@ -416,8 +426,7 @@ ENDPROC(__fiq_abt)
 	.endm
 
 	.macro	kuser_cmpxchg_check
-#if !defined(CONFIG_CPU_32v6K) && defined(CONFIG_KUSER_HELPERS) && \
-    !defined(CONFIG_NEEDS_SYSCALL_FOR_CMPXCHG)
+#if !defined(CONFIG_CPU_32v6K) && defined(CONFIG_KUSER_HELPERS)
 #ifndef CONFIG_MMU
 #warning "NPTL on non MMU needs fixing"
 #else
@@ -433,7 +442,7 @@ ENDPROC(__fiq_abt)
 
 	.align	5
 __dabt_usr:
-	usr_entry
+	usr_entry uaccess=0
 	kuser_cmpxchg_check
 	mov	r2, sp
 	dabt_helper
@@ -456,7 +465,7 @@ ENDPROC(__irq_usr)
 
 	.align	5
 __und_usr:
-	usr_entry
+	usr_entry uaccess=0
 
 	mov	r2, r4
 	mov	r3, r5
@@ -469,7 +478,7 @@ __und_usr:
 	@ instruction, or the more conventional lr if we are to treat
 	@ this as a real undefined instruction
 	@
-	adr	r9, BSYM(ret_from_exception)
+	badr	r9, ret_from_exception
 
 	@ IRQs must be enabled before attempting to read the instruction from
 	@ user space since that could cause a page/translation fault if the
@@ -482,11 +491,13 @@ __und_usr:
 1:	ldrt	r0, [r4]
  ARM_BE8(rev	r0, r0)				@ little endian instruction
 
+	uaccess_disable ip
+
 	@ r0 = 32-bit ARM instruction which caused the exception
 	@ r2 = PC value for the following instruction (:= regs->ARM_pc)
 	@ r4 = PC value for the faulting instruction
 	@ lr = 32-bit undefined instruction function
-	adr	lr, BSYM(__und_usr_fault_32)
+	badr	lr, __und_usr_fault_32
 	b	call_fpe
 
 __und_usr_thumb:
@@ -516,13 +527,14 @@ __und_usr_thumb:
 2:	ldrht	r5, [r4]
 ARM_BE8(rev16	r5, r5)				@ little endian instruction
 	cmp	r5, #0xe800			@ 32bit instruction if xx != 0
-	blo	__und_usr_fault_16		@ 16bit undefined instruction
+	blo	__und_usr_fault_16_pan		@ 16bit undefined instruction
 3:	ldrht	r0, [r2]
 ARM_BE8(rev16	r0, r0)				@ little endian instruction
+	uaccess_disable ip
 	add	r2, r2, #2			@ r2 is PC + 2, make it PC + 4
 	str	r2, [sp, #S_PC]			@ it's a 2x16bit instr, update
 	orr	r0, r0, r5, lsl #16
-	adr	lr, BSYM(__und_usr_fault_32)
+	badr	lr, __und_usr_fault_32
 	@ r0 = the two 16-bit Thumb instructions which caused the exception
 	@ r2 = PC value for the following Thumb instruction (:= regs->ARM_pc)
 	@ r4 = PC value for the first 16-bit Thumb instruction
@@ -621,7 +633,7 @@ call_fpe:
 	@ Test if we need to give access to iWMMXt coprocessors
 	ldr	r5, [r10, #TI_FLAGS]
 	rsbs	r7, r8, #(1 << 8)		@ CP 0 or 1 only
-	movcss	r7, r5, lsr #(TIF_USING_IWMMXT + 1)
+	movscs	r7, r5, lsr #(TIF_USING_IWMMXT + 1)
 	bcs	iwmmxt_task_enable
 #endif
  ARM(	add	pc, pc, r8, lsr #6	)
@@ -702,6 +714,7 @@ do_fpe:
  */
 
 	.pushsection .data
+	.align	2
 ENTRY(fp_enter)
 	.word	no_fp
 	.popsection
@@ -713,10 +726,12 @@ ENDPROC(no_fp)
 __und_usr_fault_32:
 	mov	r1, #4
 	b	1f
+__und_usr_fault_16_pan:
+	uaccess_disable ip
 __und_usr_fault_16:
 	mov	r1, #2
 1:	mov	r0, sp
-	adr	lr, BSYM(ret_from_exception)
+	badr	lr, ret_from_exception
 	b	__und_fault
 ENDPROC(__und_usr_fault_32)
 ENDPROC(__und_usr_fault_16)
@@ -768,13 +783,18 @@ ENTRY(__switch_to)
 	ldr	r4, [r2, #TI_TP_VALUE]
 	ldr	r5, [r2, #TI_TP_VALUE + 4]
 #ifdef CONFIG_CPU_USE_DOMAINS
+	mrc	p15, 0, r6, c3, c0, 0		@ Get domain register
+	str	r6, [r1, #TI_CPU_DOMAIN]	@ Save old domain register
 	ldr	r6, [r2, #TI_CPU_DOMAIN]
 #endif
 	switch_tls r1, r4, r5, r3, r7
-#if defined(CONFIG_CC_STACKPROTECTOR) && !defined(CONFIG_SMP)
+#if defined(CONFIG_STACKPROTECTOR) && !defined(CONFIG_SMP)
 	ldr	r7, [r2, #TI_TASK]
 	ldr	r8, =__stack_chk_guard
-	ldr	r7, [r7, #TSK_STACK_CANARY]
+	.if (TSK_STACK_CANARY > IMM12_MASK)
+	add	r7, r7, #TSK_STACK_CANARY & ~IMM12_MASK
+	.endif
+	ldr	r7, [r7, #TSK_STACK_CANARY & IMM12_MASK]
 #endif
 #ifdef CONFIG_CPU_USE_DOMAINS
 	mcr	p15, 0, r6, c3, c0, 0		@ Set domain register
@@ -784,7 +804,7 @@ ENTRY(__switch_to)
 	ldr	r0, =thread_notify_head
 	mov	r1, #THREAD_NOTIFY_SWITCH
 	bl	atomic_notifier_call_chain
-#if defined(CONFIG_CC_STACKPROTECTOR) && !defined(CONFIG_SMP)
+#if defined(CONFIG_STACKPROTECTOR) && !defined(CONFIG_SMP)
 	str	r7, [r8]
 #endif
  THUMB(	mov	ip, r4			   )
@@ -806,7 +826,7 @@ ENDPROC(__switch_to)
  * existing ones.  This mechanism should be used only for things that are
  * really small and justified, and not be abused freely.
  *
- * See Documentation/arm/kernel_user_helpers.txt for formal definitions.
+ * See Documentation/arm/kernel_user_helpers.rst for formal definitions.
  */
  THUMB(	.arm	)
 
@@ -841,20 +861,7 @@ __kuser_helper_start:
 
 __kuser_cmpxchg64:				@ 0xffff0f60
 
-#if defined(CONFIG_NEEDS_SYSCALL_FOR_CMPXCHG)
-
-	/*
-	 * Poor you.  No fast solution possible...
-	 * The kernel itself must perform the operation.
-	 * A special ghost syscall is used for that (see traps.c).
-	 */
-	stmfd	sp!, {r7, lr}
-	ldr	r7, 1f			@ it's 20 bits
-	swi	__ARM_NR_cmpxchg64
-	ldmfd	sp!, {r7, pc}
-1:	.word	__ARM_NR_cmpxchg64
-
-#elif defined(CONFIG_CPU_32v6K)
+#if defined(CONFIG_CPU_32v6K)
 
 	stmfd	sp!, {r4, r5, r6, r7}
 	ldrd	r4, r5, [r0]			@ load old val
@@ -862,7 +869,7 @@ __kuser_cmpxchg64:				@ 0xffff0f60
 	smp_dmb	arm
 1:	ldrexd	r0, r1, [r2]			@ load current val
 	eors	r3, r0, r4			@ compare with oldval (1)
-	eoreqs	r3, r1, r5			@ compare with oldval (2)
+	eorseq	r3, r1, r5			@ compare with oldval (2)
 	strexdeq r3, r6, r7, [r2]		@ store newval if eq
 	teqeq	r3, #1				@ success?
 	beq	1b				@ if no then retry
@@ -886,8 +893,8 @@ __kuser_cmpxchg64:				@ 0xffff0f60
 	ldmia	r1, {r6, lr}			@ load new val
 1:	ldmia	r2, {r0, r1}			@ load current val
 	eors	r3, r0, r4			@ compare with oldval (1)
-	eoreqs	r3, r1, r5			@ compare with oldval (2)
-2:	stmeqia	r2, {r6, lr}			@ store newval if eq
+	eorseq	r3, r1, r5			@ compare with oldval (2)
+2:	stmiaeq	r2, {r6, lr}			@ store newval if eq
 	rsbs	r0, r3, #0			@ set return val and C flag
 	ldmfd	sp!, {r4, r5, r6, pc}
 
@@ -901,7 +908,7 @@ kuser_cmpxchg64_fixup:
 	mov	r7, #0xffff0fff
 	sub	r7, r7, #(0xffff0fff - (0xffff0f60 + (1b - __kuser_cmpxchg64)))
 	subs	r8, r4, r7
-	rsbcss	r8, r8, #(2b - 1b)
+	rsbscs	r8, r8, #(2b - 1b)
 	strcs	r7, [sp, #S_PC]
 #if __LINUX_ARM_ARCH__ < 6
 	bcc	kuser_cmpxchg32_fixup
@@ -930,20 +937,7 @@ __kuser_memory_barrier:				@ 0xffff0fa0
 
 __kuser_cmpxchg:				@ 0xffff0fc0
 
-#if defined(CONFIG_NEEDS_SYSCALL_FOR_CMPXCHG)
-
-	/*
-	 * Poor you.  No fast solution possible...
-	 * The kernel itself must perform the operation.
-	 * A special ghost syscall is used for that (see traps.c).
-	 */
-	stmfd	sp!, {r7, lr}
-	ldr	r7, 1f			@ it's 20 bits
-	swi	__ARM_NR_cmpxchg
-	ldmfd	sp!, {r7, pc}
-1:	.word	__ARM_NR_cmpxchg
-
-#elif __LINUX_ARM_ARCH__ < 6
+#if __LINUX_ARM_ARCH__ < 6
 
 #ifdef CONFIG_MMU
 
@@ -972,7 +966,7 @@ kuser_cmpxchg32_fixup:
 	mov	r7, #0xffff0fff
 	sub	r7, r7, #(0xffff0fff - (0xffff0fc0 + (1b - __kuser_cmpxchg)))
 	subs	r8, r4, r7
-	rsbcss	r8, r8, #(2b - 1b)
+	rsbscs	r8, r8, #(2b - 1b)
 	strcs	r7, [sp, #S_PC]
 	ret	lr
 	.previous
@@ -1073,7 +1067,6 @@ ENDPROC(vector_\name)
 	.endm
 
 	.section .stubs, "ax", %progbits
-__stubs_start:
 	@ This must be the first word
 	.word	vector_swi
 
@@ -1211,14 +1204,13 @@ vector_addrexcptn:
 	.long	__fiq_svc			@  e
 	.long	__fiq_svc			@  f
 
-	.globl	vector_fiq_offset
-	.equ	vector_fiq_offset, vector_fiq
+	.globl	vector_fiq
 
 	.section .vectors, "ax", %progbits
-__vectors_start:
+.L__vectors_start:
 	W(b)	vector_rst
 	W(b)	vector_und
-	W(ldr)	pc, __vectors_start + 0x1000
+	W(ldr)	pc, .L__vectors_start + 0x1000
 	W(b)	vector_pabt
 	W(b)	vector_dabt
 	W(b)	vector_addrexcptn
@@ -1226,13 +1218,8 @@ __vectors_start:
 	W(b)	vector_fiq
 
 	.data
+	.align	2
 
 	.globl	cr_alignment
 cr_alignment:
 	.space	4
-
-#ifdef CONFIG_MULTI_IRQ_HANDLER
-	.globl	handle_arch_irq
-handle_arch_irq:
-	.space	4
-#endif

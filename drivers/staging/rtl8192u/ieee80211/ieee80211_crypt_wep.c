@@ -1,12 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Host AP crypt: host-based WEP encryption implementation for Host AP driver
  *
  * Copyright (c) 2002-2004, Jouni Malinen <jkmaline@cc.hut.fi>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation. See README and COPYING for
- * more details.
  */
 
 #include <linux/module.h>
@@ -18,8 +14,8 @@
 
 #include "ieee80211.h"
 
-#include <linux/crypto.h>
-    #include <linux/scatterlist.h>
+#include <crypto/skcipher.h>
+#include <linux/scatterlist.h>
 #include <linux/crc32.h>
 
 MODULE_AUTHOR("Jouni Malinen");
@@ -32,8 +28,8 @@ struct prism2_wep_data {
 	u8 key[WEP_KEY_LEN + 1];
 	u8 key_len;
 	u8 key_idx;
-	struct crypto_blkcipher *tx_tfm;
-	struct crypto_blkcipher *rx_tfm;
+	struct crypto_sync_skcipher *tx_tfm;
+	struct crypto_sync_skcipher *rx_tfm;
 };
 
 
@@ -41,40 +37,26 @@ static void *prism2_wep_init(int keyidx)
 {
 	struct prism2_wep_data *priv;
 
-	priv = kzalloc(sizeof(*priv), GFP_ATOMIC);
-	if (priv == NULL)
-		goto fail;
+	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
+	if (!priv)
+		return NULL;
 	priv->key_idx = keyidx;
 
-	priv->tx_tfm = crypto_alloc_blkcipher("ecb(arc4)", 0, CRYPTO_ALG_ASYNC);
-	if (IS_ERR(priv->tx_tfm)) {
-		pr_debug("ieee80211_crypt_wep: could not allocate "
-		       "crypto API arc4\n");
-		priv->tx_tfm = NULL;
-		goto fail;
-	}
-	priv->rx_tfm = crypto_alloc_blkcipher("ecb(arc4)", 0, CRYPTO_ALG_ASYNC);
-	if (IS_ERR(priv->rx_tfm)) {
-		pr_debug("ieee80211_crypt_wep: could not allocate "
-		       "crypto API arc4\n");
-		priv->rx_tfm = NULL;
-		goto fail;
-	}
+	priv->tx_tfm = crypto_alloc_sync_skcipher("ecb(arc4)", 0, 0);
+	if (IS_ERR(priv->tx_tfm))
+		goto free_priv;
+	priv->rx_tfm = crypto_alloc_sync_skcipher("ecb(arc4)", 0, 0);
+	if (IS_ERR(priv->rx_tfm))
+		goto free_tx;
 
 	/* start WEP IV from a random value */
 	get_random_bytes(&priv->iv, 4);
 
 	return priv;
-
-fail:
-	if (priv) {
-		if (priv->tx_tfm)
-			crypto_free_blkcipher(priv->tx_tfm);
-		if (priv->rx_tfm)
-			crypto_free_blkcipher(priv->rx_tfm);
-		kfree(priv);
-	}
-
+free_tx:
+	crypto_free_sync_skcipher(priv->tx_tfm);
+free_priv:
+	kfree(priv);
 	return NULL;
 }
 
@@ -84,10 +66,8 @@ static void prism2_wep_deinit(void *priv)
 	struct prism2_wep_data *_priv = priv;
 
 	if (_priv) {
-		if (_priv->tx_tfm)
-			crypto_free_blkcipher(_priv->tx_tfm);
-		if (_priv->rx_tfm)
-			crypto_free_blkcipher(_priv->rx_tfm);
+		crypto_free_sync_skcipher(_priv->tx_tfm);
+		crypto_free_sync_skcipher(_priv->rx_tfm);
 	}
 	kfree(priv);
 }
@@ -104,11 +84,11 @@ static int prism2_wep_encrypt(struct sk_buff *skb, int hdr_len, void *priv)
 	u32 klen, len;
 	u8 key[WEP_KEY_LEN + 3];
 	u8 *pos;
-	cb_desc *tcb_desc = (cb_desc *)(skb->cb + MAX_DEV_ADDR_SIZE);
-	struct blkcipher_desc desc = {.tfm = wep->tx_tfm};
+	struct cb_desc *tcb_desc = (struct cb_desc *)(skb->cb + MAX_DEV_ADDR_SIZE);
 	u32 crc;
 	u8 *icv;
 	struct scatterlist sg;
+	int err;
 
 	if (skb_headroom(skb) < 4 || skb_tailroom(skb) < 4 ||
 	    skb->len < hdr_len)
@@ -125,7 +105,8 @@ static int prism2_wep_encrypt(struct sk_buff *skb, int hdr_len, void *priv)
 
 	/* Fluhrer, Mantin, and Shamir have reported weaknesses in the key
 	 * scheduling algorithm of RC4. At least IVs (KeyByte + 3, 0xff, N)
-	 * can be used to speedup attacks, so avoid using them. */
+	 * can be used to speedup attacks, so avoid using them.
+	 */
 	if ((wep->iv & 0xff00) == 0xff00) {
 		u8 B = (wep->iv >> 16) & 0xff;
 
@@ -142,8 +123,8 @@ static int prism2_wep_encrypt(struct sk_buff *skb, int hdr_len, void *priv)
 	/* Copy rest of the WEP key (the secret part) */
 	memcpy(key + 3, wep->key, wep->key_len);
 
-	if (!tcb_desc->bHwSec)
-	{
+	if (!tcb_desc->bHwSec) {
+		SYNC_SKCIPHER_REQUEST_ON_STACK(req, wep->tx_tfm);
 
 		/* Append little-endian CRC32 and encrypt it to produce ICV */
 		crc = ~crc32_le(~0, pos, len);
@@ -153,10 +134,16 @@ static int prism2_wep_encrypt(struct sk_buff *skb, int hdr_len, void *priv)
 		icv[2] = crc >> 16;
 		icv[3] = crc >> 24;
 
-		crypto_blkcipher_setkey(wep->tx_tfm, key, klen);
-		sg_init_one(&sg, pos, len+4);
+		crypto_sync_skcipher_setkey(wep->tx_tfm, key, klen);
+		sg_init_one(&sg, pos, len + 4);
 
-		return crypto_blkcipher_encrypt(&desc, &sg, &sg, len + 4);
+		skcipher_request_set_sync_tfm(req, wep->tx_tfm);
+		skcipher_request_set_callback(req, 0, NULL, NULL);
+		skcipher_request_set_crypt(req, &sg, &sg, len + 4, NULL);
+
+		err = crypto_skcipher_encrypt(req);
+		skcipher_request_zero(req);
+		return err;
 	}
 
 	return 0;
@@ -176,11 +163,11 @@ static int prism2_wep_decrypt(struct sk_buff *skb, int hdr_len, void *priv)
 	u32  klen, plen;
 	u8 key[WEP_KEY_LEN + 3];
 	u8 keyidx, *pos;
-	cb_desc *tcb_desc = (cb_desc *)(skb->cb + MAX_DEV_ADDR_SIZE);
-	struct blkcipher_desc desc = {.tfm = wep->rx_tfm};
+	struct cb_desc *tcb_desc = (struct cb_desc *)(skb->cb + MAX_DEV_ADDR_SIZE);
 	u32 crc;
 	u8 icv[4];
 	struct scatterlist sg;
+	int err;
 
 	if (skb->len < hdr_len + 8)
 		return -1;
@@ -201,12 +188,19 @@ static int prism2_wep_decrypt(struct sk_buff *skb, int hdr_len, void *priv)
 	/* Apply RC4 to data and compute CRC32 over decrypted data */
 	plen = skb->len - hdr_len - 8;
 
-	if (!tcb_desc->bHwSec)
-	{
-		crypto_blkcipher_setkey(wep->rx_tfm, key, klen);
-		sg_init_one(&sg, pos, plen+4);
+	if (!tcb_desc->bHwSec) {
+		SYNC_SKCIPHER_REQUEST_ON_STACK(req, wep->rx_tfm);
 
-		if (crypto_blkcipher_decrypt(&desc, &sg, &sg, plen + 4))
+		crypto_sync_skcipher_setkey(wep->rx_tfm, key, klen);
+		sg_init_one(&sg, pos, plen + 4);
+
+		skcipher_request_set_sync_tfm(req, wep->rx_tfm);
+		skcipher_request_set_callback(req, 0, NULL, NULL);
+		skcipher_request_set_crypt(req, &sg, &sg, plen + 4, NULL);
+
+		err = crypto_skcipher_decrypt(req);
+		skcipher_request_zero(req);
+		if (err)
 			return -7;
 
 		crc = ~crc32_le(~0, pos, plen);
@@ -291,8 +285,3 @@ void __exit ieee80211_crypto_wep_exit(void)
 	ieee80211_unregister_crypto_ops(&ieee80211_crypt_wep);
 }
 
-void ieee80211_wep_null(void)
-{
-//	printk("============>%s()\n", __func__);
-	return;
-}

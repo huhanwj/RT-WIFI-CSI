@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * l4f00242t03.c -- support for Epson L4F00242T03 LCD
  *
@@ -5,10 +6,6 @@
  *
  * Copyright (c) 2009 Alberto Panizzo <maramaopercheseimorto@gmail.com>
  *	Inspired by Marek Vasut work in l4f00242t03.c
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -255,7 +252,6 @@ static void l4f00242t03_shutdown(struct spi_device *spi)
 static struct spi_driver l4f00242t03_driver = {
 	.driver = {
 		.name	= "l4f00242t03",
-		.owner	= THIS_MODULE,
 	},
 	.probe		= l4f00242t03_probe,
 	.remove		= l4f00242t03_remove,

@@ -1,25 +1,11 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2006,2007 Felix Fietkau <nbd@openwrt.org>
  * Copyright (C) 2006,2007 Eugene Konev <ejka@openwrt.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
 #include <linux/init.h>
 #include <linux/types.h>
-#include <linux/module.h>
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <linux/platform_device.h>
@@ -39,7 +25,6 @@
 
 #include <asm/addrspace.h>
 #include <asm/mach-ar7/ar7.h>
-#include <asm/mach-ar7/gpio.h>
 #include <asm/mach-ar7/prom.h>
 
 /*****************************************************************************
@@ -348,7 +333,7 @@ static struct platform_device ar7_udc = {
 /*****************************************************************************
  * LEDs
  ****************************************************************************/
-static struct gpio_led default_leds[] = {
+static const struct gpio_led default_leds[] = {
 	{
 		.name			= "status",
 		.gpio			= 8,
@@ -356,12 +341,12 @@ static struct gpio_led default_leds[] = {
 	},
 };
 
-static struct gpio_led titan_leds[] = {
+static const struct gpio_led titan_leds[] = {
 	{ .name = "status", .gpio = 8, .active_low = 1, },
 	{ .name = "wifi", .gpio = 13, .active_low = 1, },
 };
 
-static struct gpio_led dsl502t_leds[] = {
+static const struct gpio_led dsl502t_leds[] = {
 	{
 		.name			= "status",
 		.gpio			= 9,
@@ -379,7 +364,7 @@ static struct gpio_led dsl502t_leds[] = {
 	},
 };
 
-static struct gpio_led dg834g_leds[] = {
+static const struct gpio_led dg834g_leds[] = {
 	{
 		.name			= "ppp",
 		.gpio			= 6,
@@ -408,7 +393,7 @@ static struct gpio_led dg834g_leds[] = {
 	},
 };
 
-static struct gpio_led fb_sl_leds[] = {
+static const struct gpio_led fb_sl_leds[] = {
 	{
 		.name			= "1",
 		.gpio			= 7,
@@ -435,7 +420,7 @@ static struct gpio_led fb_sl_leds[] = {
 	},
 };
 
-static struct gpio_led fb_fon_leds[] = {
+static const struct gpio_led fb_fon_leds[] = {
 	{
 		.name			= "1",
 		.gpio			= 8,
@@ -461,7 +446,7 @@ static struct gpio_led fb_fon_leds[] = {
 	},
 };
 
-static struct gpio_led gt701_leds[] = {
+static const struct gpio_led gt701_leds[] = {
 	{
 		.name			= "inet:green",
 		.gpio			= 13,
@@ -577,6 +562,7 @@ static int __init ar7_register_uarts(void)
 	uart_port.type		= PORT_AR7;
 	uart_port.uartclk	= clk_get_rate(bus_clk) / 2;
 	uart_port.iotype	= UPIO_MEM32;
+	uart_port.flags		= UPF_FIXED_TYPE | UPF_BOOT_AUTOCONF;
 	uart_port.regshift	= 2;
 
 	uart_port.line		= 0;
@@ -655,6 +641,10 @@ static int __init ar7_register_devices(void)
 	u32 val;
 	int res;
 
+	res = ar7_gpio_init();
+	if (res)
+		pr_warn("unable to register gpios: %d\n", res);
+
 	res = ar7_register_uarts();
 	if (res)
 		pr_err("unable to setup uart(s): %d\n", res);
@@ -679,7 +669,8 @@ static int __init ar7_register_devices(void)
 	}
 
 	if (ar7_has_high_cpmac()) {
-		res = fixed_phy_add(PHY_POLL, cpmac_high.id, &fixed_phy_status);
+		res = fixed_phy_add(PHY_POLL, cpmac_high.id,
+				    &fixed_phy_status);
 		if (!res) {
 			cpmac_get_mac(1, cpmac_high_data.dev_addr);
 

@@ -1,12 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * PowerNV OPAL IPMI driver
  *
  * Copyright 2014 IBM Corp.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by the Free
- * Software Foundation; either version 2 of the License, or (at your option)
- * any later version.
  */
 
 #define pr_fmt(fmt)        "ipmi-powernv: " fmt
@@ -15,16 +11,16 @@
 #include <linux/list.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/of_irq.h>
+#include <linux/interrupt.h>
 
 #include <asm/opal.h>
 
 
 struct ipmi_smi_powernv {
 	u64			interface_id;
-	struct ipmi_device_id	ipmi_id;
-	ipmi_smi_t		intf;
-	u64			event;
-	struct notifier_block	event_nb;
+	struct ipmi_smi		*intf;
+	unsigned int		irq;
 
 	/**
 	 * We assume that there can only be one outstanding request, so
@@ -37,7 +33,7 @@ struct ipmi_smi_powernv {
 	struct opal_ipmi_msg	*opal_msg;
 };
 
-static int ipmi_powernv_start_processing(void *send_info, ipmi_smi_t intf)
+static int ipmi_powernv_start_processing(void *send_info, struct ipmi_smi *intf)
 {
 	struct ipmi_smi_powernv *smi = send_info;
 
@@ -142,8 +138,15 @@ static int ipmi_powernv_recv(struct ipmi_smi_powernv *smi)
 	pr_devel("%s:   -> %d (size %lld)\n", __func__,
 			rc, rc == 0 ? size : 0);
 	if (rc) {
+		/* If came via the poll, and response was not yet ready */
+		if (rc == OPAL_EMPTY) {
+			spin_unlock_irqrestore(&smi->msg_lock, flags);
+			return 0;
+		}
+
+		smi->cur_msg = NULL;
 		spin_unlock_irqrestore(&smi->msg_lock, flags);
-		ipmi_free_smi_msg(msg);
+		send_error_reply(smi, msg, IPMI_ERR_UNSPECIFIED);
 		return 0;
 	}
 
@@ -188,7 +191,7 @@ static void ipmi_powernv_poll(void *send_info)
 	ipmi_powernv_recv(smi);
 }
 
-static struct ipmi_smi_handlers ipmi_powernv_smi_handlers = {
+static const struct ipmi_smi_handlers ipmi_powernv_smi_handlers = {
 	.owner			= THIS_MODULE,
 	.start_processing	= ipmi_powernv_start_processing,
 	.sender			= ipmi_powernv_send,
@@ -197,15 +200,12 @@ static struct ipmi_smi_handlers ipmi_powernv_smi_handlers = {
 	.poll			= ipmi_powernv_poll,
 };
 
-static int ipmi_opal_event(struct notifier_block *nb,
-			  unsigned long events, void *change)
+static irqreturn_t ipmi_opal_event(int irq, void *data)
 {
-	struct ipmi_smi_powernv *smi = container_of(nb,
-					struct ipmi_smi_powernv, event_nb);
+	struct ipmi_smi_powernv *smi = data;
 
-	if (events & smi->event)
-		ipmi_powernv_recv(smi);
-	return 0;
+	ipmi_powernv_recv(smi);
+	return IRQ_HANDLED;
 }
 
 static int ipmi_powernv_probe(struct platform_device *pdev)
@@ -240,13 +240,17 @@ static int ipmi_powernv_probe(struct platform_device *pdev)
 		goto err_free;
 	}
 
-	ipmi->event = 1ull << prop;
-	ipmi->event_nb.notifier_call = ipmi_opal_event;
+	ipmi->irq = irq_of_parse_and_map(dev->of_node, 0);
+	if (!ipmi->irq) {
+		dev_info(dev, "Unable to map irq from device tree\n");
+		ipmi->irq = opal_event_request(prop);
+	}
 
-	rc = opal_notifier_register(&ipmi->event_nb);
+	rc = request_irq(ipmi->irq, ipmi_opal_event, IRQ_TYPE_LEVEL_HIGH,
+			 "opal-ipmi", ipmi);
 	if (rc) {
-		dev_warn(dev, "OPAL notifier registration failed (%d)\n", rc);
-		goto err_free;
+		dev_warn(dev, "Unable to request irq\n");
+		goto err_dispose;
 	}
 
 	ipmi->opal_msg = devm_kmalloc(dev,
@@ -257,9 +261,7 @@ static int ipmi_powernv_probe(struct platform_device *pdev)
 		goto err_unregister;
 	}
 
-	/* todo: query actual ipmi_device_id */
-	rc = ipmi_register_smi(&ipmi_powernv_smi_handlers, ipmi,
-			&ipmi->ipmi_id, dev, 0);
+	rc = ipmi_register_smi(&ipmi_powernv_smi_handlers, ipmi, dev, 0);
 	if (rc) {
 		dev_warn(dev, "IPMI SMI registration failed (%d)\n", rc);
 		goto err_free_msg;
@@ -271,7 +273,9 @@ static int ipmi_powernv_probe(struct platform_device *pdev)
 err_free_msg:
 	devm_kfree(dev, ipmi->opal_msg);
 err_unregister:
-	opal_notifier_unregister(&ipmi->event_nb);
+	free_irq(ipmi->irq, ipmi);
+err_dispose:
+	irq_dispose_mapping(ipmi->irq);
 err_free:
 	devm_kfree(dev, ipmi);
 	return rc;
@@ -282,7 +286,9 @@ static int ipmi_powernv_remove(struct platform_device *pdev)
 	struct ipmi_smi_powernv *smi = dev_get_drvdata(&pdev->dev);
 
 	ipmi_unregister_smi(smi->intf);
-	opal_notifier_unregister(&smi->event_nb);
+	free_irq(smi->irq, smi);
+	irq_dispose_mapping(smi->irq);
+
 	return 0;
 }
 
@@ -295,7 +301,6 @@ static const struct of_device_id ipmi_powernv_match[] = {
 static struct platform_driver powernv_ipmi_driver = {
 	.driver = {
 		.name		= "ipmi-powernv",
-		.owner		= THIS_MODULE,
 		.of_match_table	= ipmi_powernv_match,
 	},
 	.probe	= ipmi_powernv_probe,

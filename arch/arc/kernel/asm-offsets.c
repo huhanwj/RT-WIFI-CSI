@@ -1,9 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2004, 2007-2010, 2011-2012 Synopsys, Inc. (www.synopsys.com)
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/sched.h>
@@ -37,6 +34,8 @@ int main(void)
 
 	DEFINE(TASK_ACT_MM, offsetof(struct task_struct, active_mm));
 	DEFINE(TASK_TGID, offsetof(struct task_struct, tgid));
+	DEFINE(TASK_PID, offsetof(struct task_struct, pid));
+	DEFINE(TASK_COMM, offsetof(struct task_struct, comm));
 
 	DEFINE(MM_CTXT, offsetof(struct mm_struct, context));
 	DEFINE(MM_PGD, offsetof(struct mm_struct, pgd));
@@ -56,8 +55,18 @@ int main(void)
 	DEFINE(PT_r5, offsetof(struct pt_regs, r5));
 	DEFINE(PT_r6, offsetof(struct pt_regs, r6));
 	DEFINE(PT_r7, offsetof(struct pt_regs, r7));
+	DEFINE(PT_r8, offsetof(struct pt_regs, r8));
+	DEFINE(PT_r10, offsetof(struct pt_regs, r10));
+	DEFINE(PT_r26, offsetof(struct pt_regs, r26));
+	DEFINE(PT_ret, offsetof(struct pt_regs, ret));
+	DEFINE(PT_blink, offsetof(struct pt_regs, blink));
+	DEFINE(PT_lpe, offsetof(struct pt_regs, lp_end));
+	DEFINE(PT_lpc, offsetof(struct pt_regs, lp_count));
+	DEFINE(PT_user_r25, offsetof(struct pt_regs, user_r25));
 
 	DEFINE(SZ_CALLEE_REGS, sizeof(struct callee_regs));
 	DEFINE(SZ_PT_REGS, sizeof(struct pt_regs));
+	DEFINE(PT_user_r25, offsetof(struct pt_regs, user_r25));
+
 	return 0;
 }

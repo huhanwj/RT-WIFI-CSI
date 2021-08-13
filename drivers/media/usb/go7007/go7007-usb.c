@@ -1,14 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2005-2006 Micronas USA Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License (Version 2) as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -23,9 +15,9 @@
 #include <linux/usb.h>
 #include <linux/i2c.h>
 #include <asm/byteorder.h>
-#include <media/saa7115.h>
+#include <media/i2c/saa7115.h>
 #include <media/tuner.h>
-#include <media/uda1342.h>
+#include <media/i2c/uda1342.h>
 
 #include "go7007-priv.h"
 
@@ -338,6 +330,7 @@ static const struct go7007_usb_board board_matrix_revolution = {
 	},
 };
 
+#if 0
 static const struct go7007_usb_board board_lifeview_lr192 = {
 	.flags		= GO7007_USB_EZUSB,
 	.main_info	= {
@@ -364,6 +357,7 @@ static const struct go7007_usb_board board_lifeview_lr192 = {
 		},
 	},
 };
+#endif
 
 static const struct go7007_usb_board board_endura = {
 	.flags		= 0,
@@ -930,7 +924,7 @@ static void go7007_usb_release(struct go7007 *go)
 	kfree(go->hpi_context);
 }
 
-static struct go7007_hpi_ops go7007_usb_ezusb_hpi_ops = {
+static const struct go7007_hpi_ops go7007_usb_ezusb_hpi_ops = {
 	.interface_reset	= go7007_usb_interface_reset,
 	.write_interrupt	= go7007_usb_ezusb_write_interrupt,
 	.read_interrupt		= go7007_usb_read_interrupt,
@@ -940,7 +934,7 @@ static struct go7007_hpi_ops go7007_usb_ezusb_hpi_ops = {
 	.release		= go7007_usb_release,
 };
 
-static struct go7007_hpi_ops go7007_usb_onboard_hpi_ops = {
+static const struct go7007_hpi_ops go7007_usb_onboard_hpi_ops = {
 	.interface_reset	= go7007_usb_interface_reset,
 	.write_interrupt	= go7007_usb_onboard_write_interrupt,
 	.read_interrupt		= go7007_usb_read_interrupt,
@@ -1030,7 +1024,7 @@ static u32 go7007_usb_functionality(struct i2c_adapter *adapter)
 	return (I2C_FUNC_SMBUS_EMUL) & ~I2C_FUNC_SMBUS_QUICK;
 }
 
-static struct i2c_algorithm go7007_usb_algo = {
+static const struct i2c_algorithm go7007_usb_algo = {
 	.master_xfer	= go7007_usb_i2c_master_xfer,
 	.functionality	= go7007_usb_functionality,
 };
@@ -1096,8 +1090,10 @@ static int go7007_usb_probe(struct usb_interface *intf,
 	case GO7007_BOARDID_LIFEVIEW_LR192:
 		dev_err(&intf->dev, "The Lifeview TV Walker Ultra is not supported. Sorry!\n");
 		return -ENODEV;
+#if 0
 		name = "Lifeview TV Walker Ultra";
 		board = &board_lifeview_lr192;
+#endif
 		break;
 	case GO7007_BOARDID_SENSORAY_2250:
 		dev_info(&intf->dev, "Sensoray 2250 found\n");
@@ -1128,7 +1124,7 @@ static int go7007_usb_probe(struct usb_interface *intf,
 	usb->usbdev = usbdev;
 	usb_make_path(usbdev, go->bus_info, sizeof(go->bus_info));
 	go->board_id = id->driver_info;
-	strncpy(go->name, name, sizeof(go->name));
+	strscpy(go->name, name, sizeof(go->name));
 	if (board->flags & GO7007_USB_EZUSB)
 		go->hpi_ops = &go7007_usb_ezusb_hpi_ops;
 	else
@@ -1139,7 +1135,8 @@ static int go7007_usb_probe(struct usb_interface *intf,
 	usb->intr_urb = usb_alloc_urb(0, GFP_KERNEL);
 	if (usb->intr_urb == NULL)
 		goto allocfail;
-	usb->intr_urb->transfer_buffer = kmalloc(2*sizeof(u16), GFP_KERNEL);
+	usb->intr_urb->transfer_buffer = kmalloc_array(2, sizeof(u16),
+						       GFP_KERNEL);
 	if (usb->intr_urb->transfer_buffer == NULL)
 		goto allocfail;
 
@@ -1193,7 +1190,7 @@ static int go7007_usb_probe(struct usb_interface *intf,
 				go->board_id = GO7007_BOARDID_ENDURA;
 				usb->board = board = &board_endura;
 				go->board_info = &board->main_info;
-				strncpy(go->name, "Pelco Endura",
+				strscpy(go->name, "Pelco Endura",
 					sizeof(go->name));
 			} else {
 				u16 channel;
@@ -1227,21 +1224,21 @@ static int go7007_usb_probe(struct usb_interface *intf,
 		case 1:
 			go->tuner_type = TUNER_SONY_BTF_PG472Z;
 			go->std = V4L2_STD_PAL;
-			strncpy(go->name, "Plextor PX-TV402U-EU",
-					sizeof(go->name));
+			strscpy(go->name, "Plextor PX-TV402U-EU",
+				sizeof(go->name));
 			break;
 		case 2:
 			go->tuner_type = TUNER_SONY_BTF_PK467Z;
 			go->std = V4L2_STD_NTSC_M_JP;
 			num_i2c_devs -= 2;
-			strncpy(go->name, "Plextor PX-TV402U-JP",
-					sizeof(go->name));
+			strscpy(go->name, "Plextor PX-TV402U-JP",
+				sizeof(go->name));
 			break;
 		case 3:
 			go->tuner_type = TUNER_SONY_BTF_PB463Z;
 			num_i2c_devs -= 2;
-			strncpy(go->name, "Plextor PX-TV402U-NA",
-					sizeof(go->name));
+			strscpy(go->name, "Plextor PX-TV402U-NA",
+				sizeof(go->name));
 			break;
 		default:
 			pr_debug("unable to detect tuner type!\n");
@@ -1285,7 +1282,7 @@ static int go7007_usb_probe(struct usb_interface *intf,
 
 	/* Allocate the URBs and buffers for receiving the audio stream */
 	if ((board->flags & GO7007_USB_EZUSB) &&
-	    (board->flags & GO7007_BOARD_HAS_AUDIO)) {
+	    (board->main_info.flags & GO7007_BOARD_HAS_AUDIO)) {
 		for (i = 0; i < 8; ++i) {
 			usb->audio_urbs[i] = usb_alloc_urb(0, GFP_KERNEL);
 			if (usb->audio_urbs[i] == NULL)

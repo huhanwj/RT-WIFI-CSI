@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (C) 2011 Samsung Electronics Co., Ltd.
  * MyungJoo.Ham <myungjoo.ham@samsung.com>
@@ -7,9 +8,6 @@
  * monitor charging even in the context of suspend-to-RAM with
  * an interface combining the chargers.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
 **/
 
 #ifndef _CHARGER_MANAGER_H
@@ -65,7 +63,7 @@ struct charger_cable {
 	const char *extcon_name;
 	const char *name;
 
-	/* The charger-manager use Exton framework*/
+	/* The charger-manager use Extcon framework */
 	struct extcon_specific_cable_nb extcon_dev;
 	struct work_struct wq;
 	struct notifier_block nb;
@@ -94,7 +92,7 @@ struct charger_cable {
  *	the charger will be maintained with disabled state.
  * @cables:
  *	the array of charger cables to enable/disable charger
- *	and set current limit according to constratint data of
+ *	and set current limit according to constraint data of
  *	struct charger_cable if only charger cable included
  *	in the array of charger cables is attached/detached.
  * @num_cables: the number of charger cables.
@@ -119,7 +117,7 @@ struct charger_regulator {
 	struct charger_cable *cables;
 	int num_cables;
 
-	struct attribute_group attr_g;
+	struct attribute_group attr_grp;
 	struct device_attribute attr_name;
 	struct device_attribute attr_state;
 	struct device_attribute attr_externally_control;
@@ -148,7 +146,7 @@ struct charger_regulator {
  * @polling_interval_ms: interval in millisecond at which
  *	charger manager will monitor battery health
  * @battery_present:
- *	Specify where information for existance of battery can be obtained
+ *	Specify where information for existence of battery can be obtained
  * @psy_charger_stat: the names of power-supply for chargers
  * @num_charger_regulator: the number of entries in charger_regulators
  * @charger_regulators: array of charger regulators
@@ -156,7 +154,7 @@ struct charger_regulator {
  * @thermal_zone : the name of thermal zone for battery
  * @temp_min : Minimum battery temperature for charging.
  * @temp_max : Maximum battery temperature for charging.
- * @temp_diff : Temperature diffential to restart charging.
+ * @temp_diff : Temperature difference to restart charging.
  * @measure_battery_temp:
  *	true: measure battery temperature
  *	false: measure ambient temperature
@@ -186,6 +184,7 @@ struct charger_desc {
 
 	int num_charger_regulators;
 	struct charger_regulator *charger_regulators;
+	const struct attribute_group **sysfs_groups;
 
 	const char *psy_fuel_gauge;
 

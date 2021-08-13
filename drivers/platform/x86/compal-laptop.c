@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*-*-linux-c-*-*/
 
 /*
@@ -7,20 +8,6 @@
 
   Copyright (C) 2006 Lennart Poettering <mzxreary (at) 0pointer (dot) de>
 
-  This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; either version 2 of the License, or
-  (at your option) any later version.
-
-  This program is distributed in the hope that it will be useful, but
-  WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	See the GNU
-  General Public License for more details.
-
-  You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software
-  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-  02110-1301, USA.
  */
 
 /*
@@ -82,7 +69,7 @@
 #include <linux/hwmon-sysfs.h>
 #include <linux/power_supply.h>
 #include <linux/fb.h>
-
+#include <acpi/video.h>
 
 /* ======= */
 /* Defines */
@@ -151,6 +138,8 @@
 #define BAT_STATUS2			0xF1
 #define BAT_STOP_CHARGE1		0xF2
 #define BAT_STOP_CHARGE2		0xF3
+#define BAT_CHARGE_LIMIT		0x03
+#define BAT_CHARGE_LIMIT_MAX		100
 
 #define BAT_S0_DISCHARGE		(1 << 0)
 #define BAT_S0_DISCHRG_CRITICAL		(1 << 2)
@@ -237,7 +226,7 @@ static const unsigned char pwm_lookup_table[256] = {
 /* General access */
 static u8 ec_read_u8(u8 addr)
 {
-	u8 value;
+	u8 value = 0;
 	ec_read(addr, &value);
 	return value;
 }
@@ -601,6 +590,12 @@ static int bat_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CHARGE_NOW:
 		val->intval = ec_read_u16(BAT_CHARGE_NOW) * 1000;
 		break;
+	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT:
+		val->intval = ec_read_u8(BAT_CHARGE_LIMIT);
+		break;
+	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT_MAX:
+		val->intval = BAT_CHARGE_LIMIT_MAX;
+		break;
 	case POWER_SUPPLY_PROP_CAPACITY:
 		val->intval = ec_read_u8(BAT_CAPACITY);
 		break;
@@ -634,6 +629,36 @@ static int bat_get_property(struct power_supply *psy,
 	return 0;
 }
 
+static int bat_set_property(struct power_supply *psy,
+				enum power_supply_property psp,
+				const union power_supply_propval *val)
+{
+	int level;
+
+	switch (psp) {
+	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT:
+		level = val->intval;
+		if (level < 0 || level > BAT_CHARGE_LIMIT_MAX)
+			return -EINVAL;
+		if (ec_write(BAT_CHARGE_LIMIT, level) < 0)
+			return -EIO;
+		break;
+	default:
+		break;
+	}
+	return 0;
+}
+
+static int bat_writeable_property(struct power_supply *psy,
+				enum power_supply_property psp)
+{
+	switch (psp) {
+	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT:
+		return 1;
+	default:
+		return 0;
+	}
+}
 
 
 
@@ -641,18 +666,12 @@ static int bat_get_property(struct power_supply *psy,
 /* ============== */
 /* Driver Globals */
 /* ============== */
-static DEVICE_ATTR(wake_up_pme,
-		0644, wake_up_pme_show,		wake_up_pme_store);
-static DEVICE_ATTR(wake_up_modem,
-		0644, wake_up_modem_show,	wake_up_modem_store);
-static DEVICE_ATTR(wake_up_lan,
-		0644, wake_up_lan_show,	wake_up_lan_store);
-static DEVICE_ATTR(wake_up_wlan,
-		0644, wake_up_wlan_show,	wake_up_wlan_store);
-static DEVICE_ATTR(wake_up_key,
-		0644, wake_up_key_show,	wake_up_key_store);
-static DEVICE_ATTR(wake_up_mouse,
-		0644, wake_up_mouse_show,	wake_up_mouse_store);
+static DEVICE_ATTR_RW(wake_up_pme);
+static DEVICE_ATTR_RW(wake_up_modem);
+static DEVICE_ATTR_RW(wake_up_lan);
+static DEVICE_ATTR_RW(wake_up_wlan);
+static DEVICE_ATTR_RW(wake_up_key);
+static DEVICE_ATTR_RW(wake_up_mouse);
 
 static DEVICE_ATTR(fan1_input,  S_IRUGO, fan_show,          NULL);
 static DEVICE_ATTR(temp1_input, S_IRUGO, temp_cpu,          NULL);
@@ -680,7 +699,7 @@ static struct attribute *compal_platform_attrs[] = {
 	&dev_attr_wake_up_mouse.attr,
 	NULL
 };
-static struct attribute_group compal_platform_attr_group = {
+static const struct attribute_group compal_platform_attr_group = {
 	.attrs = compal_platform_attrs
 };
 
@@ -726,6 +745,8 @@ static enum power_supply_property compal_bat_properties[] = {
 	POWER_SUPPLY_PROP_POWER_NOW,
 	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
 	POWER_SUPPLY_PROP_CHARGE_NOW,
+	POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT,
+	POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT_MAX,
 	POWER_SUPPLY_PROP_CAPACITY,
 	POWER_SUPPLY_PROP_CAPACITY_LEVEL,
 	POWER_SUPPLY_PROP_TEMP,
@@ -765,7 +786,7 @@ static int dmi_check_cb_extra(const struct dmi_system_id *id)
 	return 1;
 }
 
-static struct dmi_system_id __initdata compal_dmi_table[] = {
+static const struct dmi_system_id compal_dmi_table[] __initconst = {
 	{
 		.ident = "FL90/IFL90",
 		.matches = {
@@ -880,11 +901,12 @@ static const struct power_supply_desc psy_bat_desc = {
 	.properties	= compal_bat_properties,
 	.num_properties	= ARRAY_SIZE(compal_bat_properties),
 	.get_property	= bat_get_property,
+	.set_property	= bat_set_property,
+	.property_is_writeable = bat_writeable_property,
 };
 
 static void initialize_power_supply_data(struct compal_data *data)
 {
-
 	ec_read_sequence(BAT_MANUFACTURER_NAME_ADDR,
 					data->bat_manufacturer_name,
 					BAT_MANUFACTURER_NAME_LEN);
@@ -959,7 +981,7 @@ static int __init compal_init(void)
 		return -ENODEV;
 	}
 
-	if (!acpi_video_backlight_support()) {
+	if (acpi_video_get_backlight_type() == acpi_backlight_vendor) {
 		struct backlight_properties props;
 		memset(&props, 0, sizeof(struct backlight_properties));
 		props.type = BACKLIGHT_PLATFORM;

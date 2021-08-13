@@ -1,19 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Intel MIC Platform Software Stack (MPSS)
  *
  * Copyright(c) 2014 Intel Corporation.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2, as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * General Public License for more details.
- *
- * The full GNU General Public License is included in this distribution in
- * the file called "COPYING".
  *
  * Intel MIC X100 DMA Driver.
  *
@@ -22,6 +11,7 @@
 #include <linux/module.h>
 #include <linux/io.h>
 #include <linux/seq_file.h>
+#include <linux/vmalloc.h>
 
 #include "mic_x100_dma.h"
 
@@ -103,10 +93,8 @@ static void mic_dma_cleanup(struct mic_dma_chan *ch)
 		tx = &ch->tx_array[last_tail];
 		if (tx->cookie) {
 			dma_cookie_complete(tx);
-			if (tx->callback) {
-				tx->callback(tx->callback_param);
-				tx->callback = NULL;
-			}
+			dmaengine_desc_get_callback_invoke(tx, NULL);
+			tx->callback = NULL;
 		}
 		last_tail = mic_dma_hw_ring_inc(last_tail);
 	}
@@ -192,8 +180,16 @@ static void mic_dma_prog_intr(struct mic_dma_chan *ch)
 static int mic_dma_do_dma(struct mic_dma_chan *ch, int flags, dma_addr_t src,
 			  dma_addr_t dst, size_t len)
 {
-	if (-ENOMEM == mic_dma_prog_memcpy_desc(ch, src, dst, len))
+	if (len && -ENOMEM == mic_dma_prog_memcpy_desc(ch, src, dst, len)) {
 		return -ENOMEM;
+	} else {
+		/* 3 is the maximum number of status descriptors */
+		int ret = mic_dma_avail_desc_ring_space(ch, 3);
+
+		if (ret < 0)
+			return ret;
+	}
+
 	/* Above mic_dma_prog_memcpy_desc() makes sure we have enough space */
 	if (flags & DMA_PREP_FENCE) {
 		mic_dma_prep_status_desc(&ch->desc_ring[ch->head], 0,
@@ -267,6 +263,33 @@ allocate_tx(struct mic_dma_chan *ch)
 	dma_async_tx_descriptor_init(tx, &ch->api_ch);
 	tx->tx_submit = mic_dma_tx_submit_unlock;
 	return tx;
+}
+
+/* Program a status descriptor with dst as address and value to be written */
+static struct dma_async_tx_descriptor *
+mic_dma_prep_status_lock(struct dma_chan *ch, dma_addr_t dst, u64 src_val,
+			 unsigned long flags)
+{
+	struct mic_dma_chan *mic_ch = to_mic_dma_chan(ch);
+	int result;
+
+	spin_lock(&mic_ch->prep_lock);
+	result = mic_dma_avail_desc_ring_space(mic_ch, 4);
+	if (result < 0)
+		goto error;
+	mic_dma_prep_status_desc(&mic_ch->desc_ring[mic_ch->head], src_val, dst,
+				 false);
+	mic_dma_hw_ring_inc_head(mic_ch);
+	result = mic_dma_do_dma(mic_ch, flags, 0, 0, 0);
+	if (result < 0)
+		goto error;
+
+	return allocate_tx(mic_ch);
+error:
+	dev_err(mic_dma_ch_to_device(mic_ch),
+		"Error enqueueing dma status descriptor, error=%d\n", result);
+	spin_unlock(&mic_ch->prep_lock);
+	return NULL;
 }
 
 /*
@@ -351,7 +374,8 @@ static int mic_dma_alloc_desc_ring(struct mic_dma_chan *ch)
 	if (dma_mapping_error(dev, ch->desc_ring_micpa))
 		goto map_error;
 
-	ch->tx_array = vzalloc(MIC_DMA_DESC_RX_SIZE * sizeof(*ch->tx_array));
+	ch->tx_array = vzalloc(array_size(MIC_DMA_DESC_RX_SIZE,
+					  sizeof(*ch->tx_array)));
 	if (!ch->tx_array)
 		goto tx_error;
 	return 0;
@@ -435,20 +459,13 @@ static void mic_dma_chan_destroy(struct mic_dma_chan *ch)
 	mic_dma_chan_mask_intr(ch);
 }
 
-static void mic_dma_unregister_dma_device(struct mic_dma_device *mic_dma_dev)
-{
-	dma_async_device_unregister(&mic_dma_dev->dma_dev);
-}
-
 static int mic_dma_setup_irq(struct mic_dma_chan *ch)
 {
 	ch->cookie =
 		to_mbus_hw_ops(ch)->request_threaded_irq(to_mbus_device(ch),
 			mic_dma_intr_handler, mic_dma_thread_fn,
 			"mic dma_channel", ch, ch->ch_num);
-	if (IS_ERR(ch->cookie))
-		return IS_ERR(ch->cookie);
-	return 0;
+	return PTR_ERR_OR_ZERO(ch->cookie);
 }
 
 static inline void mic_dma_free_irq(struct mic_dma_chan *ch)
@@ -520,9 +537,7 @@ static int mic_dma_init(struct mic_dma_device *mic_dma_dev,
 	int ret;
 
 	for (i = first_chan; i < first_chan + MIC_DMA_NUM_CHAN; i++) {
-		unsigned long data;
 		ch = &mic_dma_dev->mic_ch[i];
-		data = (unsigned long)ch;
 		ch->ch_num = i;
 		ch->owner = owner;
 		spin_lock_init(&ch->cleanup_lock);
@@ -586,6 +601,8 @@ static int mic_dma_register_dma_device(struct mic_dma_device *mic_dma_dev,
 		mic_dma_free_chan_resources;
 	mic_dma_dev->dma_dev.device_tx_status = mic_dma_tx_status;
 	mic_dma_dev->dma_dev.device_prep_dma_memcpy = mic_dma_prep_memcpy_lock;
+	mic_dma_dev->dma_dev.device_prep_dma_imm_data =
+		mic_dma_prep_status_lock;
 	mic_dma_dev->dma_dev.device_prep_dma_interrupt =
 		mic_dma_prep_interrupt_lock;
 	mic_dma_dev->dma_dev.device_issue_pending = mic_dma_issue_pending;
@@ -597,7 +614,7 @@ static int mic_dma_register_dma_device(struct mic_dma_device *mic_dma_dev,
 		list_add_tail(&mic_dma_dev->mic_ch[i].api_ch.device_node,
 			      &mic_dma_dev->dma_dev.channels);
 	}
-	return dma_async_device_register(&mic_dma_dev->dma_dev);
+	return dmaenginem_async_device_register(&mic_dma_dev->dma_dev);
 }
 
 /*
@@ -611,7 +628,7 @@ static struct mic_dma_device *mic_dma_dev_reg(struct mbus_device *mbdev,
 	int ret;
 	struct device *dev = &mbdev->dev;
 
-	mic_dma_dev = kzalloc(sizeof(*mic_dma_dev), GFP_KERNEL);
+	mic_dma_dev = devm_kzalloc(dev, sizeof(*mic_dma_dev), GFP_KERNEL);
 	if (!mic_dma_dev) {
 		ret = -ENOMEM;
 		goto alloc_error;
@@ -636,7 +653,6 @@ static struct mic_dma_device *mic_dma_dev_reg(struct mbus_device *mbdev,
 reg_error:
 	mic_dma_uninit(mic_dma_dev);
 init_error:
-	kfree(mic_dma_dev);
 	mic_dma_dev = NULL;
 alloc_error:
 	dev_err(dev, "Error at %s %d ret=%d\n", __func__, __LINE__, ret);
@@ -645,13 +661,11 @@ alloc_error:
 
 static void mic_dma_dev_unreg(struct mic_dma_device *mic_dma_dev)
 {
-	mic_dma_unregister_dma_device(mic_dma_dev);
 	mic_dma_uninit(mic_dma_dev);
-	kfree(mic_dma_dev);
 }
 
 /* DEBUGFS CODE */
-static int mic_dma_reg_seq_show(struct seq_file *s, void *pos)
+static int mic_dma_reg_show(struct seq_file *s, void *pos)
 {
 	struct mic_dma_device *mic_dma_dev = s->private;
 	int i, chan_num, first_chan = mic_dma_dev->start_ch;
@@ -682,23 +696,7 @@ static int mic_dma_reg_seq_show(struct seq_file *s, void *pos)
 	return 0;
 }
 
-static int mic_dma_reg_debug_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, mic_dma_reg_seq_show, inode->i_private);
-}
-
-static int mic_dma_reg_debug_release(struct inode *inode, struct file *file)
-{
-	return single_release(inode, file);
-}
-
-static const struct file_operations mic_dma_reg_ops = {
-	.owner   = THIS_MODULE,
-	.open    = mic_dma_reg_debug_open,
-	.read    = seq_read,
-	.llseek  = seq_lseek,
-	.release = mic_dma_reg_debug_release
-};
+DEFINE_SHOW_ATTRIBUTE(mic_dma_reg);
 
 /* Debugfs parent dir */
 static struct dentry *mic_dma_dbg;
@@ -719,10 +717,8 @@ static int mic_dma_driver_probe(struct mbus_device *mbdev)
 	if (mic_dma_dbg) {
 		mic_dma_dev->dbg_dir = debugfs_create_dir(dev_name(&mbdev->dev),
 							  mic_dma_dbg);
-		if (mic_dma_dev->dbg_dir)
-			debugfs_create_file("mic_dma_reg", 0444,
-					    mic_dma_dev->dbg_dir, mic_dma_dev,
-					    &mic_dma_reg_ops);
+		debugfs_create_file("mic_dma_reg", 0444, mic_dma_dev->dbg_dir,
+				    mic_dma_dev, &mic_dma_reg_fops);
 	}
 	return 0;
 }

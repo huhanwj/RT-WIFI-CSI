@@ -1,22 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * HD audio interface patch for AD1882, AD1884, AD1981HD, AD1983, AD1984,
  *   AD1986A, AD1988
  *
  * Copyright (c) 2005-2007 Takashi Iwai <tiwai@suse.de>
- *
- *  This driver is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
- *
- *  This driver is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
 #include <linux/init.h>
@@ -24,7 +11,7 @@
 #include <linux/module.h>
 
 #include <sound/core.h>
-#include "hda_codec.h"
+#include <sound/hda_codec.h>
 #include "hda_local.h"
 #include "hda_auto_parser.h"
 #include "hda_beep.h"
@@ -148,7 +135,7 @@ static void ad_vmaster_eapd_hook(void *private_data, int enabled)
 		return;
 	if (codec->inv_eapd)
 		enabled = !enabled;
-	snd_hda_codec_update_cache(codec, spec->eapd_nid, 0,
+	snd_hda_codec_write_cache(codec, spec->eapd_nid, 0,
 				   AC_VERB_SET_EAPD_BTLENABLE,
 				   enabled ? 0x02 : 0x00);
 }
@@ -205,8 +192,6 @@ static int ad198x_parse_auto_config(struct hda_codec *codec, bool indep_hp)
 	if (err < 0)
 		return err;
 
-	codec->patch_ops = ad198x_auto_patch_ops;
-
 	return 0;
 }
 
@@ -223,6 +208,7 @@ static int alloc_ad_spec(struct hda_codec *codec)
 		return -ENOMEM;
 	codec->spec = spec;
 	snd_hda_gen_spec_init(&spec->gen);
+	codec->patch_ops = ad198x_auto_patch_ops;
 	return 0;
 }
 
@@ -371,6 +357,7 @@ static const struct hda_fixup ad1986a_fixups[] = {
 
 static const struct snd_pci_quirk ad1986a_fixup_tbl[] = {
 	SND_PCI_QUIRK(0x103c, 0x30af, "HP B2800", AD1986A_FIXUP_LAPTOP_IMIC),
+	SND_PCI_QUIRK(0x1043, 0x1153, "ASUS M9V", AD1986A_FIXUP_LAPTOP_IMIC),
 	SND_PCI_QUIRK(0x1043, 0x1443, "ASUS Z99He", AD1986A_FIXUP_EAPD),
 	SND_PCI_QUIRK(0x1043, 0x1447, "ASUS A8JN", AD1986A_FIXUP_EAPD),
 	SND_PCI_QUIRK_MASK(0x1043, 0xff00, 0x8100, "ASUS P5", AD1986A_FIXUP_3STACK),
@@ -506,7 +493,7 @@ static int ad1983_auto_smux_enum_put(struct snd_kcontrol *kcontrol,
 	return 1;
 }
 
-static struct snd_kcontrol_new ad1983_auto_smux_mixer = {
+static const struct snd_kcontrol_new ad1983_auto_smux_mixer = {
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name = "IEC958 Playback Source",
 	.info = ad1983_auto_smux_enum_info,
@@ -789,7 +776,7 @@ static int ad1988_auto_smux_enum_put(struct snd_kcontrol *kcontrol,
 	return 1;
 }
 
-static struct snd_kcontrol_new ad1988_auto_smux_mixer = {
+static const struct snd_kcontrol_new ad1988_auto_smux_mixer = {
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 	.name = "IEC958 Playback Source",
 	.info = ad1988_auto_smux_enum_info,
@@ -992,7 +979,7 @@ static void ad1884_vmaster_hp_gpio_hook(void *private_data, int enabled)
 
 	if (spec->eapd_nid)
 		ad_vmaster_eapd_hook(private_data, enabled);
-	snd_hda_codec_update_cache(codec, 0x01, 0,
+	snd_hda_codec_write_cache(codec, 0x01, 0,
 				   AC_VERB_SET_GPIO_DATA,
 				   enabled ? 0x00 : 0x02);
 }
@@ -1166,32 +1153,31 @@ static int patch_ad1882(struct hda_codec *codec)
 /*
  * patch entries
  */
-static const struct hda_codec_preset snd_hda_preset_analog[] = {
-	{ .id = 0x11d4184a, .name = "AD1884A", .patch = patch_ad1884 },
-	{ .id = 0x11d41882, .name = "AD1882", .patch = patch_ad1882 },
-	{ .id = 0x11d41883, .name = "AD1883", .patch = patch_ad1884 },
-	{ .id = 0x11d41884, .name = "AD1884", .patch = patch_ad1884 },
-	{ .id = 0x11d4194a, .name = "AD1984A", .patch = patch_ad1884 },
-	{ .id = 0x11d4194b, .name = "AD1984B", .patch = patch_ad1884 },
-	{ .id = 0x11d41981, .name = "AD1981", .patch = patch_ad1981 },
-	{ .id = 0x11d41983, .name = "AD1983", .patch = patch_ad1983 },
-	{ .id = 0x11d41984, .name = "AD1984", .patch = patch_ad1884 },
-	{ .id = 0x11d41986, .name = "AD1986A", .patch = patch_ad1986a },
-	{ .id = 0x11d41988, .name = "AD1988", .patch = patch_ad1988 },
-	{ .id = 0x11d4198b, .name = "AD1988B", .patch = patch_ad1988 },
-	{ .id = 0x11d4882a, .name = "AD1882A", .patch = patch_ad1882 },
-	{ .id = 0x11d4989a, .name = "AD1989A", .patch = patch_ad1988 },
-	{ .id = 0x11d4989b, .name = "AD1989B", .patch = patch_ad1988 },
+static const struct hda_device_id snd_hda_id_analog[] = {
+	HDA_CODEC_ENTRY(0x11d4184a, "AD1884A", patch_ad1884),
+	HDA_CODEC_ENTRY(0x11d41882, "AD1882", patch_ad1882),
+	HDA_CODEC_ENTRY(0x11d41883, "AD1883", patch_ad1884),
+	HDA_CODEC_ENTRY(0x11d41884, "AD1884", patch_ad1884),
+	HDA_CODEC_ENTRY(0x11d4194a, "AD1984A", patch_ad1884),
+	HDA_CODEC_ENTRY(0x11d4194b, "AD1984B", patch_ad1884),
+	HDA_CODEC_ENTRY(0x11d41981, "AD1981", patch_ad1981),
+	HDA_CODEC_ENTRY(0x11d41983, "AD1983", patch_ad1983),
+	HDA_CODEC_ENTRY(0x11d41984, "AD1984", patch_ad1884),
+	HDA_CODEC_ENTRY(0x11d41986, "AD1986A", patch_ad1986a),
+	HDA_CODEC_ENTRY(0x11d41988, "AD1988", patch_ad1988),
+	HDA_CODEC_ENTRY(0x11d4198b, "AD1988B", patch_ad1988),
+	HDA_CODEC_ENTRY(0x11d4882a, "AD1882A", patch_ad1882),
+	HDA_CODEC_ENTRY(0x11d4989a, "AD1989A", patch_ad1988),
+	HDA_CODEC_ENTRY(0x11d4989b, "AD1989B", patch_ad1988),
 	{} /* terminator */
 };
-
-MODULE_ALIAS("snd-hda-codec-id:11d4*");
+MODULE_DEVICE_TABLE(hdaudio, snd_hda_id_analog);
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Analog Devices HD-audio codec");
 
 static struct hda_codec_driver analog_driver = {
-	.preset = snd_hda_preset_analog,
+	.id = snd_hda_id_analog,
 };
 
 module_hda_codec_driver(analog_driver);

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  sst_mfld_platform.h - Intel MID Platform driver header file
  *
@@ -6,15 +7,6 @@
  *  Author: Harsha Priya <priya.harsha@intel.com>
  *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; version 2 of the License.
- *
- *  This program is distributed in the hope that it will be useful, but
- *  WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- *  General Public License for more details.
- *
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  */
 
@@ -22,8 +14,12 @@
 #define __SST_PLATFORMDRV_H__
 
 #include "sst-mfld-dsp.h"
+#include "sst-atom-controls.h"
 
 extern struct sst_device *sst;
+extern const struct snd_compr_ops sst_platform_compr_ops;
+
+#define DRV_NAME "sst"
 
 #define SST_MONO		1
 #define SST_STEREO		2
@@ -153,7 +149,7 @@ struct sst_device {
 
 struct sst_data;
 
-int sst_dsp_init_v2_dpcm(struct snd_soc_platform *platform);
+int sst_dsp_init_v2_dpcm(struct snd_soc_component *component);
 int sst_send_pipe_gains(struct snd_soc_dai *dai, int stream, int mute);
 int send_ssp_cmd(struct snd_soc_dai *dai, const char *id, bool enable);
 int sst_handle_vb_timer(struct snd_soc_dai *dai, bool enable);
@@ -175,6 +171,7 @@ struct sst_data {
 	struct snd_sst_bytes_v2 *byte_stream;
 	struct mutex lock;
 	struct snd_soc_card *soc_card;
+	struct sst_cmd_sba_hw_set_ssp ssp_cmd;
 };
 int sst_register_dsp(struct sst_device *sst);
 int sst_unregister_dsp(struct sst_device *sst);

@@ -1,16 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Toggles a GPIO pin to restart a device
  *
  * Copyright (C) 2014 Google, Inc.
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  *
  * Based on the gpio-poweroff driver.
  */
@@ -73,12 +65,12 @@ static int gpio_restart_probe(struct platform_device *pdev)
 	gpio_restart->reset_gpio = devm_gpiod_get(&pdev->dev, NULL,
 			open_source ? GPIOD_IN : GPIOD_OUT_LOW);
 	if (IS_ERR(gpio_restart->reset_gpio)) {
-		dev_err(&pdev->dev, "Could net get reset GPIO\n");
+		dev_err(&pdev->dev, "Could not get reset GPIO\n");
 		return PTR_ERR(gpio_restart->reset_gpio);
 	}
 
 	gpio_restart->restart_handler.notifier_call = gpio_restart_notify;
-	gpio_restart->restart_handler.priority = 128;
+	gpio_restart->restart_handler.priority = 129;
 	gpio_restart->active_delay_ms = 100;
 	gpio_restart->inactive_delay_ms = 100;
 	gpio_restart->wait_delay_ms = 3000;

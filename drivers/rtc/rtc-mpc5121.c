@@ -1,13 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Real-time clock driver for MPC5121
  *
  * Copyright 2007, Domen Puncer <domen.puncer@telargo.com>
  * Copyright 2008, Freescale Semiconductor, Inc. All rights reserved.
  * Copyright 2011, Dmitry Eremin-Solenikov
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/init.h>
@@ -122,7 +119,7 @@ static int mpc5121_rtc_read_time(struct device *dev, struct rtc_time *tm)
 	 */
 	mpc5121_rtc_update_smh(regs, tm);
 
-	return rtc_valid_tm(tm);
+	return 0;
 }
 
 static int mpc5121_rtc_set_time(struct device *dev, struct rtc_time *tm)
@@ -406,6 +403,7 @@ static const struct of_device_id mpc5121_rtc_match[] = {
 	{ .compatible = "fsl,mpc5200-rtc", },
 	{},
 };
+MODULE_DEVICE_TABLE(of, mpc5121_rtc_match);
 #endif
 
 static struct platform_driver mpc5121_rtc_driver = {

@@ -29,12 +29,13 @@
 #include <linux/log2.h>
 #include "ath9k.h"
 #include "hw.h"
-#include "rt-wifi-sched.h"
+#include "rt-wifi-sched.h" //Z 2020/9/23 We must include this header file otherwise there is no probability
+						   // for us to use the predefined RT_WIFI_PRE_CONFIG_SCHED
 
 static struct ath_buf* ath_rt_wifi_get_buf_ap_tx(struct ath_softc *sc, u8 sta_id);
 static struct ath_buf* ath_rt_wifi_get_buf_ap_shared(struct ath_softc *sc);
 
-static u32 rt_wifi_get_slot_len(u8 time_slot)
+static u32 rt_wifi_get_slot_len(u8 time_slot)//Z: Define the time length of a time slot, which is between the two beacons
 {
 	if (time_slot == RT_WIFI_TIME_SLOT_64TU) {
 		return TU_TO_USEC(64);
@@ -57,26 +58,29 @@ static u32 rt_wifi_get_slot_len(u8 time_slot)
 		return 512;
 	}
 }
-
-static void rt_wifi_config_superframe(struct ath_softc *sc)
+// Build the defined superframeand insert : FOR AP and STATION TIMER START
+static void rt_wifi_config_superframe(struct ath_softc *sc)//Z: Build the defined superframe and insert that into 
+														   //the memory
 {
 	int idx;
 
-	sc->rt_wifi_superframe = kmalloc(
+	sc->rt_wifi_superframe = kmalloc(//kmalloc is the normal method of allocating memory for objects smaller than page size in the kernel.
 		sizeof(struct rt_wifi_sched) * sc->rt_wifi_superframe_size,
-		GFP_ATOMIC);
+		GFP_ATOMIC);//The GFP_ATOMIC flag instructs the memory allocator never to block. Use this flag in situations where it cannot sleep��where it must remain atomic��such as interrupt handlers,					bottom halves and process context code that is holding a lock.
 
 	if (!sc->rt_wifi_superframe) {
-		RT_WIFI_ALERT("Cannot get enough memory for superframe!!!\n");
+		RT_WIFI_ALERT("Cannot get enough memory for superframe!!!\n");//Z: RT_WIFI_ALERT specifically designed to
+																	  //output error messages.
 		return;
 	}
 
-	for (idx = 0; idx < sc->rt_wifi_superframe_size; ++idx) {
+	for (idx = 0; idx < sc->rt_wifi_superframe_size; ++idx) {/*Z: Initially defined the slot type. All SHARED*/
 		sc->rt_wifi_superframe[idx].type = RT_WIFI_SHARED;
 	}
 
-	for (idx = 0; idx < ARRAY_SIZE(RT_WIFI_PRE_CONFIG_SCHED); ++idx) {
+	for (idx = 0; idx < ARRAY_SIZE(RT_WIFI_PRE_CONFIG_SCHED); ++idx) {/*PRE_COFIG_SCHED is exactly what we defined in the rt-wifi-sched.h file*/
 		if (RT_WIFI_PRE_CONFIG_SCHED[idx].offset < sc->rt_wifi_superframe_size) {
+			/*This IF part is used to allocate the correct slot type and station id to the superframe.*/
 			sc->rt_wifi_superframe[RT_WIFI_PRE_CONFIG_SCHED[idx].offset].type = RT_WIFI_PRE_CONFIG_SCHED[idx].type;
 			sc->rt_wifi_superframe[RT_WIFI_PRE_CONFIG_SCHED[idx].offset].sta_id = RT_WIFI_PRE_CONFIG_SCHED[idx].sta_id;
 		} else {
@@ -95,12 +99,12 @@ void ath_rt_wifi_ap_start_timer(struct ath_softc *sc, u32 bcon_intval, u32 nextt
 	next_timer = nexttbtt - RT_WIFI_TIMER_OFFSET;
 	RT_WIFI_DEBUG("%s cur_tsf: %u, nexttbtt: %u, next_timer: %u\n", __FUNCTION__, 0, nexttbtt, next_timer);
 	
-	sc->rt_wifi_slot_len = rt_wifi_get_slot_len(RT_WIFI_TIME_SLOT_LEN);
+	sc->rt_wifi_slot_len = rt_wifi_get_slot_len(RT_WIFI_TIME_SLOT_LEN);//LEN=7 by default, 512 micro seconds
 	sc->rt_wifi_superframe_size = ARRAY_SIZE(RT_WIFI_PRE_CONFIG_SCHED);
 	RT_WIFI_DEBUG("time slot len: %u, superframe size: %u\n",
 		sc->rt_wifi_slot_len, sc->rt_wifi_superframe_size);
 
-	rt_wifi_config_superframe(sc);
+	rt_wifi_config_superframe(sc);// Build the defined superframeand insert																	that into the memory
 
 	ath9k_hw_gen_timer_start_absolute(sc->sc_ah, sc->rt_wifi_timer, next_timer, sc->rt_wifi_slot_len);
 
@@ -133,9 +137,9 @@ void ath_rt_wifi_sta_start_timer(struct ath_softc *sc)
 	ath9k_hw_gen_timer_start_absolute(sc->sc_ah, sc->rt_wifi_timer, next_timer, sc->rt_wifi_slot_len);
 
 	ah = sc->sc_ah;
-	if ((ah->imask & ATH9K_INT_GENTIMER) == 0) {
+	if ((ah->imask & ATH9K_INT_GENTIMER) == 0) {//IF imask is different with ATH9K_INT_GENTIMER
 		ath9k_hw_disable_interrupts(ah);
-		ah->imask |= ATH9K_INT_GENTIMER;
+		ah->imask |= ATH9K_INT_GENTIMER;//LET THEM EQUAL
 		ath9k_hw_set_interrupts(ah);
 		ath9k_hw_enable_interrupts(ah);
 	}
@@ -144,22 +148,25 @@ void ath_rt_wifi_sta_start_timer(struct ath_softc *sc)
 	RT_WIFI_DEBUG("%s cur_tsf: %llu, next_tsf: %llu, next_timer: %u, next_asn - 1: %d\n", __FUNCTION__, sc->rt_wifi_cur_tsf, next_tsf, next_timer, sc->rt_wifi_asn);
 }
 
-static struct ath_buf* ath_rt_wifi_get_buf_from_queue(struct ath_softc *sc, u8 sta_id)
+static struct ath_buf* ath_rt_wifi_get_buf_from_queue(struct ath_softc *sc, u8 sta_id)/*FROM THE WIFI_QUEUE (created by synchronize threads.) grab a packet*/
 {
 	struct ath_buf *bf_itr, *bf_tmp = NULL;
 	struct ieee80211_hdr *hdr;
-
+	
 	spin_lock(&sc->rt_wifi_q_lock);
+	//rt_wifi_q should has the same structure as the ath_buf
 	if (!list_empty(&sc->rt_wifi_q)) {
-		list_for_each_entry(bf_itr, &sc->rt_wifi_q, list) {
-			hdr = (struct ieee80211_hdr*)bf_itr->bf_mpdu->data;
-			if (rt_wifi_dst_sta(hdr->addr1, sta_id) == true) {
+		list_for_each_entry(bf_itr, &sc->rt_wifi_q, list) {//iterate over the list of given type. Feedback the address of the structure
+			hdr = (struct ieee80211_hdr*)bf_itr->bf_mpdu->data;//MPDU: Mac protocal Data Unit (M service DU+ MAC header)
+															   // data: Data head pointer
+			if (rt_wifi_dst_sta(hdr->addr1, sta_id) == true) {/*If the sta_id is the same, copy the packet from the queue*/
 				bf_tmp = bf_itr;
 				break;
 			}
 		}
 
-		if (bf_tmp != NULL) {
+		if (bf_tmp != NULL) {//If the sta_id is not same with the MPDU, then the original data stored in the list
+							// will be deleted
 			list_del_init(&bf_tmp->list);
 		}
 	}
@@ -167,24 +174,31 @@ static struct ath_buf* ath_rt_wifi_get_buf_from_queue(struct ath_softc *sc, u8 s
 
 	return  bf_tmp;
 }
-
-struct ath_buf* ath_rt_wifi_get_buf_sta(struct ath_softc *sc)
+//##################################################################################################################
+//	Since stations only get data from the KFIFO buffer. We can print some words to check whether the KFIFO is empty or not
+struct ath_buf* ath_rt_wifi_get_buf_sta(struct ath_softc *sc)/*Get the information stored in a station's fifo buffer*/
 {
 	struct ath_buf *bf_tmp = NULL;
 
 	if (kfifo_len(&sc->rt_wifi_fifo) >= sizeof(struct ath_buf*)) {
-		kfifo_out(&sc->rt_wifi_fifo, &bf_tmp, sizeof(struct ath_buf*));
+		kfifo_out(&sc->rt_wifi_fifo, &bf_tmp, sizeof(struct ath_buf*));//Get the MDPU from the rt_wifi_fifo and 
+																	   //Store that value to the bf_tmp
 	}
-
+	//08_2 #################################################################################################################
+	if(bf_tmp==NULL){
+		printk("The Kfifo bugger is currently empy. Nothing to transmit!");
+	}
+	
+	
 	return bf_tmp;
 }
 
-struct ath_buf* ath_rt_wifi_get_buf_ap_tx(struct ath_softc *sc, u8 sta_id)
+struct ath_buf* ath_rt_wifi_get_buf_ap_tx(struct ath_softc *sc, u8 sta_id)/*If cannot get data from the queue, try																	      to receive data from the fifo (with																			  sta-id)*/
 {
 	struct ath_buf *bf_itr, *bf_tmp = NULL;
 	struct ieee80211_hdr *hdr;
 
-	bf_tmp = ath_rt_wifi_get_buf_from_queue(sc, sta_id);
+	bf_tmp = ath_rt_wifi_get_buf_from_queue(sc, sta_id);/*CANNOT RECEIVE DATA FROM THE QUEUE*/
 	if (bf_tmp != NULL)
 		return bf_tmp;
 
@@ -195,9 +209,9 @@ struct ath_buf* ath_rt_wifi_get_buf_ap_tx(struct ath_softc *sc, u8 sta_id)
 		if (rt_wifi_dst_sta(hdr->addr1, sta_id) == true) {
 			bf_tmp = bf_itr;
 			break;
-		} else {
+		} else {//The sta_id is not the same as the hdr->addr1
 			spin_lock(&sc->rt_wifi_q_lock);
-			list_add_tail(&bf_itr->list, &sc->rt_wifi_q);
+			list_add_tail(&bf_itr->list, &sc->rt_wifi_q);//Add the list before the header of the rt_wifi_q
 			spin_unlock(&sc->rt_wifi_q_lock);
 		}
 	}
@@ -231,54 +245,81 @@ void ath_rt_wifi_tx(struct ath_softc *sc, struct ath_buf *new_buf)
 	struct ath_common *common = ath9k_hw_common(ah);
 	struct ath_buf *bf, *bf_last;
 	bool puttxbuf = false;
-	bool edma;
+	bool edma;//enhanced direct memeory access
 
 	/* rt-wifi added */
 	bool internal = false;
 	struct ath_txq *txq;
-	struct list_head head_tmp, *head;
+	struct list_head head_tmp, *head;//tmp: temporary folder
 
 	if(new_buf == NULL)
 		return;
-	REG_SET_BIT(ah, AR_DIAG_SW, AR_DIAG_RX_DIS | AR_DIAG_RX_ABORT);
+	REG_SET_BIT(ah, AR_DIAG_SW, AR_DIAG_RX_DIS | AR_DIAG_RX_ABORT);//Register level operation!
 
-	/* mainpulate list to fit original dirver code. */
+	/* mainpulate list to fit original driver code. */
 	head = &head_tmp;
-	INIT_LIST_HEAD(head);
-	list_add_tail(&new_buf->list, head);
 
-	txq = &(sc->tx.txq[new_buf->qnum]);
+	/*IMPORTANT: We create a new LIST structure with the head as the initial pointer*/
+	INIT_LIST_HEAD(head);/*Initialize the list header*/
+
+
+	list_add_tail(&new_buf->list, head);//Z: list is the head of the new_buf. Insert it before the head of the LIST for building a queue
+
+	txq = &(sc->tx.txq[new_buf->qnum]);//txq belongs to struct ath_txq
 
 	/* original dirver code */
 	edma = !!(ah->caps.hw_caps & ATH9K_HW_CAP_EDMA);
-	bf = list_first_entry(head, struct ath_buf, list);
-	bf_last = list_entry(head->prev, struct ath_buf, list);
+
+	/*bf means buffer. The following tow sentences here are used to get the address 
+	of the pointer to the header of the structure containing MPDU*/
+	bf = list_first_entry(head, struct ath_buf, list);//bf: buffer Get the first element in the LIST structure with pointer: head,
+													//the catched target is the MPDU(the head of the MPDU is the list)
+
+	bf_last = list_entry(head->prev, struct ath_buf, list);//Get the MPDU pointed by the list from the previous node
+	//bf_last=list_last_entry(head, struct ath_buf, list)
 
 	ath_dbg(common, QUEUE, "qnum: %d, txq depth: %d\n",
 			txq->axq_qnum, txq->axq_depth);
-
-	if (edma && list_empty(&txq->txq_fifo[txq->txq_headidx])) {
-		list_splice_tail_init(head, &txq->txq_fifo[txq->txq_headidx]);
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/*The following part is used to associate the MPDU with the txq;
+  If edma is enabled and the fifo is empty, then the MPDU is associated with txq_fifo
+  If fifo is not empty at the same time edma is not enabled, then the MPDU vitual address is linked with
+  txq_axq_link and the MPDU itself is associated with the axq_q
+  
+  For any other cases except the above two, puttxbuf=false, no transmission */
+	if (edma && list_empty(&txq->txq_fifo[txq->txq_headidx])) {//edma is related with fifo???????????????? 6/30
+		list_splice_tail_init(head, &txq->txq_fifo[txq->txq_headidx]);//join two lists and reinitialise the emptied list
+		//list_splice_tail_init: Insert the content of the head structure into txq_headidx structure
+		// and then clear the head structure. Since txq_headidx is empty, it just like cut head and paste in
+		// the empty txq_headidx 
 		INCR(txq->txq_headidx, ATH_TXFIFO_DEPTH);
-		puttxbuf = true;
+		puttxbuf = true;//Determine whether the information have been put into buffer
 	} 
-	else {
-		list_splice_tail_init(head, &txq->axq_q);
+	else {//fifo is not empty
+		list_splice_tail_init(head, &txq->axq_q);//axq means ath9k hardware queue. If not edma nor fifo is empty, 
+												// merge the head of the queue structure with 
+												// axq_q
 
 		if (txq->axq_link) {
-			ath9k_hw_set_desc_link(ah, txq->axq_link, bf->bf_daddr);
+			ath9k_hw_set_desc_link(ah, txq->axq_link, bf->bf_daddr);//axq: ath9k hardware queue
+																	
 			ath_dbg(common, XMIT, "link[%u] (%p)=%llx (%p)\n",
 					txq->axq_qnum, txq->axq_link,
 					ito64(bf->bf_daddr), bf->bf_desc);
-		} else if (!edma)
+		} else if (!edma)//txq->axq_link is false and we do not use edma
 			puttxbuf = true;
 
-		txq->axq_link = bf_last->bf_desc;
+		txq->axq_link = bf_last->bf_desc;// bf_desc: virtual addr of desc of the last packet
 	}
-
+//???????????????????????????????? 7/1  cannot fully understand axq_link. axq_link is a void, how could it be
+							    //  related with the virtual address of both newest MPDU and latest MPDU??
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	if (puttxbuf) {
-		TX_STAT_INC(txq->axq_qnum, puttxbuf);
-		ath9k_hw_puttxbuf(ah, txq->axq_qnum, bf->bf_daddr);
+		TX_STAT_INC(sc, txq->axq_qnum, puttxbuf);
+		ath9k_hw_puttxbuf(ah, txq->axq_qnum, bf->bf_daddr);//u32 axq_qnum: ath9k hardware queue number 
+														   //This function builds up a link between
+														   //the hardware queue and the physical address
+														   //of the packet descriptor
 		ath_dbg(common, XMIT, "TXDP[%u] = %llx (%p)\n",
 				txq->axq_qnum, ito64(bf->bf_daddr), bf->bf_desc);
 	}
@@ -289,9 +330,9 @@ void ath_rt_wifi_tx(struct ath_softc *sc, struct ath_buf *new_buf)
 	REG_SET_BIT(ah, AR_D_GBL_IFS_MISC, AR_D_GBL_IFS_MISC_IGNORE_BACKOFF);
 	#endif
 	REG_SET_BIT(ah, AR_DIAG_SW, AR_DIAG_IGNORE_VIRT_CS);
-
+	/*When the edma is not activated, how to transmit*/
 	if (!edma || sc->tx99_state) {
-		TX_STAT_INC(txq->axq_qnum, txstart);
+		TX_STAT_INC(sc, txq->axq_qnum, txstart);
 		ath9k_hw_txstart(ah, txq->axq_qnum);
 	}
 
@@ -310,14 +351,14 @@ void ath_rt_wifi_tx(struct ath_softc *sc, struct ath_buf *new_buf)
 	REG_CLR_BIT(ah, AR_DIAG_SW, AR_DIAG_RX_DIS | AR_DIAG_RX_ABORT);
 }
 
-void ath_rt_wifi_tasklet(struct ath_softc *sc)
+void ath_rt_wifi_tasklet(struct ath_softc *sc)/*Define the method to access	 data for different data types*/
 {
 	int sched_offset;
 	struct ath_buf *new_buf = NULL;
 	u64 cur_hw_tsf;
 
 	if (sc->rt_wifi_enable == 0) {
-		if (sc->sc_ah->opmode == NL80211_IFTYPE_AP) {
+		if (sc->sc_ah->opmode == NL80211_IFTYPE_AP) {//located in the NL80211 file
 			sc->rt_wifi_enable = 1;
 		} else {
 			RT_WIFI_DEBUG("RT_WIFI: not enable\n");
@@ -333,17 +374,17 @@ void ath_rt_wifi_tasklet(struct ath_softc *sc)
 	sc->rt_wifi_asn = cur_hw_tsf >> ilog2((sc->rt_wifi_slot_len));
 
 	sched_offset = sc->rt_wifi_asn % sc->rt_wifi_superframe_size;
-	if (sc->sc_ah->opmode == NL80211_IFTYPE_AP) {
-		if (sc->rt_wifi_superframe[sched_offset].type == RT_WIFI_RX) {
-			RT_WIFI_DEBUG("RT_WIFI_RX(%d)\n", sched_offset);
-			new_buf = ath_rt_wifi_get_buf_ap_tx(sc,
+	if (sc->sc_ah->opmode == NL80211_IFTYPE_AP) {									// If you are AP
+		if (sc->rt_wifi_superframe[sched_offset].type == RT_WIFI_RX) {				// If the working type at this time slot is RT_WIFI_RX
+			RT_WIFI_DEBUG("RT_WIFI_RX(%d)\n", sched_offset);						
+			new_buf = ath_rt_wifi_get_buf_ap_tx(sc,									// Get the packet (decribed by new_buf) going to be transmitted.
 					sc->rt_wifi_superframe[sched_offset].sta_id);
-		} else if (sc->rt_wifi_superframe[sched_offset].type == RT_WIFI_SHARED) {
+		} else if (sc->rt_wifi_superframe[sched_offset].type == RT_WIFI_SHARED) {	// If the working type at this time slot is RT_WIFI_SHARED
 			RT_WIFI_DEBUG("RT_WIFI_SHARED(%d)\n", sched_offset);
 			new_buf = ath_rt_wifi_get_buf_ap_shared(sc);
 		}
-	} else if (sc->sc_ah->opmode == NL80211_IFTYPE_STATION) {
-		if (sc->rt_wifi_superframe[sched_offset].type == RT_WIFI_TX
+	} else if (sc->sc_ah->opmode == NL80211_IFTYPE_STATION) {						// If you are Station
+		if (sc->rt_wifi_superframe[sched_offset].type == RT_WIFI_TX					// If the working type at this time slot is RT_WIFI_TX
 		&& sc->rt_wifi_superframe[sched_offset].sta_id == RT_WIFI_LOCAL_ID) {
 			RT_WIFI_DEBUG("RT_WIFI_TX(%d)\n", sched_offset);
 			new_buf = ath_rt_wifi_get_buf_sta(sc);
@@ -353,11 +394,14 @@ void ath_rt_wifi_tasklet(struct ath_softc *sc)
 	ath_rt_wifi_tx(sc, new_buf);
 }
 
-bool rt_wifi_authorized_sta(u8 *addr) {
+bool rt_wifi_authorized_sta(u8 *addr) {/*YES OF COURSE! This function checks 
+										whether the destination address stored 
+										in the packet is in the list or not*/
 	int i;
 
 	for (i = 0; i < RT_WIFI_STAS_NUM; i++) {
-		if ( addr[0]== RT_WIFI_STAS[i].mac_addr[0] &&
+		if ( addr[0]== RT_WIFI_STAS[i].mac_addr[0] &&//The MAC address is made up by 6 pieces
+													 //EX: 74：de:2b:57:61:a9
 			addr[1] == RT_WIFI_STAS[i].mac_addr[1] &&
 			addr[2] == RT_WIFI_STAS[i].mac_addr[2] &&
 			addr[3] == RT_WIFI_STAS[i].mac_addr[3] &&
@@ -369,7 +413,9 @@ bool rt_wifi_authorized_sta(u8 *addr) {
 	return false;
 }
 
-bool rt_wifi_dst_sta(u8 *addr, u8 sta_id) {
+bool rt_wifi_dst_sta(u8 *addr, u8 sta_id) {/*Check whether the inputted MAC address is corresponding 
+											with the inputted sta_id
+											USED IN THE SHARED TYPE*/
 
 	if (addr[0] == RT_WIFI_STAS[sta_id].mac_addr[0] &&
 		addr[1] == RT_WIFI_STAS[sta_id].mac_addr[1] &&
@@ -406,7 +452,7 @@ void ath_rt_wifi_rx_beacon(struct ath_softc *sc, struct sk_buff *skb)
 		// skip the first beacon for TSF synchronization
 		if (first_beacon == 1) {
 			first_beacon = 0;
-			return;
+			return;//WILL THIS RETURN ENDS UP THE WHOLE FUNCTION????????????????????????????????????
 		}
 
 		memcpy((unsigned char*)(&sc->rt_wifi_cur_tsf), (data+6), sizeof(u64));

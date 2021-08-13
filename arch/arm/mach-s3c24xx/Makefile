@@ -1,11 +1,9 @@
-# arch/arm/mach-s3c24xx/Makefile
+# SPDX-License-Identifier: GPL-2.0
 #
 # Copyright (c) 2012 Samsung Electronics Co., Ltd.
 #		http://www.samsung.com/
 #
 # Copyright 2007 Simtec Electronics
-#
-# Licensed under GPLv2
 
 # core
 
@@ -99,3 +97,4 @@ obj-$(CONFIG_S3C2416_SETUP_SDHCI_GPIO)	+= setup-sdhci-gpio.o
 obj-$(CONFIG_S3C2443_SETUP_SPI)		+= setup-spi.o
 obj-$(CONFIG_ARCH_S3C24XX)		+= setup-i2c.o
 obj-$(CONFIG_S3C24XX_SETUP_TS)		+= setup-ts.o
+obj-$(CONFIG_S3C_SETUP_CAMIF)		+= setup-camif.o

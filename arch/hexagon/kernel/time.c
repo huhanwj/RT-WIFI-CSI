@@ -1,21 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Time related functions for Hexagon architecture
  *
  * Copyright (c) 2010-2011, The Linux Foundation. All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 and
- * only version 2 as published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
- * 02110-1301, USA.
  */
 
 #include <linux/init.h>
@@ -72,9 +59,9 @@ struct adsp_hw_timer_struct {
 /*  Look for "TCX0" for related constants.  */
 static __iomem struct adsp_hw_timer_struct *rtos_timer;
 
-static cycle_t timer_get_cycles(struct clocksource *cs)
+static u64 timer_get_cycles(struct clocksource *cs)
 {
-	return (cycle_t) __vmgettime();
+	return (u64) __vmgettime();
 }
 
 static struct clocksource hexagon_clocksource = {
@@ -97,20 +84,6 @@ static int set_next_event(unsigned long delta, struct clock_event_device *evt)
 	return 0;
 }
 
-/*
- * Sets the mode (periodic, shutdown, oneshot, etc) of a timer.
- */
-static void set_mode(enum clock_event_mode mode,
-	struct clock_event_device *evt)
-{
-	switch (mode) {
-	case CLOCK_EVT_MODE_SHUTDOWN:
-		/* XXX implement me */
-	default:
-		break;
-	}
-}
-
 #ifdef CONFIG_SMP
 /*  Broadcast mechanism  */
 static void broadcast(const struct cpumask *mask)
@@ -119,13 +92,13 @@ static void broadcast(const struct cpumask *mask)
 }
 #endif
 
+/* XXX Implement set_state_shutdown() */
 static struct clock_event_device hexagon_clockevent_dev = {
 	.name		= "clockevent",
 	.features	= CLOCK_EVT_FEAT_ONESHOT,
 	.rating		= 400,
 	.irq		= RTOS_TIMER_INT,
 	.set_next_event = set_next_event,
-	.set_mode	= set_mode,
 #ifdef CONFIG_SMP
 	.broadcast	= broadcast,
 #endif
@@ -146,7 +119,6 @@ void setup_percpu_clockdev(void)
 
 	dummy_clock_dev->features = CLOCK_EVT_FEAT_DUMMY;
 	dummy_clock_dev->cpumask = cpumask_of(cpu);
-	dummy_clock_dev->mode = CLOCK_EVT_MODE_UNUSED;
 
 	clockevents_register_device(dummy_clock_dev);
 }
@@ -214,7 +186,9 @@ void __init time_init_deferred(void)
 	clockevents_calc_mult_shift(ce_dev, sleep_clk_freq, 4);
 
 	ce_dev->max_delta_ns = clockevent_delta2ns(0x7fffffff, ce_dev);
+	ce_dev->max_delta_ticks = 0x7fffffff;
 	ce_dev->min_delta_ns = clockevent_delta2ns(0xf, ce_dev);
+	ce_dev->min_delta_ticks = 0xf;
 
 #ifdef CONFIG_SMP
 	setup_percpu_clockdev();

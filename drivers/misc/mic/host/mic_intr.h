@@ -1,22 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Intel MIC Platform Software Stack (MPSS)
  *
  * Copyright(c) 2013 Intel Corporation.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2, as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * General Public License for more details.
- *
- * The full GNU General Public License is included in this distribution in
- * the file called "COPYING".
- *
  * Intel MIC Host driver.
- *
  */
 #ifndef _MIC_INTR_H_
 #define _MIC_INTR_H_
@@ -28,8 +16,9 @@
  * 3 for virtio network, console and block devices.
  * 1 for card shutdown notifications.
  * 4 for host owned DMA channels.
+ * 1 for SCIF
  */
-#define MIC_MIN_MSIX 8
+#define MIC_MIN_MSIX 9
 #define MIC_NUM_OFFSETS 32
 
 /**

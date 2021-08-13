@@ -1,12 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * IMG SPFI controller driver
  *
  * Copyright (C) 2007,2008,2013 Imagination Technologies Ltd.
  * Copyright (C) 2014 Google, Inc.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
  */
 
 #include <linux/clk.h>
@@ -419,6 +416,9 @@ static int img_spfi_prepare(struct spi_master *master, struct spi_message *msg)
 	u32 val;
 
 	val = spfi_readl(spfi, SPFI_PORT_STATE);
+	val &= ~(SPFI_PORT_STATE_DEV_SEL_MASK <<
+		 SPFI_PORT_STATE_DEV_SEL_SHIFT);
+	val |= msg->spi->chip_select << SPFI_PORT_STATE_DEV_SEL_SHIFT;
 	if (msg->spi->mode & SPI_CPHA)
 		val |= SPFI_PORT_STATE_CK_PHASE(msg->spi->chip_select);
 	else
@@ -581,6 +581,7 @@ static int img_spfi_probe(struct platform_device *pdev)
 	struct img_spfi *spfi;
 	struct resource *res;
 	int ret;
+	u32 max_speed_hz;
 
 	master = spi_alloc_master(&pdev->dev, sizeof(*spfi));
 	if (!master)
@@ -645,6 +646,19 @@ static int img_spfi_probe(struct platform_device *pdev)
 	master->max_speed_hz = clk_get_rate(spfi->spfi_clk) / 4;
 	master->min_speed_hz = clk_get_rate(spfi->spfi_clk) / 512;
 
+	/*
+	 * Maximum speed supported by spfi is limited to the lower value
+	 * between 1/4 of the SPFI clock or to "spfi-max-frequency"
+	 * defined in the device tree.
+	 * If no value is defined in the device tree assume the maximum
+	 * speed supported to be 1/4 of the SPFI clock.
+	 */
+	if (!of_property_read_u32(spfi->dev->of_node, "spfi-max-frequency",
+				  &max_speed_hz)) {
+		if (master->max_speed_hz > max_speed_hz)
+			master->max_speed_hz = max_speed_hz;
+	}
+
 	master->setup = img_spfi_setup;
 	master->cleanup = img_spfi_cleanup;
 	master->transfer_one = img_spfi_transfer_one;
@@ -705,8 +719,6 @@ static int img_spfi_remove(struct platform_device *pdev)
 		clk_disable_unprepare(spfi->spfi_clk);
 		clk_disable_unprepare(spfi->sys_clk);
 	}
-
-	spi_master_put(master);
 
 	return 0;
 }

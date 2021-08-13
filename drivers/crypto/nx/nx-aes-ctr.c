@@ -1,20 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /**
  * AES CTR routines supporting the Power 7+ Nest Accelerators driver
  *
  * Copyright (C) 2011-2012 International Business Machines Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; version 2 only.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *
  * Author: Kent Yoder <yoder1@us.ibm.com>
  */
@@ -144,27 +132,6 @@ static int ctr3686_aes_nx_crypt(struct blkcipher_desc *desc,
 	return ctr_aes_nx_crypt(desc, dst, src, nbytes);
 }
 
-struct crypto_alg nx_ctr_aes_alg = {
-	.cra_name        = "ctr(aes)",
-	.cra_driver_name = "ctr-aes-nx",
-	.cra_priority    = 300,
-	.cra_flags       = CRYPTO_ALG_TYPE_BLKCIPHER,
-	.cra_blocksize   = 1,
-	.cra_ctxsize     = sizeof(struct nx_crypto_ctx),
-	.cra_type        = &crypto_blkcipher_type,
-	.cra_module      = THIS_MODULE,
-	.cra_init        = nx_crypto_ctx_aes_ctr_init,
-	.cra_exit        = nx_crypto_ctx_exit,
-	.cra_blkcipher = {
-		.min_keysize = AES_MIN_KEY_SIZE,
-		.max_keysize = AES_MAX_KEY_SIZE,
-		.ivsize      = AES_BLOCK_SIZE,
-		.setkey      = ctr_aes_nx_set_key,
-		.encrypt     = ctr_aes_nx_crypt,
-		.decrypt     = ctr_aes_nx_crypt,
-	}
-};
-
 struct crypto_alg nx_ctr3686_aes_alg = {
 	.cra_name        = "rfc3686(ctr(aes))",
 	.cra_driver_name = "rfc3686-ctr-aes-nx",
@@ -180,7 +147,6 @@ struct crypto_alg nx_ctr3686_aes_alg = {
 		.min_keysize = AES_MIN_KEY_SIZE + CTR_RFC3686_NONCE_SIZE,
 		.max_keysize = AES_MAX_KEY_SIZE + CTR_RFC3686_NONCE_SIZE,
 		.ivsize      = CTR_RFC3686_IV_SIZE,
-		.geniv       = "seqiv",
 		.setkey      = ctr3686_aes_nx_set_key,
 		.encrypt     = ctr3686_aes_nx_crypt,
 		.decrypt     = ctr3686_aes_nx_crypt,

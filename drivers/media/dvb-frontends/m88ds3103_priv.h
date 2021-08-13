@@ -1,50 +1,44 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- * Montage M88DS3103 demodulator driver
+ * Montage Technology M88DS3103/M88RS6000 demodulator driver
  *
  * Copyright (C) 2013 Antti Palosaari <crope@iki.fi>
- *
- *    This program is free software; you can redistribute it and/or modify
- *    it under the terms of the GNU General Public License as published by
- *    the Free Software Foundation; either version 2 of the License, or
- *    (at your option) any later version.
- *
- *    This program is distributed in the hope that it will be useful,
- *    but WITHOUT ANY WARRANTY; without even the implied warranty of
- *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *    GNU General Public License for more details.
  */
 
 #ifndef M88DS3103_PRIV_H
 #define M88DS3103_PRIV_H
 
-#include "dvb_frontend.h"
+#include <media/dvb_frontend.h>
 #include "m88ds3103.h"
-#include "dvb_math.h"
+#include <media/dvb_math.h>
 #include <linux/firmware.h>
 #include <linux/i2c-mux.h>
+#include <linux/regmap.h>
 #include <linux/math64.h>
 
 #define M88DS3103_FIRMWARE "dvb-demod-m88ds3103.fw"
 #define M88RS6000_FIRMWARE "dvb-demod-m88rs6000.fw"
-#define M88DS3103_MCLK_KHZ 96000
 #define M88RS6000_CHIP_ID 0x74
 #define M88DS3103_CHIP_ID 0x70
 
-struct m88ds3103_priv {
-	struct i2c_adapter *i2c;
-	/* mutex needed due to own tuner I2C adapter */
-	struct mutex i2c_mutex;
+struct m88ds3103_dev {
+	struct i2c_client *client;
+	struct regmap_config regmap_config;
+	struct regmap *regmap;
+	struct m88ds3103_config config;
 	const struct m88ds3103_config *cfg;
 	struct dvb_frontend fe;
-	fe_delivery_system_t delivery_system;
-	fe_status_t fe_status;
-	u32 ber;
+	enum fe_delivery_system delivery_system;
+	enum fe_status fe_status;
+	u32 dvbv3_ber; /* for old DVBv3 API read_ber */
 	bool warm; /* FW running */
-	struct i2c_adapter *i2c_adapter;
+	struct i2c_mux_core *muxc;
 	/* auto detect chip id to do different config */
 	u8 chip_id;
 	/* main mclk is calculated for M88RS6000 dynamically */
-	u32 mclk_khz;
+	s32 mclk;
+	u64 post_bit_error;
+	u64 post_bit_count;
 };
 
 struct m88ds3103_reg_val {

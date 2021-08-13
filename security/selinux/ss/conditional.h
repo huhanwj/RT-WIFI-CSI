@@ -1,10 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* Authors: Karl MacMillan <kmacmillan@tresys.com>
  *          Frank Mayer <mayerf@tresys.com>
  *
  * Copyright (C) 2003 - 2004 Tresys Technology, LLC
- *	This program is free software; you can redistribute it and/or modify
- *  	it under the terms of the GNU General Public License as published by
- *	the Free Software Foundation, version 2.
  */
 
 #ifndef _CONDITIONAL_H_
@@ -73,8 +71,10 @@ int cond_read_list(struct policydb *p, void *fp);
 int cond_write_bool(void *key, void *datum, void *ptr);
 int cond_write_list(struct policydb *p, struct cond_node *list, void *fp);
 
-void cond_compute_av(struct avtab *ctab, struct avtab_key *key, struct av_decision *avd);
-
+void cond_compute_av(struct avtab *ctab, struct avtab_key *key,
+		struct av_decision *avd, struct extended_perms *xperms);
+void cond_compute_xperms(struct avtab *ctab, struct avtab_key *key,
+		struct extended_perms_decision *xpermd);
 int evaluate_cond_node(struct policydb *p, struct cond_node *node);
 
 #endif /* _CONDITIONAL_H_ */

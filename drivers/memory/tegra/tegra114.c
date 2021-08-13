@@ -1,15 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2014 NVIDIA CORPORATION.  All rights reserved.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/of.h>
 #include <linux/mm.h>
-
-#include <asm/cacheflush.h>
 
 #include <dt-bindings/memory/tegra114-mc.h>
 
@@ -574,7 +569,7 @@ static const struct tegra_mc_client tegra114_mc_clients[] = {
 		},
 	}, {
 		.id = 0x34,
-		.name = "fdcwr2",
+		.name = "fdcdwr2",
 		.swgroup = TEGRA_SWGROUP_NV,
 		.smmu = {
 			.reg = 0x22c,
@@ -896,36 +891,35 @@ static const struct tegra_mc_client tegra114_mc_clients[] = {
 };
 
 static const struct tegra_smmu_swgroup tegra114_swgroups[] = {
-	{ .swgroup = TEGRA_SWGROUP_DC,        .reg = 0x240 },
-	{ .swgroup = TEGRA_SWGROUP_DCB,       .reg = 0x244 },
-	{ .swgroup = TEGRA_SWGROUP_EPP,       .reg = 0x248 },
-	{ .swgroup = TEGRA_SWGROUP_G2,        .reg = 0x24c },
-	{ .swgroup = TEGRA_SWGROUP_AVPC,      .reg = 0x23c },
-	{ .swgroup = TEGRA_SWGROUP_NV,        .reg = 0x268 },
-	{ .swgroup = TEGRA_SWGROUP_HDA,       .reg = 0x254 },
-	{ .swgroup = TEGRA_SWGROUP_HC,        .reg = 0x250 },
-	{ .swgroup = TEGRA_SWGROUP_MSENC,     .reg = 0x264 },
-	{ .swgroup = TEGRA_SWGROUP_PPCS,      .reg = 0x270 },
-	{ .swgroup = TEGRA_SWGROUP_VDE,       .reg = 0x27c },
-	{ .swgroup = TEGRA_SWGROUP_VI,        .reg = 0x280 },
-	{ .swgroup = TEGRA_SWGROUP_ISP,       .reg = 0x258 },
-	{ .swgroup = TEGRA_SWGROUP_XUSB_HOST, .reg = 0x288 },
-	{ .swgroup = TEGRA_SWGROUP_XUSB_DEV,  .reg = 0x28c },
-	{ .swgroup = TEGRA_SWGROUP_TSEC,      .reg = 0x294 },
+	{ .name = "dc",        .swgroup = TEGRA_SWGROUP_DC,        .reg = 0x240 },
+	{ .name = "dcb",       .swgroup = TEGRA_SWGROUP_DCB,       .reg = 0x244 },
+	{ .name = "epp",       .swgroup = TEGRA_SWGROUP_EPP,       .reg = 0x248 },
+	{ .name = "g2",        .swgroup = TEGRA_SWGROUP_G2,        .reg = 0x24c },
+	{ .name = "avpc",      .swgroup = TEGRA_SWGROUP_AVPC,      .reg = 0x23c },
+	{ .name = "nv",        .swgroup = TEGRA_SWGROUP_NV,        .reg = 0x268 },
+	{ .name = "hda",       .swgroup = TEGRA_SWGROUP_HDA,       .reg = 0x254 },
+	{ .name = "hc",        .swgroup = TEGRA_SWGROUP_HC,        .reg = 0x250 },
+	{ .name = "msenc",     .swgroup = TEGRA_SWGROUP_MSENC,     .reg = 0x264 },
+	{ .name = "ppcs",      .swgroup = TEGRA_SWGROUP_PPCS,      .reg = 0x270 },
+	{ .name = "vde",       .swgroup = TEGRA_SWGROUP_VDE,       .reg = 0x27c },
+	{ .name = "vi",        .swgroup = TEGRA_SWGROUP_VI,        .reg = 0x280 },
+	{ .name = "isp",       .swgroup = TEGRA_SWGROUP_ISP,       .reg = 0x258 },
+	{ .name = "xusb_host", .swgroup = TEGRA_SWGROUP_XUSB_HOST, .reg = 0x288 },
+	{ .name = "xusb_dev",  .swgroup = TEGRA_SWGROUP_XUSB_DEV,  .reg = 0x28c },
+	{ .name = "tsec",      .swgroup = TEGRA_SWGROUP_TSEC,      .reg = 0x294 },
 };
 
-static void tegra114_flush_dcache(struct page *page, unsigned long offset,
-				  size_t size)
-{
-	phys_addr_t phys = page_to_phys(page) + offset;
-	void *virt = page_address(page) + offset;
+static const unsigned int tegra114_group_display[] = {
+	TEGRA_SWGROUP_DC,
+	TEGRA_SWGROUP_DCB,
+};
 
-	__cpuc_flush_dcache_area(virt, size);
-	outer_flush_range(phys, phys + size);
-}
-
-static const struct tegra_smmu_ops tegra114_smmu_ops = {
-	.flush_dcache = tegra114_flush_dcache,
+static const struct tegra_smmu_group_soc tegra114_groups[] = {
+	{
+		.name = "display",
+		.swgroups = tegra114_group_display,
+		.num_swgroups = ARRAY_SIZE(tegra114_group_display),
+	},
 };
 
 static const struct tegra_smmu_soc tegra114_smmu_soc = {
@@ -933,11 +927,40 @@ static const struct tegra_smmu_soc tegra114_smmu_soc = {
 	.num_clients = ARRAY_SIZE(tegra114_mc_clients),
 	.swgroups = tegra114_swgroups,
 	.num_swgroups = ARRAY_SIZE(tegra114_swgroups),
+	.groups = tegra114_groups,
+	.num_groups = ARRAY_SIZE(tegra114_groups),
 	.supports_round_robin_arbitration = false,
 	.supports_request_limit = false,
 	.num_tlb_lines = 32,
 	.num_asids = 4,
-	.ops = &tegra114_smmu_ops,
+};
+
+#define TEGRA114_MC_RESET(_name, _control, _status, _bit)	\
+	{							\
+		.name = #_name,					\
+		.id = TEGRA114_MC_RESET_##_name,		\
+		.control = _control,				\
+		.status = _status,				\
+		.bit = _bit,					\
+	}
+
+static const struct tegra_mc_reset tegra114_mc_resets[] = {
+	TEGRA114_MC_RESET(AVPC,     0x200, 0x204,  1),
+	TEGRA114_MC_RESET(DC,       0x200, 0x204,  2),
+	TEGRA114_MC_RESET(DCB,      0x200, 0x204,  3),
+	TEGRA114_MC_RESET(EPP,      0x200, 0x204,  4),
+	TEGRA114_MC_RESET(2D,       0x200, 0x204,  5),
+	TEGRA114_MC_RESET(HC,       0x200, 0x204,  6),
+	TEGRA114_MC_RESET(HDA,      0x200, 0x204,  7),
+	TEGRA114_MC_RESET(ISP,      0x200, 0x204,  8),
+	TEGRA114_MC_RESET(MPCORE,   0x200, 0x204,  9),
+	TEGRA114_MC_RESET(MPCORELP, 0x200, 0x204, 10),
+	TEGRA114_MC_RESET(MPE,      0x200, 0x204, 11),
+	TEGRA114_MC_RESET(3D,       0x200, 0x204, 12),
+	TEGRA114_MC_RESET(3D2,      0x200, 0x204, 13),
+	TEGRA114_MC_RESET(PPCS,     0x200, 0x204, 14),
+	TEGRA114_MC_RESET(VDE,      0x200, 0x204, 16),
+	TEGRA114_MC_RESET(VI,       0x200, 0x204, 17),
 };
 
 const struct tegra_mc_soc tegra114_mc_soc = {
@@ -945,5 +968,11 @@ const struct tegra_mc_soc tegra114_mc_soc = {
 	.num_clients = ARRAY_SIZE(tegra114_mc_clients),
 	.num_address_bits = 32,
 	.atom_size = 32,
+	.client_id_mask = 0x7f,
 	.smmu = &tegra114_smmu_soc,
+	.intmask = MC_INT_INVALID_SMMU_PAGE | MC_INT_SECURITY_VIOLATION |
+		   MC_INT_DECERR_EMEM,
+	.reset_ops = &tegra_mc_reset_ops_common,
+	.resets = tegra114_mc_resets,
+	.num_resets = ARRAY_SIZE(tegra114_mc_resets),
 };

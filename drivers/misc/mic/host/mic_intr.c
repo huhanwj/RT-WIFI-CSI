@@ -1,22 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Intel MIC Platform Software Stack (MPSS)
  *
  * Copyright(c) 2013 Intel Corporation.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License, version 2, as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * General Public License for more details.
- *
- * The full GNU General Public License is included in this distribution in
- * the file called "COPYING".
- *
  * Intel MIC Host driver.
- *
  */
 #include <linux/pci.h>
 #include <linux/interrupt.h>
@@ -30,8 +18,7 @@ static irqreturn_t mic_thread_fn(int irq, void *dev)
 	struct mic_intr_info *intr_info = mdev->intr_info;
 	struct mic_irq_info *irq_info = &mdev->irq_info;
 	struct mic_intr_cb *intr_cb;
-	struct pci_dev *pdev = container_of(mdev->sdev->parent,
-					    struct pci_dev, dev);
+	struct pci_dev *pdev = mdev->pdev;
 	int i;
 
 	spin_lock(&irq_info->mic_thread_lock);
@@ -57,8 +44,7 @@ static irqreturn_t mic_interrupt(int irq, void *dev)
 	struct mic_intr_info *intr_info = mdev->intr_info;
 	struct mic_irq_info *irq_info = &mdev->irq_info;
 	struct mic_intr_cb *intr_cb;
-	struct pci_dev *pdev = container_of(mdev->sdev->parent,
-					    struct pci_dev, dev);
+	struct pci_dev *pdev = mdev->pdev;
 	u32 mask;
 	int i;
 
@@ -83,7 +69,7 @@ static irqreturn_t mic_interrupt(int irq, void *dev)
 
 /* Return the interrupt offset from the index. Index is 0 based. */
 static u16 mic_map_src_to_offset(struct mic_device *mdev,
-		int intr_src, enum mic_intr_type type)
+				 int intr_src, enum mic_intr_type type)
 {
 	if (type >= MIC_NUM_INTR_TYPES)
 		return MIC_NUM_OFFSETS;
@@ -214,7 +200,7 @@ static int mic_setup_msix(struct mic_device *mdev, struct pci_dev *pdev)
 		mdev->irq_info.msix_entries[i].entry = i;
 
 	rc = pci_enable_msix_exact(pdev, mdev->irq_info.msix_entries,
-		MIC_MIN_MSIX);
+				   MIC_MIN_MSIX);
 	if (rc) {
 		dev_dbg(&pdev->dev, "Error enabling MSIx. rc = %d\n", rc);
 		goto err_enable_msix;
@@ -229,7 +215,7 @@ static int mic_setup_msix(struct mic_device *mdev, struct pci_dev *pdev)
 		goto err_nomem2;
 	}
 
-	dev_dbg(mdev->sdev->parent,
+	dev_dbg(&mdev->pdev->dev,
 		"%d MSIx irqs setup\n", mdev->irq_info.num_vectors);
 	return 0;
 err_nomem2:
@@ -281,7 +267,6 @@ static void mic_release_callbacks(struct mic_device *mdev)
 	spin_lock(&mdev->irq_info.mic_thread_lock);
 	spin_lock_irqsave(&mdev->irq_info.mic_intr_lock, flags);
 	for (i = 0; i < MIC_NUM_OFFSETS; i++) {
-
 		if (list_empty(&mdev->irq_info.cb_list[i]))
 			break;
 
@@ -443,12 +428,11 @@ mic_request_threaded_irq(struct mic_device *mdev,
 	unsigned long cookie = 0;
 	u16 entry;
 	struct mic_intr_cb *intr_cb;
-	struct pci_dev *pdev = container_of(mdev->sdev->parent,
-		struct pci_dev, dev);
+	struct pci_dev *pdev = mdev->pdev;
 
 	offset = mic_map_src_to_offset(mdev, intr_src, type);
 	if (offset >= MIC_NUM_OFFSETS) {
-		dev_err(mdev->sdev->parent,
+		dev_err(&mdev->pdev->dev,
 			"Error mapping index %d to a valid source id.\n",
 			intr_src);
 		rc = -EINVAL;
@@ -458,7 +442,7 @@ mic_request_threaded_irq(struct mic_device *mdev,
 	if (mdev->irq_info.num_vectors > 1) {
 		msix = mic_get_available_vector(mdev);
 		if (!msix) {
-			dev_err(mdev->sdev->parent,
+			dev_err(&mdev->pdev->dev,
 				"No MSIx vectors available for use.\n");
 			rc = -ENOSPC;
 			goto err;
@@ -467,7 +451,7 @@ mic_request_threaded_irq(struct mic_device *mdev,
 		rc = request_threaded_irq(msix->vector, handler, thread_fn,
 					  0, name, data);
 		if (rc) {
-			dev_dbg(mdev->sdev->parent,
+			dev_dbg(&mdev->pdev->dev,
 				"request irq failed rc = %d\n", rc);
 			goto err;
 		}
@@ -476,13 +460,13 @@ mic_request_threaded_irq(struct mic_device *mdev,
 		mdev->intr_ops->program_msi_to_src_map(mdev,
 				entry, offset, true);
 		cookie = MK_COOKIE(entry, offset);
-		dev_dbg(mdev->sdev->parent, "irq: %d assigned for src: %d\n",
+		dev_dbg(&mdev->pdev->dev, "irq: %d assigned for src: %d\n",
 			msix->vector, intr_src);
 	} else {
 		intr_cb = mic_register_intr_callback(mdev, offset, handler,
 						     thread_fn, data);
 		if (IS_ERR(intr_cb)) {
-			dev_err(mdev->sdev->parent,
+			dev_err(&mdev->pdev->dev,
 				"No available callback entries for use\n");
 			rc = PTR_ERR(intr_cb);
 			goto err;
@@ -495,7 +479,7 @@ mic_request_threaded_irq(struct mic_device *mdev,
 				entry, offset, true);
 		}
 		cookie = MK_COOKIE(entry, intr_cb->cb_id);
-		dev_dbg(mdev->sdev->parent, "callback %d registered for src: %d\n",
+		dev_dbg(&mdev->pdev->dev, "callback %d registered for src: %d\n",
 			intr_cb->cb_id, intr_src);
 	}
 	return (struct mic_irq *)cookie;
@@ -515,20 +499,19 @@ err:
  * returns: none.
  */
 void mic_free_irq(struct mic_device *mdev,
-	struct mic_irq *cookie, void *data)
+		  struct mic_irq *cookie, void *data)
 {
 	u32 offset;
 	u32 entry;
 	u8 src_id;
 	unsigned int irq;
-	struct pci_dev *pdev = container_of(mdev->sdev->parent,
-		struct pci_dev, dev);
+	struct pci_dev *pdev = mdev->pdev;
 
 	entry = GET_ENTRY((unsigned long)cookie);
 	offset = GET_OFFSET((unsigned long)cookie);
 	if (mdev->irq_info.num_vectors > 1) {
 		if (entry >= mdev->irq_info.num_vectors) {
-			dev_warn(mdev->sdev->parent,
+			dev_warn(&mdev->pdev->dev,
 				 "entry %d should be < num_irq %d\n",
 				entry, mdev->irq_info.num_vectors);
 			return;
@@ -539,12 +522,12 @@ void mic_free_irq(struct mic_device *mdev,
 		mdev->intr_ops->program_msi_to_src_map(mdev,
 			entry, offset, false);
 
-		dev_dbg(mdev->sdev->parent, "irq: %d freed\n", irq);
+		dev_dbg(&mdev->pdev->dev, "irq: %d freed\n", irq);
 	} else {
 		irq = pdev->irq;
 		src_id = mic_unregister_intr_callback(mdev, offset);
 		if (src_id >= MIC_NUM_OFFSETS) {
-			dev_warn(mdev->sdev->parent, "Error unregistering callback\n");
+			dev_warn(&mdev->pdev->dev, "Error unregistering callback\n");
 			return;
 		}
 		if (pci_dev_msi_enabled(pdev)) {
@@ -552,7 +535,7 @@ void mic_free_irq(struct mic_device *mdev,
 			mdev->intr_ops->program_msi_to_src_map(mdev,
 				entry, src_id, false);
 		}
-		dev_dbg(mdev->sdev->parent, "callback %d unregistered for src: %d\n",
+		dev_dbg(&mdev->pdev->dev, "callback %d unregistered for src: %d\n",
 			offset, src_id);
 	}
 }
@@ -579,7 +562,7 @@ int mic_setup_interrupts(struct mic_device *mdev, struct pci_dev *pdev)
 
 	rc = mic_setup_intx(mdev, pdev);
 	if (rc) {
-		dev_err(mdev->sdev->parent, "no usable interrupts\n");
+		dev_err(&mdev->pdev->dev, "no usable interrupts\n");
 		return rc;
 	}
 done:
@@ -635,8 +618,7 @@ void mic_free_interrupts(struct mic_device *mdev, struct pci_dev *pdev)
 void mic_intr_restore(struct mic_device *mdev)
 {
 	int entry, offset;
-	struct pci_dev *pdev = container_of(mdev->sdev->parent,
-		struct pci_dev, dev);
+	struct pci_dev *pdev = mdev->pdev;
 
 	if (!pci_dev_msi_enabled(pdev))
 		return;

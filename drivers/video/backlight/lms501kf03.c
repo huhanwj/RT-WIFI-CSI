@@ -1,13 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * lms501kf03 TFT LCD panel driver.
  *
  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
  * Author: Jingoo Han  <jg1.han@samsung.com>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by the
- * Free Software Foundation; either version 2 of the License, or (at your
- * option) any later version.
  */
 
 #include <linux/backlight.h>
@@ -422,7 +418,6 @@ static void lms501kf03_shutdown(struct spi_device *spi)
 static struct spi_driver lms501kf03_driver = {
 	.driver = {
 		.name	= "lms501kf03",
-		.owner	= THIS_MODULE,
 		.pm	= &lms501kf03_pm_ops,
 	},
 	.probe		= lms501kf03_probe,

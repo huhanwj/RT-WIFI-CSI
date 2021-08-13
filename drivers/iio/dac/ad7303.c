@@ -1,9 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * AD7303 Digital to analog converters driver
  *
  * Copyright 2013 Analog Devices Inc.
- *
- * Licensed under the GPL-2.
  */
 
 #include <linux/err.h>
@@ -161,7 +160,6 @@ static int ad7303_write_raw(struct iio_dev *indio_dev,
 static const struct iio_info ad7303_info = {
 	.read_raw = ad7303_read_raw,
 	.write_raw = ad7303_write_raw,
-	.driver_module = THIS_MODULE,
 };
 
 static const struct iio_chan_spec_ext_info ad7303_ext_info[] = {
@@ -184,9 +182,9 @@ static const struct iio_chan_spec_ext_info ad7303_ext_info[] = {
 	.address = (chan),					\
 	.scan_type = {						\
 		.sign = 'u',					\
-		.realbits = '8',				\
-		.storagebits = '8',				\
-		.shift = '0',					\
+		.realbits = 8,					\
+		.storagebits = 8,				\
+		.shift = 0,					\
 	},							\
 	.ext_info = ad7303_ext_info,				\
 }
@@ -281,6 +279,12 @@ static int ad7303_remove(struct spi_device *spi)
 	return 0;
 }
 
+static const struct of_device_id ad7303_spi_of_match[] = {
+	{ .compatible = "adi,ad7303", },
+	{ /* sentinel */ },
+};
+MODULE_DEVICE_TABLE(of, ad7303_spi_of_match);
+
 static const struct spi_device_id ad7303_spi_ids[] = {
 	{ "ad7303", 0 },
 	{}
@@ -290,7 +294,7 @@ MODULE_DEVICE_TABLE(spi, ad7303_spi_ids);
 static struct spi_driver ad7303_driver = {
 	.driver = {
 		.name = "ad7303",
-		.owner = THIS_MODULE,
+		.of_match_table = of_match_ptr(ad7303_spi_of_match),
 	},
 	.probe = ad7303_probe,
 	.remove = ad7303_remove,

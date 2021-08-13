@@ -1,20 +1,13 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * This file contains common code that is intended to be used across
  * boards so that it's not replicated.
  *
  *  Copyright (C) 2011 Xilinx
- *
- * This software is licensed under the terms of the GNU General Public
- * License version 2, as published by the Free Software Foundation, and
- * may be copied, distributed, and modified under those terms.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #include <linux/init.h>
+#include <linux/io.h>
 #include <linux/kernel.h>
 #include <linux/cpumask.h>
 #include <linux/platform_device.h>
@@ -59,7 +52,7 @@ void __iomem *zynq_scu_base;
 static void __init zynq_memory_init(void)
 {
 	if (!__pa(PAGE_OFFSET))
-		memblock_reserve(__pa(PAGE_OFFSET), __pa(swapper_pg_dir));
+		memblock_reserve(__pa(PAGE_OFFSET), 0x80000);
 }
 
 static struct platform_device zynq_cpuidle_device = {
@@ -110,7 +103,6 @@ static void __init zynq_init_late(void)
  */
 static void __init zynq_init_machine(void)
 {
-	struct platform_device_info devinfo = { .name = "cpufreq-dt", };
 	struct soc_device_attribute *soc_dev_attr;
 	struct soc_device *soc_dev;
 	struct device *parent = NULL;
@@ -142,19 +134,16 @@ out:
 	 * Finished with the static registrations now; fill in the missing
 	 * devices
 	 */
-	of_platform_populate(NULL, of_default_bus_match_table, NULL, parent);
+	of_platform_default_populate(NULL, NULL, parent);
 
 	platform_device_register(&zynq_cpuidle_device);
-	platform_device_register_full(&devinfo);
 }
 
 static void __init zynq_timer_init(void)
 {
-	zynq_early_slcr_init();
-
 	zynq_clock_init();
 	of_clk_init(NULL);
-	clocksource_of_init();
+	timer_probe();
 }
 
 static struct map_desc zynq_cortex_a9_scu_map __initdata = {
@@ -186,13 +175,8 @@ static void __init zynq_map_io(void)
 
 static void __init zynq_irq_init(void)
 {
-	gic_set_irqchip_flags(IRQCHIP_SKIP_SET_WAKE | IRQCHIP_MASK_ON_SUSPEND);
+	zynq_early_slcr_init();
 	irqchip_init();
-}
-
-static void zynq_system_reset(enum reboot_mode mode, const char *cmd)
-{
-	zynq_slcr_system_reset();
 }
 
 static const char * const zynq_dt_match[] = {
@@ -202,8 +186,8 @@ static const char * const zynq_dt_match[] = {
 
 DT_MACHINE_START(XILINX_EP107, "Xilinx Zynq Platform")
 	/* 64KB way size, 8-way associativity, parity disabled */
-	.l2c_aux_val	= 0x00000000,
-	.l2c_aux_mask	= 0xffffffff,
+	.l2c_aux_val    = 0x00400000,
+	.l2c_aux_mask	= 0xffbfffff,
 	.smp		= smp_ops(zynq_smp_ops),
 	.map_io		= zynq_map_io,
 	.init_irq	= zynq_irq_init,
@@ -212,5 +196,4 @@ DT_MACHINE_START(XILINX_EP107, "Xilinx Zynq Platform")
 	.init_time	= zynq_timer_init,
 	.dt_compat	= zynq_dt_match,
 	.reserve	= zynq_memory_init,
-	.restart	= zynq_system_reset,
 MACHINE_END

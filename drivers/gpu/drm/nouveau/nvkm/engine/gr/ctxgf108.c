@@ -667,12 +667,17 @@ gf108_grctx_init_gpm_0[] = {
 };
 
 static const struct gf100_gr_pack
-gf108_grctx_pack_gpc[] = {
+gf108_grctx_pack_gpc_0[] = {
 	{ gf100_grctx_init_gpc_unk_0 },
 	{ gf100_grctx_init_prop_0 },
 	{ gf100_grctx_init_gpc_unk_1 },
 	{ gf108_grctx_init_setup_0 },
 	{ gf100_grctx_init_zcull_0 },
+	{}
+};
+
+static const struct gf100_gr_pack
+gf108_grctx_pack_gpc_1[] = {
 	{ gf100_grctx_init_crstr_0 },
 	{ gf108_grctx_init_gpm_0 },
 	{ gf100_grctx_init_gcc_0 },
@@ -730,18 +735,17 @@ gf108_grctx_pack_tpc[] = {
 void
 gf108_grctx_generate_attrib(struct gf100_grctx *info)
 {
-	struct gf100_gr_priv *priv = info->priv;
-	const struct gf100_grctx_oclass *impl = gf100_grctx_impl(priv);
-	const u32  alpha = impl->alpha_nr;
-	const u32   beta = impl->attrib_nr;
-	const u32   size = 0x20 * (impl->attrib_nr_max + impl->alpha_nr_max);
-	const u32 access = NV_MEM_ACCESS_RW;
+	struct gf100_gr *gr = info->gr;
+	const struct gf100_grctx_func *grctx = gr->func->grctx;
+	const u32  alpha = grctx->alpha_nr;
+	const u32   beta = grctx->attrib_nr;
+	const u32   size = 0x20 * (grctx->attrib_nr_max + grctx->alpha_nr_max);
 	const int s = 12;
-	const int b = mmio_vram(info, size * priv->tpc_total, (1 << s), access);
+	const int b = mmio_vram(info, size * gr->tpc_total, (1 << s), false);
 	const int timeslice_mode = 1;
 	const int max_batches = 0xffff;
 	u32 bo = 0;
-	u32 ao = bo + impl->attrib_nr_max * priv->tpc_total;
+	u32 ao = bo + grctx->attrib_nr_max * gr->tpc_total;
 	int gpc, tpc;
 
 	mmio_refn(info, 0x418810, 0x80000000, s, b);
@@ -749,47 +753,40 @@ gf108_grctx_generate_attrib(struct gf100_grctx *info)
 	mmio_wr32(info, 0x405830, (beta << 16) | alpha);
 	mmio_wr32(info, 0x4064c4, ((alpha / 4) << 16) | max_batches);
 
-	for (gpc = 0; gpc < priv->gpc_nr; gpc++) {
-		for (tpc = 0; tpc < priv->tpc_nr[gpc]; tpc++) {
+	for (gpc = 0; gpc < gr->gpc_nr; gpc++) {
+		for (tpc = 0; tpc < gr->tpc_nr[gpc]; tpc++) {
 			const u32 a = alpha;
 			const u32 b =  beta;
 			const u32 t = timeslice_mode;
 			const u32 o = TPC_UNIT(gpc, tpc, 0x500);
 			mmio_skip(info, o + 0x20, (t << 28) | (b << 16) | ++bo);
 			mmio_wr32(info, o + 0x20, (t << 28) | (b << 16) | --bo);
-			bo += impl->attrib_nr_max;
+			bo += grctx->attrib_nr_max;
 			mmio_wr32(info, o + 0x44, (a << 16) | ao);
-			ao += impl->alpha_nr_max;
+			ao += grctx->alpha_nr_max;
 		}
 	}
 }
 
 void
-gf108_grctx_generate_unkn(struct gf100_gr_priv *priv)
+gf108_grctx_generate_unkn(struct gf100_gr *gr)
 {
-	nv_mask(priv, 0x418c6c, 0x00000001, 0x00000001);
-	nv_mask(priv, 0x41980c, 0x00000010, 0x00000010);
-	nv_mask(priv, 0x419814, 0x00000004, 0x00000004);
-	nv_mask(priv, 0x4064c0, 0x80000000, 0x80000000);
-	nv_mask(priv, 0x405800, 0x08000000, 0x08000000);
-	nv_mask(priv, 0x419c00, 0x00000008, 0x00000008);
+	struct nvkm_device *device = gr->base.engine.subdev.device;
+	nvkm_mask(device, 0x418c6c, 0x00000001, 0x00000001);
+	nvkm_mask(device, 0x41980c, 0x00000010, 0x00000010);
+	nvkm_mask(device, 0x419814, 0x00000004, 0x00000004);
+	nvkm_mask(device, 0x4064c0, 0x80000000, 0x80000000);
+	nvkm_mask(device, 0x405800, 0x08000000, 0x08000000);
+	nvkm_mask(device, 0x419c00, 0x00000008, 0x00000008);
 }
 
-struct nvkm_oclass *
-gf108_grctx_oclass = &(struct gf100_grctx_oclass) {
-	.base.handle = NV_ENGCTX(GR, 0xc1),
-	.base.ofuncs = &(struct nvkm_ofuncs) {
-		.ctor = gf100_gr_context_ctor,
-		.dtor = gf100_gr_context_dtor,
-		.init = _nvkm_gr_context_init,
-		.fini = _nvkm_gr_context_fini,
-		.rd32 = _nvkm_gr_context_rd32,
-		.wr32 = _nvkm_gr_context_wr32,
-	},
+const struct gf100_grctx_func
+gf108_grctx = {
 	.main  = gf100_grctx_generate_main,
 	.unkn  = gf108_grctx_generate_unkn,
 	.hub   = gf108_grctx_pack_hub,
-	.gpc   = gf108_grctx_pack_gpc,
+	.gpc_0 = gf108_grctx_pack_gpc_0,
+	.gpc_1 = gf108_grctx_pack_gpc_1,
 	.zcull = gf100_grctx_pack_zcull,
 	.tpc   = gf108_grctx_pack_tpc,
 	.icmd  = gf108_grctx_pack_icmd,
@@ -803,4 +800,11 @@ gf108_grctx_oclass = &(struct gf100_grctx_oclass) {
 	.attrib_nr = 0x218,
 	.alpha_nr_max = 0x324,
 	.alpha_nr = 0x218,
-}.base;
+	.sm_id = gf100_grctx_generate_sm_id,
+	.tpc_nr = gf100_grctx_generate_tpc_nr,
+	.r4060a8 = gf100_grctx_generate_r4060a8,
+	.rop_mapping = gf100_grctx_generate_rop_mapping,
+	.alpha_beta_tables = gf100_grctx_generate_alpha_beta_tables,
+	.max_ways_evict = gf100_grctx_generate_max_ways_evict,
+	.r419cb8 = gf100_grctx_generate_r419cb8,
+};

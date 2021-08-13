@@ -34,19 +34,19 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
-
 #include "core.h"
 #include "name_table.h"
 #include "subscr.h"
 #include "bearer.h"
 #include "net.h"
 #include "socket.h"
+#include "bcast.h"
+#include "node.h"
 
 #include <linux/module.h>
 
 /* configurable TIPC parameters */
-int tipc_net_id __read_mostly;
+unsigned int tipc_net_id __read_mostly;
 int sysctl_tipc_rmem[3] __read_mostly;	/* min/default/max */
 
 static int __net_init tipc_init_net(struct net *net)
@@ -55,7 +55,13 @@ static int __net_init tipc_init_net(struct net *net)
 	int err;
 
 	tn->net_id = 4711;
-	tn->own_addr = 0;
+	tn->node_addr = 0;
+	tn->trial_addr = 0;
+	tn->addr_trial_end = 0;
+	tn->capabilities = TIPC_NODE_CAPABILITIES;
+	memset(tn->node_id, 0, sizeof(tn->node_id));
+	memset(tn->node_id_string, 0, sizeof(tn->node_id_string));
+	tn->mon_threshold = TIPC_DEF_MON_THRESHOLD;
 	get_random_bytes(&tn->random, sizeof(int));
 	INIT_LIST_HEAD(&tn->node_list);
 	spin_lock_init(&tn->node_list_lock);
@@ -68,12 +74,19 @@ static int __net_init tipc_init_net(struct net *net)
 	if (err)
 		goto out_nametbl;
 
-	err = tipc_subscr_start(net);
+	INIT_LIST_HEAD(&tn->dist_queue);
+
+	err = tipc_bcast_init(net);
 	if (err)
-		goto out_subscr;
+		goto out_bclink;
+
+	err = tipc_attach_loopback(net);
+	if (err)
+		goto out_bclink;
+
 	return 0;
 
-out_subscr:
+out_bclink:
 	tipc_nametbl_stop(net);
 out_nametbl:
 	tipc_sk_rht_destroy(net);
@@ -83,8 +96,9 @@ out_sk_rht:
 
 static void __net_exit tipc_exit_net(struct net *net)
 {
-	tipc_subscr_stop(net);
+	tipc_detach_loopback(net);
 	tipc_net_stop(net);
+	tipc_bcast_stop(net);
 	tipc_nametbl_stop(net);
 	tipc_sk_rht_destroy(net);
 }
@@ -96,17 +110,20 @@ static struct pernet_operations tipc_net_ops = {
 	.size = sizeof(struct tipc_net),
 };
 
+static struct pernet_operations tipc_topsrv_net_ops = {
+	.init = tipc_topsrv_init_net,
+	.exit = tipc_topsrv_exit_net,
+};
+
 static int __init tipc_init(void)
 {
 	int err;
 
 	pr_info("Activated (version " TIPC_MOD_VER ")\n");
 
-	sysctl_tipc_rmem[0] = TIPC_CONN_OVERLOAD_LIMIT >> 4 <<
-			      TIPC_LOW_IMPORTANCE;
-	sysctl_tipc_rmem[1] = TIPC_CONN_OVERLOAD_LIMIT >> 4 <<
-			      TIPC_CRITICAL_IMPORTANCE;
-	sysctl_tipc_rmem[2] = TIPC_CONN_OVERLOAD_LIMIT;
+	sysctl_tipc_rmem[0] = RCVBUF_MIN;
+	sysctl_tipc_rmem[1] = RCVBUF_DEF;
+	sysctl_tipc_rmem[2] = RCVBUF_MAX;
 
 	err = tipc_netlink_start();
 	if (err)
@@ -116,17 +133,21 @@ static int __init tipc_init(void)
 	if (err)
 		goto out_netlink_compat;
 
-	err = tipc_socket_init();
-	if (err)
-		goto out_socket;
-
 	err = tipc_register_sysctl();
 	if (err)
 		goto out_sysctl;
 
-	err = register_pernet_subsys(&tipc_net_ops);
+	err = register_pernet_device(&tipc_net_ops);
 	if (err)
 		goto out_pernet;
+
+	err = tipc_socket_init();
+	if (err)
+		goto out_socket;
+
+	err = register_pernet_device(&tipc_topsrv_net_ops);
+	if (err)
+		goto out_pernet_topsrv;
 
 	err = tipc_bearer_setup();
 	if (err)
@@ -135,12 +156,14 @@ static int __init tipc_init(void)
 	pr_info("Started in single node mode\n");
 	return 0;
 out_bearer:
-	unregister_pernet_subsys(&tipc_net_ops);
+	unregister_pernet_device(&tipc_topsrv_net_ops);
+out_pernet_topsrv:
+	tipc_socket_stop();
+out_socket:
+	unregister_pernet_device(&tipc_net_ops);
 out_pernet:
 	tipc_unregister_sysctl();
 out_sysctl:
-	tipc_socket_stop();
-out_socket:
 	tipc_netlink_compat_stop();
 out_netlink_compat:
 	tipc_netlink_stop();
@@ -152,10 +175,11 @@ out_netlink:
 static void __exit tipc_exit(void)
 {
 	tipc_bearer_cleanup();
-	unregister_pernet_subsys(&tipc_net_ops);
+	unregister_pernet_device(&tipc_topsrv_net_ops);
+	tipc_socket_stop();
+	unregister_pernet_device(&tipc_net_ops);
 	tipc_netlink_stop();
 	tipc_netlink_compat_stop();
-	tipc_socket_stop();
 	tipc_unregister_sysctl();
 
 	pr_info("Deactivated\n");

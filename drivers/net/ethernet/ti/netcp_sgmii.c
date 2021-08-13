@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * SGMI module initialisation
  *
@@ -6,17 +7,12 @@
  *		Sandeep Paulraj <s-paulraj@ti.com>
  *		Wingman Kwok <w-kwok2@ti.com>
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation version 2.
- *
- * This program is distributed "as is" WITHOUT ANY WARRANTY of any
- * kind, whether express or implied; without even the implied warranty
- * of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #include "netcp.h"
+
+#define SGMII_SRESET_RESET		BIT(0)
+#define SGMII_SRESET_RTRESET		BIT(1)
 
 #define SGMII_REG_STATUS_LOCK		BIT(4)
 #define	SGMII_REG_STATUS_LINK		BIT(0)
@@ -51,10 +47,33 @@ static void sgmii_write_reg_bit(void __iomem *base, int reg, u32 val)
 int netcp_sgmii_reset(void __iomem *sgmii_ofs, int port)
 {
 	/* Soft reset */
-	sgmii_write_reg_bit(sgmii_ofs, SGMII_SRESET_REG(port), 0x1);
-	while (sgmii_read_reg(sgmii_ofs, SGMII_SRESET_REG(port)) != 0x0)
+	sgmii_write_reg_bit(sgmii_ofs, SGMII_SRESET_REG(port),
+			    SGMII_SRESET_RESET);
+
+	while ((sgmii_read_reg(sgmii_ofs, SGMII_SRESET_REG(port)) &
+		SGMII_SRESET_RESET) != 0x0)
 		;
+
 	return 0;
+}
+
+/* port is 0 based */
+bool netcp_sgmii_rtreset(void __iomem *sgmii_ofs, int port, bool set)
+{
+	u32 reg;
+	bool oldval;
+
+	/* Initiate a soft reset */
+	reg = sgmii_read_reg(sgmii_ofs, SGMII_SRESET_REG(port));
+	oldval = (reg & SGMII_SRESET_RTRESET) != 0x0;
+	if (set)
+		reg |= SGMII_SRESET_RTRESET;
+	else
+		reg &= ~SGMII_SRESET_RTRESET;
+	sgmii_write_reg(sgmii_ofs, SGMII_SRESET_REG(port), reg);
+	wmb();
+
+	return oldval;
 }
 
 int netcp_sgmii_get_port_link(void __iomem *sgmii_ofs, int port)

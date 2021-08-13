@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  *  das08_isa.c
  *  comedi driver for DAS08 ISA/PC-104 boards
@@ -6,16 +7,6 @@
  *  Copyright (C) 2000 David A. Schleef <ds@schleef.org>
  *  Copyright (C) 2001,2002,2003 Frank Mori Hess <fmhess@users.sourceforge.net>
  *  Copyright (C) 2004 Salvador E. Tropea <set@users.sf.net> <set@ieee.org>
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
  */
 
 /*
@@ -168,7 +159,7 @@ static const struct das08_board_struct das08_isa_boards[] = {
 static int das08_isa_attach(struct comedi_device *dev,
 			    struct comedi_devconfig *it)
 {
-	const struct das08_board_struct *thisboard = dev->board_ptr;
+	const struct das08_board_struct *board = dev->board_ptr;
 	struct das08_private_struct *devpriv;
 	int ret;
 
@@ -176,7 +167,7 @@ static int das08_isa_attach(struct comedi_device *dev,
 	if (!devpriv)
 		return -ENOMEM;
 
-	ret = comedi_request_region(dev, it->options[0], thisboard->iosize);
+	ret = comedi_request_region(dev, it->options[0], board->iosize);
 	if (ret)
 		return ret;
 

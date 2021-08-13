@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * An access vector table (avtab) is a hash table
  * of access vectors and transition types indexed
@@ -5,7 +6,7 @@
  * table is used to represent the type enforcement
  * tables.
  *
- *  Author : Stephen Smalley, <sds@epoch.ncsc.mil>
+ *  Author : Stephen Smalley, <sds@tycho.nsa.gov>
  */
 
 /* Updated: Frank Mayer <mayerf@tresys.com> and Karl MacMillan <kmacmillan@tresys.com>
@@ -13,9 +14,6 @@
  * 	Added conditional policy language extensions
  *
  * Copyright (C) 2003 Tresys Technology, LLC
- *	This program is free software; you can redistribute it and/or modify
- *	it under the terms of the GNU General Public License as published by
- *	the Free Software Foundation, version 2.
  *
  * Updated: Yuichi Nakamura <ynakam@hitachisoft.jp>
  * 	Tuned number of hash slots for avtab to reduce memory usage
@@ -23,7 +21,7 @@
 #ifndef _SS_AVTAB_H_
 #define _SS_AVTAB_H_
 
-#include <linux/flex_array.h>
+#include "security.h"
 
 struct avtab_key {
 	u16 source_type;	/* source type */
@@ -37,13 +35,43 @@ struct avtab_key {
 #define AVTAB_MEMBER		0x0020
 #define AVTAB_CHANGE		0x0040
 #define AVTAB_TYPE		(AVTAB_TRANSITION | AVTAB_MEMBER | AVTAB_CHANGE)
+/* extended permissions */
+#define AVTAB_XPERMS_ALLOWED	0x0100
+#define AVTAB_XPERMS_AUDITALLOW	0x0200
+#define AVTAB_XPERMS_DONTAUDIT	0x0400
+#define AVTAB_XPERMS		(AVTAB_XPERMS_ALLOWED | \
+				AVTAB_XPERMS_AUDITALLOW | \
+				AVTAB_XPERMS_DONTAUDIT)
 #define AVTAB_ENABLED_OLD   0x80000000 /* reserved for used in cond_avtab */
 #define AVTAB_ENABLED		0x8000 /* reserved for used in cond_avtab */
 	u16 specified;	/* what field is specified */
 };
 
+/*
+ * For operations that require more than the 32 permissions provided by the avc
+ * extended permissions may be used to provide 256 bits of permissions.
+ */
+struct avtab_extended_perms {
+/* These are not flags. All 256 values may be used */
+#define AVTAB_XPERMS_IOCTLFUNCTION	0x01
+#define AVTAB_XPERMS_IOCTLDRIVER	0x02
+	/* extension of the avtab_key specified */
+	u8 specified; /* ioctl, netfilter, ... */
+	/*
+	 * if 256 bits is not adequate as is often the case with ioctls, then
+	 * multiple extended perms may be used and the driver field
+	 * specifies which permissions are included.
+	 */
+	u8 driver;
+	/* 256 bits of permissions */
+	struct extended_perms_data perms;
+};
+
 struct avtab_datum {
-	u32 data; /* access vector or type value */
+	union {
+		u32 data; /* access vector or type value */
+		struct avtab_extended_perms *xperms;
+	} u;
 };
 
 struct avtab_node {
@@ -53,11 +81,10 @@ struct avtab_node {
 };
 
 struct avtab {
-	struct flex_array *htable;
+	struct avtab_node **htable;
 	u32 nel;	/* number of elements */
 	u32 nslot;      /* number of hash slots */
 	u32 mask;       /* mask to compute hash func */
-
 };
 
 int avtab_init(struct avtab *);
@@ -82,9 +109,6 @@ struct avtab_node *avtab_insert_nonunique(struct avtab *h, struct avtab_key *key
 struct avtab_node *avtab_search_node(struct avtab *h, struct avtab_key *key);
 
 struct avtab_node *avtab_search_node_next(struct avtab_node *node, int specified);
-
-void avtab_cache_init(void);
-void avtab_cache_destroy(void);
 
 #define MAX_AVTAB_HASH_BITS 16
 #define MAX_AVTAB_HASH_BUCKETS (1 << MAX_AVTAB_HASH_BITS)

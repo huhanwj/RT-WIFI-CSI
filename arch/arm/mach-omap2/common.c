@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/arch/arm/mach-omap2/common.c
  *
@@ -7,10 +8,6 @@
  * Copyright (C) 2010 Nokia Corporation
  * Tony Lindgren <tony@atomide.com>
  * Added OMAP4 support - Santosh Shilimkar <santosh.shilimkar@ti.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -30,4 +27,5 @@ int __weak omap_secure_ram_reserve_memblock(void)
 void __init omap_reserve(void)
 {
 	omap_secure_ram_reserve_memblock();
+	omap_barrier_reserve_memblock();
 }

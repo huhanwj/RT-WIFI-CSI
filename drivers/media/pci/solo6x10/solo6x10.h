@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Copyright (C) 2010-2013 Bluecherry, LLC <http://www.bluecherrydvr.com>
  *
@@ -6,16 +7,6 @@
  *
  * Additional work by:
  * John Brooks <john.brooks@bluecherry.net>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #ifndef __SOLO6X10_H
@@ -31,11 +22,12 @@
 #include <linux/atomic.h>
 #include <linux/slab.h>
 #include <linux/videodev2.h>
+#include <linux/gpio/driver.h>
 
 #include <media/v4l2-dev.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-ctrls.h>
-#include <media/videobuf2-core.h>
+#include <media/videobuf2-v4l2.h>
 
 #include "solo6x10-regs.h"
 
@@ -135,7 +127,7 @@ struct solo_p2m_dev {
 #define OSD_TEXT_MAX		44
 
 struct solo_vb2_buf {
-	struct vb2_buffer vb;
+	struct vb2_v4l2_buffer vb;
 	struct list_head list;
 };
 
@@ -178,7 +170,6 @@ struct solo_enc_dev {
 	u32			sequence;
 	struct vb2_queue	vidq;
 	struct list_head	vidq_active;
-	void			*alloc_ctx;
 	int			desc_count;
 	int			desc_nelts;
 	struct solo_p2m_desc	*desc_items;
@@ -199,8 +190,11 @@ struct solo_dev {
 	int			nr_ext;
 	u32			irq_mask;
 	u32			motion_mask;
-	spinlock_t		reg_io_lock;
 	struct v4l2_device	v4l2_dev;
+#ifdef CONFIG_GPIOLIB
+	/* GPIO */
+	struct gpio_chip	gpio_dev;
+#endif
 
 	/* tw28xx accounting */
 	u8			tw2865, tw2864, tw2815;
@@ -270,7 +264,6 @@ struct solo_dev {
 
 	/* Buffer handling */
 	struct vb2_queue	vidq;
-	struct vb2_alloc_ctx	*alloc_ctx;
 	u32			sequence;
 	struct task_struct      *kthread;
 	struct mutex		lock;
@@ -281,36 +274,16 @@ struct solo_dev {
 
 static inline u32 solo_reg_read(struct solo_dev *solo_dev, int reg)
 {
-	unsigned long flags;
-	u32 ret;
-	u16 val;
-
-	spin_lock_irqsave(&solo_dev->reg_io_lock, flags);
-
-	ret = readl(solo_dev->reg_base + reg);
-	rmb();
-	pci_read_config_word(solo_dev->pdev, PCI_STATUS, &val);
-	rmb();
-
-	spin_unlock_irqrestore(&solo_dev->reg_io_lock, flags);
-
-	return ret;
+	return readl(solo_dev->reg_base + reg);
 }
 
 static inline void solo_reg_write(struct solo_dev *solo_dev, int reg,
 				  u32 data)
 {
-	unsigned long flags;
 	u16 val;
 
-	spin_lock_irqsave(&solo_dev->reg_io_lock, flags);
-
 	writel(data, solo_dev->reg_base + reg);
-	wmb();
 	pci_read_config_word(solo_dev->pdev, PCI_STATUS, &val);
-	rmb();
-
-	spin_unlock_irqrestore(&solo_dev->reg_io_lock, flags);
 }
 
 static inline void solo_irq_on(struct solo_dev *dev, u32 mask)

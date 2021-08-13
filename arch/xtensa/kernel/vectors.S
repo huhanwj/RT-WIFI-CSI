@@ -205,9 +205,6 @@ ENDPROC(_KernelExceptionVector)
  */
 
 	.section .DoubleExceptionVector.text, "ax"
-	.begin literal_prefix .DoubleExceptionVector
-	.globl _DoubleExceptionVector_WindowUnderflow
-	.globl _DoubleExceptionVector_WindowOverflow
 
 ENTRY(_DoubleExceptionVector)
 
@@ -217,8 +214,12 @@ ENTRY(_DoubleExceptionVector)
 	/* Check for kernel double exception (usually fatal). */
 
 	rsr	a2, ps
-	_bbci.l	a2, PS_UM_BIT, .Lksp
+	_bbsi.l	a2, PS_UM_BIT, 1f
+	j	.Lksp
 
+	.align	4
+	.literal_position
+1:
 	/* Check if we are currently handling a window exception. */
 	/* Note: We don't need to indicate that we enter a critical section. */
 
@@ -304,8 +305,7 @@ _DoubleExceptionVector_WindowUnderflow:
 .Lunrecoverable:
 	rsr	a3, excsave1
 	wsr	a0, excsave1
-	movi	a0, unrecoverable_exception
-	callx0	a0
+	call0	unrecoverable_exception
 
 .Lfixup:/* Check for a fixup handler or if we were in a critical section. */
 
@@ -475,9 +475,9 @@ _DoubleExceptionVector_handle_exception:
 	rotw	-3
 	j	1b
 
-
 ENDPROC(_DoubleExceptionVector)
 
+	.text
 /*
  * Fixup handler for TLB miss in double exception handler for window owerflow.
  * We get here with windowbase set to the window that was being spilled and
@@ -504,6 +504,8 @@ ENDPROC(_DoubleExceptionVector)
  * a2: trashed, original value in EXC_TABLE_DOUBLE_SAVE
  * a3: exctable, original value in excsave1
  */
+
+	.literal_position
 
 ENTRY(window_overflow_restore_a0_fixup)
 
@@ -587,7 +589,6 @@ ENTRY(window_overflow_restore_a0_fixup)
 
 ENDPROC(window_overflow_restore_a0_fixup)
 
-	.end literal_prefix
 /*
  * Debug interrupt vector
  *
@@ -599,7 +600,9 @@ ENDPROC(window_overflow_restore_a0_fixup)
 
 ENTRY(_DebugInterruptVector)
 
-	xsr	a0, SREG_EXCSAVE + XCHAL_DEBUGLEVEL
+	xsr	a3, SREG_EXCSAVE + XCHAL_DEBUGLEVEL
+	s32i	a0, a3, DT_DEBUG_SAVE
+	l32i	a0, a3, DT_DEBUG_EXCEPTION
 	jx	a0
 
 ENDPROC(_DebugInterruptVector)
@@ -627,7 +630,11 @@ ENTRY(_Level\level\()InterruptVector)
 	wsr	a0, excsave2
 	rsr	a0, epc\level
 	wsr	a0, epc1
+	.if	\level <= LOCKLEVEL
 	movi	a0, EXCCAUSE_LEVEL1_INTERRUPT
+	.else
+	movi	a0, EXCCAUSE_MAPPED_NMI
+	.endif
 	wsr	a0, exccause
 	rsr	a0, eps\level
 					# branch to user or kernel vector
@@ -682,11 +689,13 @@ ENDPROC(_WindowOverflow4)
 	.align 4
 _SimulateUserKernelVectorException:
 	addi	a0, a0, (1 << PS_EXCM_BIT)
+#if !XTENSA_FAKE_NMI
 	wsr	a0, ps
+#endif
 	bbsi.l	a0, PS_UM_BIT, 1f	# branch if user mode
-	rsr	a0, excsave2		# restore a0
+	xsr	a0, excsave2		# restore a0
 	j	_KernelExceptionVector	# simulate kernel vector exception
-1:	rsr	a0, excsave2		# restore a0
+1:	xsr	a0, excsave2		# restore a0
 	j	_UserExceptionVector	# simulate user vector exception
 #endif
 

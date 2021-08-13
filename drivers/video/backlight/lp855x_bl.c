@@ -1,18 +1,15 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * TI LP855x Backlight Driver
  *
  *			Copyright (C) 2011 Texas Instruments
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
  */
 
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/i2c.h>
 #include <linux/backlight.h>
+#include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/of.h>
 #include <linux/platform_data/lp855x.h>
@@ -73,6 +70,8 @@ struct lp855x {
 	struct device *dev;
 	struct lp855x_platform_data *pdata;
 	struct pwm_device *pwm;
+	struct regulator *supply;	/* regulator for VDD input */
+	struct regulator *enable;	/* regulator for EN/VDDIO input */
 };
 
 static int lp855x_write_byte(struct lp855x *lp, u8 reg, u8 data)
@@ -245,6 +244,12 @@ static void lp855x_pwm_ctrl(struct lp855x *lp, int br, int max_br)
 			return;
 
 		lp->pwm = pwm;
+
+		/*
+		 * FIXME: pwm_apply_args() should be removed when switching to
+		 * the atomic PWM API.
+		 */
+		pwm_apply_args(pwm);
 	}
 
 	pwm_config(lp->pwm, duty, period);
@@ -257,21 +262,15 @@ static void lp855x_pwm_ctrl(struct lp855x *lp, int br, int max_br)
 static int lp855x_bl_update_status(struct backlight_device *bl)
 {
 	struct lp855x *lp = bl_get_data(bl);
+	int brightness = bl->props.brightness;
 
 	if (bl->props.state & (BL_CORE_SUSPENDED | BL_CORE_FBBLANK))
-		bl->props.brightness = 0;
+		brightness = 0;
 
-	if (lp->mode == PWM_BASED) {
-		int br = bl->props.brightness;
-		int max_br = bl->props.max_brightness;
-
-		lp855x_pwm_ctrl(lp, br, max_br);
-
-	} else if (lp->mode == REGISTER_BASED) {
-		u8 val = bl->props.brightness;
-
-		lp855x_write_byte(lp, lp->cfg->reg_brightness, val);
-	}
+	if (lp->mode == PWM_BASED)
+		lp855x_pwm_ctrl(lp, brightness, bl->props.max_brightness);
+	else if (lp->mode == REGISTER_BASED)
+		lp855x_write_byte(lp, lp->cfg->reg_brightness, (u8)brightness);
 
 	return 0;
 }
@@ -288,6 +287,7 @@ static int lp855x_backlight_register(struct lp855x *lp)
 	struct lp855x_platform_data *pdata = lp->pdata;
 	const char *name = pdata->name ? : DEFAULT_BL_NAME;
 
+	memset(&props, 0, sizeof(props));
 	props.type = BACKLIGHT_PLATFORM;
 	props.max_brightness = MAX_BRIGHTNESS;
 
@@ -370,7 +370,7 @@ static int lp855x_parse_dt(struct lp855x *lp)
 		struct device_node *child;
 		int i = 0;
 
-		rom = devm_kzalloc(dev, sizeof(*rom) * rom_length, GFP_KERNEL);
+		rom = devm_kcalloc(dev, rom_length, sizeof(*rom), GFP_KERNEL);
 		if (!rom)
 			return -ENOMEM;
 
@@ -382,13 +382,6 @@ static int lp855x_parse_dt(struct lp855x *lp)
 
 		pdata->size_program = rom_length;
 		pdata->rom_data = &rom[0];
-	}
-
-	pdata->supply = devm_regulator_get(dev, "power");
-	if (IS_ERR(pdata->supply)) {
-		if (PTR_ERR(pdata->supply) == -EPROBE_DEFER)
-			return -EPROBE_DEFER;
-		pdata->supply = NULL;
 	}
 
 	lp->pdata = pdata;
@@ -431,12 +424,46 @@ static int lp855x_probe(struct i2c_client *cl, const struct i2c_device_id *id)
 	else
 		lp->mode = REGISTER_BASED;
 
-	if (lp->pdata->supply) {
-		ret = regulator_enable(lp->pdata->supply);
+	lp->supply = devm_regulator_get(lp->dev, "power");
+	if (IS_ERR(lp->supply)) {
+		if (PTR_ERR(lp->supply) == -EPROBE_DEFER)
+			return -EPROBE_DEFER;
+		lp->supply = NULL;
+	}
+
+	lp->enable = devm_regulator_get_optional(lp->dev, "enable");
+	if (IS_ERR(lp->enable)) {
+		ret = PTR_ERR(lp->enable);
+		if (ret == -ENODEV) {
+			lp->enable = NULL;
+		} else {
+			if (ret != -EPROBE_DEFER)
+				dev_err(lp->dev, "error getting enable regulator: %d\n",
+					ret);
+			return ret;
+		}
+	}
+
+	if (lp->supply) {
+		ret = regulator_enable(lp->supply);
 		if (ret < 0) {
 			dev_err(&cl->dev, "failed to enable supply: %d\n", ret);
 			return ret;
 		}
+	}
+
+	if (lp->enable) {
+		ret = regulator_enable(lp->enable);
+		if (ret < 0) {
+			dev_err(lp->dev, "failed to enable vddio: %d\n", ret);
+			return ret;
+		}
+
+		/*
+		 * LP8555 datasheet says t_RESPONSE (time between VDDIO and
+		 * I2C) is 1ms.
+		 */
+		usleep_range(1000, 2000);
 	}
 
 	i2c_set_clientdata(cl, lp);
@@ -470,8 +497,8 @@ static int lp855x_remove(struct i2c_client *cl)
 
 	lp->bl->props.brightness = 0;
 	backlight_update_status(lp->bl);
-	if (lp->pdata->supply)
-		regulator_disable(lp->pdata->supply);
+	if (lp->supply)
+		regulator_disable(lp->supply);
 	sysfs_remove_group(&lp->dev->kobj, &lp855x_attr_group);
 
 	return 0;

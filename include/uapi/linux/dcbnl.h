@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  * Copyright (c) 2008-2011, Intel Corporation.
  *
@@ -162,6 +163,16 @@ struct ieee_pfc {
 	__u64	indications[IEEE_8021QAZ_MAX_TCS];
 };
 
+#define IEEE_8021Q_MAX_PRIORITIES 8
+#define DCBX_MAX_BUFFERS  8
+struct dcbnl_buffer {
+	/* priority to buffer mapping */
+	__u8    prio2buffer[IEEE_8021Q_MAX_PRIORITIES];
+	/* buffer size in Bytes */
+	__u32   buffer_size[DCBX_MAX_BUFFERS];
+	__u32   total_size;
+};
+
 /* CEE DCBX std supported values */
 #define CEE_DCBX_MAX_PGS	8
 #define CEE_DCBX_MAX_PRIO	8
@@ -205,10 +216,10 @@ struct cee_pfc {
 #define IEEE_8021QAZ_APP_SEL_STREAM	2
 #define IEEE_8021QAZ_APP_SEL_DGRAM	3
 #define IEEE_8021QAZ_APP_SEL_ANY	4
+#define IEEE_8021QAZ_APP_SEL_DSCP       5
 
 /* This structure contains the IEEE 802.1Qaz APP managed object. This
- * object is also used for the CEE std as well. There is no difference
- * between the objects.
+ * object is also used for the CEE std as well.
  *
  * @selector: protocol identifier type
  * @protocol: protocol of type indicated
@@ -216,13 +227,19 @@ struct cee_pfc {
  *            8-bit 802.1p user priority bitmap for CEE
  *
  * ----
- *  Selector field values
+ *  Selector field values for IEEE 802.1Qaz
  *	0	Reserved
  *	1	Ethertype
  *	2	Well known port number over TCP or SCTP
  *	3	Well known port number over UDP or DCCP
  *	4	Well known port number over TCP, SCTP, UDP, or DCCP
- *	5-7	Reserved
+ *	5	Differentiated Services Code Point (DSCP) value
+ *	6-7	Reserved
+ *
+ *  Selector field values for CEE
+ *	0	Ethertype
+ *	1	Well known port number over TCP or UDP
+ *	2-3	Reserved
  */
 struct dcb_app {
 	__u8	selector;
@@ -400,6 +417,7 @@ enum ieee_attrs {
 	DCB_ATTR_IEEE_MAXRATE,
 	DCB_ATTR_IEEE_QCN,
 	DCB_ATTR_IEEE_QCN_STATS,
+	DCB_ATTR_DCB_BUFFER,
 	__DCB_ATTR_IEEE_MAX
 };
 #define DCB_ATTR_IEEE_MAX (__DCB_ATTR_IEEE_MAX - 1)

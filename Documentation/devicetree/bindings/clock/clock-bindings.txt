@@ -138,9 +138,10 @@ Some platforms may require initial configuration of default parent clocks
 and clock frequencies. Such a configuration can be specified in a device tree
 node through assigned-clocks, assigned-clock-parents and assigned-clock-rates
 properties. The assigned-clock-parents property should contain a list of parent
-clocks in form of phandle and clock specifier pairs, the assigned-clock-parents
-property the list of assigned clock frequency values - corresponding to clocks
-listed in the assigned-clocks property.
+clocks in the form of a phandle and clock specifier pair and the
+assigned-clock-rates property should contain a list of frequencies in Hz. Both
+these properties should correspond to the clocks listed in the assigned-clocks
+property.
 
 To skip setting parent or rate of a clock its corresponding entry should be
 set to 0, or can be omitted if it is not followed by any non-zero entry.
@@ -167,3 +168,19 @@ a shared clock is forbidden.
 
 Configuration of common clocks, which affect multiple consumer devices can
 be similarly specified in the clock provider node.
+
+==Protected clocks==
+
+Some platforms or firmwares may not fully expose all the clocks to the OS, such
+as in situations where those clks are used by drivers running in ARM secure
+execution levels. Such a configuration can be specified in device tree with the
+protected-clocks property in the form of a clock specifier list. This property should
+only be specified in the node that is providing the clocks being protected:
+
+   clock-controller@a000f000 {
+        compatible = "vendor,clk95;
+        reg = <0xa000f000 0x1000>
+        #clocks-cells = <1>;
+        ...
+        protected-clocks = <UART3_CLK>, <SPI5_CLK>;
+   };

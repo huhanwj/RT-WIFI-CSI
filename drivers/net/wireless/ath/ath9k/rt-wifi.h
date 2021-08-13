@@ -38,8 +38,7 @@
 #define RT_WIFI_BEACON_VEN_EXT_SIZE 17  // Size of vendor extension in beacon frame
 #define BEACON_FCS_SIZE 4    		// Size of frame check sequence in byte
 #define RT_WIFI_BEACON_TAG    0xFE
-#define RT_WIFI_BEACON_INTVAL 102400         /* in terms of microsec, default beacon time interval 100 time units
-						where 1TU = 1024 micro-sec */
+#define RT_WIFI_BEACON_INTVAL 102400         /* in terms of microsec, default beacon time interval 100 time units where 1TU = 1024 micro-sec */
 #define RT_WIFI_BEACON_DELAY_OFFSET 60    /* in terms of micro-sec, this value is highly dependent on beacon data rate, 60us for 24Mbps */
 
 #define RT_WIFI_KFIFO_SIZE 2048
@@ -90,7 +89,7 @@ struct rt_wifi_sched{
 	u8 sta_id;
 };
 
-/* rt-wifi function prototype*/
+/* rt-wifi function prototype defined in rt-wifi.c*/
 void ath_rt_wifi_tasklet(struct ath_softc *sc);
 void ath_rt_wifi_ap_start_timer(struct ath_softc *sc, u32 bcon_intval, u32 nexttbtt);
 void ath_rt_wifi_sta_start_timer(struct ath_softc *sc);

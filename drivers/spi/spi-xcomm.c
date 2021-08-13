@@ -1,10 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Analog Devices AD-FMCOMMS1-EBZ board I2C-SPI bridge driver
  *
  * Copyright 2012 Analog Devices Inc.
  * Author: Lars-Peter Clausen <lars@metafoo.de>
- *
- * Licensed under the GPL-2 or later.
  */
 
 #include <linux/kernel.h>
@@ -237,11 +236,11 @@ static const struct i2c_device_id spi_xcomm_ids[] = {
 	{ "spi-xcomm" },
 	{ },
 };
+MODULE_DEVICE_TABLE(i2c, spi_xcomm_ids);
 
 static struct i2c_driver spi_xcomm_driver = {
 	.driver = {
 		.name	= "spi-xcomm",
-		.owner	= THIS_MODULE,
 	},
 	.id_table	= spi_xcomm_ids,
 	.probe		= spi_xcomm_probe,

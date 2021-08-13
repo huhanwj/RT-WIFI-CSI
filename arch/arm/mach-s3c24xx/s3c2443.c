@@ -1,14 +1,9 @@
-/* linux/arch/arm/mach-s3c2443/s3c2443.c
- *
- * Copyright (c) 2007 Simtec Electronics
- *   Ben Dooks <ben@simtec.co.uk>
- *
- * Samsung S3C2443 Mobile CPU support
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
-*/
+// SPDX-License-Identifier: GPL-2.0
+//
+// Copyright (c) 2007 Simtec Electronics
+//   Ben Dooks <ben@simtec.co.uk>
+//
+// Samsung S3C2443 Mobile CPU support
 
 #include <linux/kernel.h>
 #include <linux/types.h>
@@ -41,10 +36,11 @@
 #include <plat/gpio-cfg-helpers.h>
 #include <plat/devs.h>
 #include <plat/cpu.h>
-#include <plat/fb-core.h>
-#include <plat/nand-core.h>
 #include <plat/adc-core.h>
-#include <plat/spi-core.h>
+
+#include "fb-core.h"
+#include "nand-core.h"
+#include "spi-core.h"
 
 static struct map_desc s3c2443_iodesc[] __initdata = {
 	IODESC_ENT(WATCHDOG),

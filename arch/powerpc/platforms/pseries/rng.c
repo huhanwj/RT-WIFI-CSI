@@ -1,10 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright 2013, Michael Ellerman, IBM Corporation.
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version
- * 2 of the License, or (at your option) any later version.
  */
 
 #define pr_fmt(fmt)	"pseries-rng: " fmt
@@ -38,7 +34,7 @@ static __init int rng_init(void)
 
 	pr_info("Registering arch random hook.\n");
 
-	ppc_md.get_random_long = pseries_get_random_long;
+	ppc_md.get_random_seed = pseries_get_random_long;
 
 	return 0;
 }

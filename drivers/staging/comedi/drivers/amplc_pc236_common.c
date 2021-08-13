@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * comedi/drivers/amplc_pc236_common.c
  * Common support code for "amplc_pc236" and "amplc_pci236".
@@ -6,16 +7,6 @@
  *
  * COMEDI - Linux Control and Measurement Device Interface
  * Copyright (C) 2000 David A. Schleef <ds@schleef.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
  */
 
 #include <linux/module.h>
@@ -28,14 +19,14 @@
 
 static void pc236_intr_update(struct comedi_device *dev, bool enable)
 {
-	const struct pc236_board *thisboard = dev->board_ptr;
+	const struct pc236_board *board = dev->board_ptr;
 	struct pc236_private *devpriv = dev->private;
 	unsigned long flags;
 
 	spin_lock_irqsave(&dev->spinlock, flags);
 	devpriv->enable_irq = enable;
-	if (thisboard->intr_update_cb)
-		thisboard->intr_update_cb(dev, enable);
+	if (board->intr_update_cb)
+		board->intr_update_cb(dev, enable);
 	spin_unlock_irqrestore(&dev->spinlock, flags);
 }
 
@@ -48,15 +39,15 @@ static void pc236_intr_update(struct comedi_device *dev, bool enable)
  */
 static bool pc236_intr_check(struct comedi_device *dev)
 {
-	const struct pc236_board *thisboard = dev->board_ptr;
+	const struct pc236_board *board = dev->board_ptr;
 	struct pc236_private *devpriv = dev->private;
 	bool retval = false;
 	unsigned long flags;
 
 	spin_lock_irqsave(&dev->spinlock, flags);
 	if (devpriv->enable_irq) {
-		if (thisboard->intr_chk_clr_cb)
-			retval = thisboard->intr_chk_clr_cb(dev);
+		if (board->intr_chk_clr_cb)
+			retval = board->intr_chk_clr_cb(dev);
 		else
 			retval = true;
 	}
