@@ -15,21 +15,15 @@ All of our testing is done on x86 platforms, we don't know whether this is compa
 ### System Requirements
 Same as Atheros CSI Tool, i.e. Ubuntu 14.04 with kernel version lower than or equal to 4.1.10.
 ### Installation of required packages
-Some packages are need for successful running of "makemenuconfig"
+Some packages are needed (may still have missing packages when compiling, add the missing packages yourself depending on what error you encounter)
 
-`sudo apt-get install libncurses5-dev libncursesw5-dev`
-
-Install some packages for compiling the Hostapd
-
-`sudo apt-get install libnl-dev libssl-dev`
+`sudo apt-get install build-essential bison bc flex libncurses5-dev libncursesw5-dev libssl-dev`
 
 Then, run the following command in this folder
 
 `make menuconfig`
 
-The default config is configured installing both RT-WiFi and CSI Tool, you may check it manually.
-
-**Update:** If you want to save time for cancelling RT-WiFi functioning, just replace `.config` with `.config.nortwifi` without spending time finding the RT-WiFi part hidden in ath9k support in menuconfig.
+The default config is configured installing CSI Tool without RT-WIFI, you may check it manually.
 
 Next compile the kernel modules
 ```
@@ -79,9 +73,3 @@ https://github.com/citysu/csiread
 
 Do NOT put the folder under some folder with space in its name like *Untitled folder*, it will result in a **make error** during the `sudo make modules_install`.
 
-## Current Progress
-
-**Build Succeeded!** with `uname -r` displaying *4.1.10+*.
-
-* CSI Tool works fine without RT-WiFi, can correctly collect and readable CSI packets.
-* RT-WiFi functionality will conflict with CSI receiving, fix needed.
