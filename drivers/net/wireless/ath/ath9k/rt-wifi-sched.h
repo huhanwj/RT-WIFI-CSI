@@ -45,7 +45,7 @@ static u16 RT_WIFI_STAS_NUM = ARRAY_SIZE(RT_WIFI_STAS);
 
 /* Local ID of a station in the RT_WIFI_STAS array. For example, the local ID
  * is 0x01 for i5 machine in the given RT_WIFI_STAS array. */
-#define RT_WIFI_LOCAL_ID 0xFF
+#define RT_WIFI_LOCAL_ID 0x00
 
 /* RT-WiFi TDMA schedule */
 static struct rt_wifi_sched RT_WIFI_PRE_CONFIG_SCHED[] = {
