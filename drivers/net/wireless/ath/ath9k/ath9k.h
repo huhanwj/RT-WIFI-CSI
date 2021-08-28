@@ -22,6 +22,7 @@
 #include <linux/interrupt.h>
 #include <linux/leds.h>
 #include <linux/completion.h>
+#include <linux/kfifo.h>
 #include <linux/time.h>
 #include <linux/hw_random.h>
 
@@ -29,6 +30,9 @@
 #include "debug.h"
 #include "mci.h"
 #include "dfs.h"
+#ifdef  CONFIG_RT_WIFI
+#include "rt-wifi.h"
+#endif
 
 struct ath_node;
 struct ath_vif;
@@ -88,8 +92,8 @@ int ath_descdma_setup(struct ath_softc *sc, struct ath_descdma *dd,
 		(_l) &= ((_sz) - 1);		\
 	} while (0)
 
-#define ATH_RXBUF               512
-#define ATH_TXBUF               512
+#define ATH_RXBUF               2048	
+#define ATH_TXBUF               2048
 #define ATH_TXBUF_RESERVE       5
 #define ATH_TXMAXTRY            13
 #define ATH_MAX_SW_RETRIES      30
@@ -228,6 +232,9 @@ struct ath_buf {
 	dma_addr_t bf_buf_addr;	/* physical addr of data buffer, for DMA */
 	struct ieee80211_tx_rate rates[4];
 	struct ath_buf_state bf_state;
+#ifdef CONFIG_RT_WIFI
+	u32 qnum;
+#endif
 };
 
 struct ath_atx_tid {
@@ -1087,6 +1094,33 @@ struct ath_softc {
 #ifdef CONFIG_ATH9K_HWRNG
 	u32 rng_last;
 	struct task_struct *rng_task;
+#endif
+#ifdef CONFIG_RT_WIFI
+	int rt_wifi_enable;
+	struct ath_gen_timer *rt_wifi_timer;
+
+	struct kfifo rt_wifi_fifo;
+	struct list_head rt_wifi_q;
+	spinlock_t rt_wifi_q_lock;
+	spinlock_t rt_wifi_fifo_lock;
+	int rt_wifi_qcount;
+
+	int rt_wifi_join;
+
+	int rt_wifi_slot_num;
+
+	int rt_wifi_slot_len;		/* in micro sec */
+	u16 rt_wifi_superframe_size;	/* in terms of time slot */
+	int rt_wifi_asn;
+	u64 rt_wifi_cur_tsf;
+	struct rt_wifi_sched *rt_wifi_superframe;
+
+	/* for AP only */
+	u64 rt_wifi_bc_tsf;		/* broadcast tsf */
+	u64 rt_wifi_bc_asn;		/* broadcast asn */
+	u64 rt_wifi_virt_start_tsf;
+	u32 rt_wifi_beacon_bfaddr;
+	u32 rt_wifi_beacon_bc;
 #endif
 };
 
