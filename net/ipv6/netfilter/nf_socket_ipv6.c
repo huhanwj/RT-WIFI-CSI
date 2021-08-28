@@ -1,7 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2007-2008 BalaBit IT Ltd.
  * Author: Krisztian Kovacs
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #include <linux/module.h>
@@ -12,6 +16,7 @@
 #include <net/sock.h>
 #include <net/inet_sock.h>
 #include <net/inet6_hashtables.h>
+#include <net/netfilter/ipv6/nf_defrag_ipv6.h>
 #include <net/netfilter/nf_socket.h>
 #if IS_ENABLED(CONFIG_NF_CONNTRACK)
 #include <net/netfilter/nf_conntrack.h>
@@ -111,11 +116,9 @@ struct sock *nf_sk_lookup_slow_v6(struct net *net, const struct sk_buff *skb,
 	}
 
 	if (tproto == IPPROTO_UDP || tproto == IPPROTO_TCP) {
-		struct tcphdr _hdr;
-		struct udphdr *hp;
+		struct udphdr _hdr, *hp;
 
-		hp = skb_header_pointer(skb, thoff, tproto == IPPROTO_UDP ?
-					sizeof(*hp) : sizeof(_hdr), &_hdr);
+		hp = skb_header_pointer(skb, thoff, sizeof(_hdr), &_hdr);
 		if (hp == NULL)
 			return NULL;
 

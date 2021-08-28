@@ -14,7 +14,6 @@
 #include <linux/err.h>
 #include <linux/io.h>
 #include <linux/module.h>
-#include <linux/mod_devicetable.h>
 #include <linux/platform_device.h>
 #include <linux/ptp_clock_kernel.h>
 #include <linux/types.h>
@@ -248,8 +247,11 @@ static int ptp_dte_probe(struct platform_device *pdev)
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	ptp_dte->regs = devm_ioremap_resource(dev, res);
-	if (IS_ERR(ptp_dte->regs))
+	if (IS_ERR(ptp_dte->regs)) {
+		dev_err(dev,
+			"%s: io remap failed\n", __func__);
 		return PTR_ERR(ptp_dte->regs);
+	}
 
 	spin_lock_init(&ptp_dte->lock);
 
@@ -285,7 +287,8 @@ static int ptp_dte_remove(struct platform_device *pdev)
 #ifdef CONFIG_PM_SLEEP
 static int ptp_dte_suspend(struct device *dev)
 {
-	struct ptp_dte *ptp_dte = dev_get_drvdata(dev);
+	struct platform_device *pdev = to_platform_device(dev);
+	struct ptp_dte *ptp_dte = platform_get_drvdata(pdev);
 	u8 i;
 
 	for (i = 0; i < DTE_NUM_REGS_TO_RESTORE; i++) {
@@ -301,7 +304,8 @@ static int ptp_dte_suspend(struct device *dev)
 
 static int ptp_dte_resume(struct device *dev)
 {
-	struct ptp_dte *ptp_dte = dev_get_drvdata(dev);
+	struct platform_device *pdev = to_platform_device(dev);
+	struct ptp_dte *ptp_dte = platform_get_drvdata(pdev);
 	u8 i;
 
 	for (i = 0; i < DTE_NUM_REGS_TO_RESTORE; i++) {

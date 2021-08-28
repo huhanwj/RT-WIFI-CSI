@@ -6,6 +6,20 @@
 #include <linux/earlycpio.h>
 #include <linux/initrd.h>
 
+#define native_rdmsr(msr, val1, val2)			\
+do {							\
+	u64 __val = __rdmsr((msr));			\
+	(void)((val1) = (u32)__val);			\
+	(void)((val2) = (u32)(__val >> 32));		\
+} while (0)
+
+#define native_wrmsr(msr, low, high)			\
+	__wrmsr(msr, low, high)
+
+#define native_wrmsrl(msr, val)				\
+	__wrmsr((msr), (u32)((u64)(val)),		\
+		       (u32)((u64)(val) >> 32))
+
 struct ucode_patch {
 	struct list_head plist;
 	void *data;		/* Intel uses only this one */
@@ -23,13 +37,7 @@ struct cpu_signature {
 
 struct device;
 
-enum ucode_state {
-	UCODE_OK	= 0,
-	UCODE_NEW,
-	UCODE_UPDATED,
-	UCODE_NFOUND,
-	UCODE_ERROR,
-};
+enum ucode_state { UCODE_ERROR, UCODE_OK, UCODE_NFOUND };
 
 struct microcode_ops {
 	enum ucode_state (*request_microcode_user) (int cpu,
@@ -46,7 +54,7 @@ struct microcode_ops {
 	 * are being called.
 	 * See also the "Synchronization" section in microcode_core.c.
 	 */
-	enum ucode_state (*apply_microcode) (int cpu);
+	int (*apply_microcode) (int cpu);
 	int (*collect_cpu_info) (int cpu, struct cpu_signature *csig);
 };
 

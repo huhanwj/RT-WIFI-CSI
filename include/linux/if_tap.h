@@ -4,7 +4,7 @@
 
 #if IS_ENABLED(CONFIG_TAP)
 struct socket *tap_get_socket(struct file *);
-struct ptr_ring *tap_get_ptr_ring(struct file *file);
+struct skb_array *tap_get_skb_array(struct file *file);
 #else
 #include <linux/err.h>
 #include <linux/errno.h>
@@ -14,7 +14,7 @@ static inline struct socket *tap_get_socket(struct file *f)
 {
 	return ERR_PTR(-EINVAL);
 }
-static inline struct ptr_ring *tap_get_ptr_ring(struct file *f)
+static inline struct skb_array *tap_get_skb_array(struct file *f)
 {
 	return ERR_PTR(-EINVAL);
 }
@@ -62,6 +62,7 @@ struct tap_dev {
 struct tap_queue {
 	struct sock sk;
 	struct socket sock;
+	struct socket_wq wq;
 	int vnet_hdr_sz;
 	struct tap_dev __rcu *tap;
 	struct file *file;
@@ -69,7 +70,7 @@ struct tap_queue {
 	u16 queue_index;
 	bool enabled;
 	struct list_head next;
-	struct ptr_ring ring;
+	struct skb_array skb_array;
 };
 
 rx_handler_result_t tap_handle_frame(struct sk_buff **pskb);

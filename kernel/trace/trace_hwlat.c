@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * trace_hwlatdetect.c - A simple Hardware Latency detector.
  *
@@ -36,6 +35,9 @@
  *
  * Includes useful feedback from Clark Williams <clark@redhat.com>
  *
+ * This file is licensed under the terms of the GNU General Public
+ * License version 2. This program is licensed "as is" without any
+ * warranty of any kind, whether express or implied.
  */
 #include <linux/kthread.h>
 #include <linux/tracefs.h>
@@ -150,7 +152,7 @@ void trace_hwlat_callback(bool enter)
 		if (enter)
 			nmi_ts_start = time_get();
 		else
-			nmi_total_ts += time_get() - nmi_ts_start;
+			nmi_total_ts = time_get() - nmi_ts_start;
 	}
 
 	if (enter)
@@ -256,8 +258,6 @@ static int get_sample(void)
 		/* Keep a running maximum ever recorded hardware latency */
 		if (sample > tr->max_latency)
 			tr->max_latency = sample;
-		if (outer_sample > tr->max_latency)
-			tr->max_latency = outer_sample;
 	}
 
 out:
@@ -279,7 +279,7 @@ static void move_to_next_cpu(void)
 	 * of this thread, than stop migrating for the duration
 	 * of the current test.
 	 */
-	if (!cpumask_equal(current_mask, current->cpus_ptr))
+	if (!cpumask_equal(current_mask, &current->cpus_allowed))
 		goto disable;
 
 	get_online_cpus();
@@ -353,9 +353,6 @@ static int start_kthread(struct trace_array *tr)
 	struct cpumask *current_mask = &save_cpumask;
 	struct task_struct *kthread;
 	int next_cpu;
-
-	if (WARN_ON(hwlat_kthread))
-		return 0;
 
 	/* Just pick the first CPU on first iteration */
 	current_mask = &save_cpumask;

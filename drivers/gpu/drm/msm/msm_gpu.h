@@ -1,14 +1,24 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #ifndef __MSM_GPU_H__
 #define __MSM_GPU_H__
 
 #include <linux/clk.h>
-#include <linux/interconnect.h>
 #include <linux/regulator/consumer.h>
 
 #include "msm_drv.h"
@@ -17,10 +27,10 @@
 
 struct msm_gem_submit;
 struct msm_gpu_perfcntr;
-struct msm_gpu_state;
 
 struct msm_gpu_config {
 	const char *ioname;
+	const char *irqname;
 	uint64_t va_start;
 	uint64_t va_end;
 	unsigned int nr_rings;
@@ -52,18 +62,10 @@ struct msm_gpu_funcs {
 	struct msm_ringbuffer *(*active_ring)(struct msm_gpu *gpu);
 	void (*recover)(struct msm_gpu *gpu);
 	void (*destroy)(struct msm_gpu *gpu);
-#if defined(CONFIG_DEBUG_FS) || defined(CONFIG_DEV_COREDUMP)
+#ifdef CONFIG_DEBUG_FS
 	/* show GPU status in debugfs: */
-	void (*show)(struct msm_gpu *gpu, struct msm_gpu_state *state,
-			struct drm_printer *p);
-	/* for generation specific debugfs: */
-	int (*debugfs_init)(struct msm_gpu *gpu, struct drm_minor *minor);
+	void (*show)(struct msm_gpu *gpu, struct seq_file *m);
 #endif
-	unsigned long (*gpu_busy)(struct msm_gpu *gpu);
-	struct msm_gpu_state *(*gpu_state_get)(struct msm_gpu *gpu);
-	int (*gpu_state_put)(struct msm_gpu_state *state);
-	unsigned long (*gpu_get_freq)(struct msm_gpu *gpu);
-	void (*gpu_set_freq)(struct msm_gpu *gpu, unsigned long freq);
 };
 
 struct msm_gpu {
@@ -93,9 +95,6 @@ struct msm_gpu {
 	/* does gpu need hw_init? */
 	bool needs_hw_init;
 
-	/* number of GPU hangs (for all contexts) */
-	int global_faults;
-
 	/* worker for handling active-list retiring: */
 	struct work_struct retire_work;
 
@@ -106,12 +105,15 @@ struct msm_gpu {
 
 	/* Power Control: */
 	struct regulator *gpu_reg, *gpu_cx;
-	struct clk_bulk_data *grp_clks;
+	struct clk **grp_clks;
 	int nr_clocks;
 	struct clk *ebi1_clk, *core_clk, *rbbmtimer_clk;
-	uint32_t fast_rate;
+	uint32_t fast_rate, bus_freq;
 
-	struct icc_path *icc_path;
+#ifdef DOWNSTREAM_CONFIG_MSM_BUS_SCALING
+	struct msm_bus_scale_pdata *bus_scale_table;
+	uint32_t bsc;
+#endif
 
 	/* Hang and Inactivity Detection:
 	 */
@@ -123,14 +125,6 @@ struct msm_gpu {
 	struct work_struct recover_work;
 
 	struct drm_gem_object *memptrs_bo;
-
-	struct {
-		struct devfreq *devfreq;
-		u64 busy_cycles;
-		ktime_t time;
-	} devfreq;
-
-	struct msm_gpu_state *crashstate;
 };
 
 /* It turns out that all targets use the same ringbuffer size */
@@ -175,40 +169,6 @@ struct msm_gpu_submitqueue {
 	int faults;
 	struct list_head node;
 	struct kref ref;
-};
-
-struct msm_gpu_state_bo {
-	u64 iova;
-	size_t size;
-	void *data;
-	bool encoded;
-};
-
-struct msm_gpu_state {
-	struct kref ref;
-	struct timespec64 time;
-
-	struct {
-		u64 iova;
-		u32 fence;
-		u32 seqno;
-		u32 rptr;
-		u32 wptr;
-		void *data;
-		int data_size;
-		bool encoded;
-	} ring[MSM_GPU_MAX_RINGS];
-
-	int nr_registers;
-	u32 *registers;
-
-	u32 rbbm_status;
-
-	char *comm;
-	char *cmd;
-
-	int nr_bos;
-	struct msm_gpu_state_bo *bos;
 };
 
 static inline void gpu_write(struct msm_gpu *gpu, u32 reg, u32 data)
@@ -262,7 +222,6 @@ static inline void gpu_write64(struct msm_gpu *gpu, u32 lo, u32 hi, u64 val)
 
 int msm_gpu_pm_suspend(struct msm_gpu *gpu);
 int msm_gpu_pm_resume(struct msm_gpu *gpu);
-void msm_gpu_resume_devfreq(struct msm_gpu *gpu);
 
 int msm_gpu_hw_init(struct msm_gpu *gpu);
 
@@ -289,34 +248,6 @@ static inline void msm_submitqueue_put(struct msm_gpu_submitqueue *queue)
 {
 	if (queue)
 		kref_put(&queue->ref, msm_submitqueue_destroy);
-}
-
-static inline struct msm_gpu_state *msm_gpu_crashstate_get(struct msm_gpu *gpu)
-{
-	struct msm_gpu_state *state = NULL;
-
-	mutex_lock(&gpu->dev->struct_mutex);
-
-	if (gpu->crashstate) {
-		kref_get(&gpu->crashstate->ref);
-		state = gpu->crashstate;
-	}
-
-	mutex_unlock(&gpu->dev->struct_mutex);
-
-	return state;
-}
-
-static inline void msm_gpu_crashstate_put(struct msm_gpu *gpu)
-{
-	mutex_lock(&gpu->dev->struct_mutex);
-
-	if (gpu->crashstate) {
-		if (gpu->funcs->gpu_state_put(gpu->crashstate))
-			gpu->crashstate = NULL;
-	}
-
-	mutex_unlock(&gpu->dev->struct_mutex);
 }
 
 #endif /* __MSM_GPU_H__ */

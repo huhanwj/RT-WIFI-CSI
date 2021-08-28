@@ -1,11 +1,4 @@
-.. Permission is granted to copy, distribute and/or modify this
-.. document under the terms of the GNU Free Documentation License,
-.. Version 1.1 or any later version published by the Free Software
-.. Foundation, with no Invariant Sections, no Front-Cover Texts
-.. and no Back-Cover Texts. A copy of the license is included at
-.. Documentation/media/uapi/fdl-appendix.rst.
-..
-.. TODO: replace it to GFDL-1.1-or-later WITH no-invariant-sections
+.. -*- coding: utf-8; mode: rst -*-
 
 ******************************
 Multi-planar format structures
@@ -19,7 +12,6 @@ array of struct :c:type:`v4l2_plane_pix_format` structures,
 describing all planes of that format.
 
 
-
 .. tabularcolumns:: |p{4.4cm}|p{4.4cm}|p{8.7cm}|
 
 .. c:type:: v4l2_plane_pix_format
@@ -31,20 +23,7 @@ describing all planes of that format.
 
     * - __u32
       - ``sizeimage``
-      - Maximum size in bytes required for image data in this plane,
-	set by the driver. When the image consists of variable length
-	compressed data this is the number of bytes required by the
-	codec to support the worst-case compression scenario.
-
-	The driver will set the value for uncompressed images.
-
-	Clients are allowed to set the sizeimage field for variable length
-	compressed data flagged with ``V4L2_FMT_FLAG_COMPRESSED`` at
-	:ref:`VIDIOC_ENUM_FMT`, but the driver may ignore it and set the
-	value itself, or it may modify the provided value based on
-	alignment requirements or minimum/maximum size requirements.
-	If the client wants to leave this to the driver, then it should
-	set sizeimage to 0.
+      - Maximum size in bytes required for image data in this plane.
     * - __u32
       - ``bytesperline``
       - Distance in bytes between the leftmost pixels in two adjacent
@@ -54,10 +33,6 @@ describing all planes of that format.
       - Reserved for future extensions. Should be zeroed by drivers and
 	applications.
 
-
-.. raw:: latex
-
-    \small
 
 .. tabularcolumns:: |p{4.4cm}|p{5.6cm}|p{7.5cm}|
 
@@ -80,14 +55,12 @@ describing all planes of that format.
       - ``pixelformat``
       - The pixel format. Both single- and multi-planar four character
 	codes can be used.
-    * - __u32
+    * - enum :c:type:`v4l2_field`
       - ``field``
-      - Field order, from enum :c:type:`v4l2_field`.
-        See struct :c:type:`v4l2_pix_format`.
-    * - __u32
+      - See struct :c:type:`v4l2_pix_format`.
+    * - enum :c:type:`v4l2_colorspace`
       - ``colorspace``
-      - Colorspace encoding, from enum :c:type:`v4l2_colorspace`.
-        See struct :c:type:`v4l2_pix_format`.
+      - See struct :c:type:`v4l2_pix_format`.
     * - struct :c:type:`v4l2_plane_pix_format`
       - ``plane_fmt[VIDEO_MAX_PLANES]``
       - An array of structures describing format of each plane this pixel
@@ -100,37 +73,27 @@ describing all planes of that format.
     * - __u8
       - ``flags``
       - Flags set by the application or driver, see :ref:`format-flags`.
-    * - :cspan:`2` union { (anonymous)
-    * - __u8
+    * - enum :c:type:`v4l2_ycbcr_encoding`
       - ``ycbcr_enc``
-      - Y'CbCr encoding, from enum :c:type:`v4l2_ycbcr_encoding`.
-        This information supplements the ``colorspace`` and must be set by
+      - This information supplements the ``colorspace`` and must be set by
 	the driver for capture streams and by the application for output
 	streams, see :ref:`colorspaces`.
-    * - __u8
+    * - enum :c:type:`v4l2_hsv_encoding`
       - ``hsv_enc``
-      - HSV encoding, from enum :c:type:`v4l2_hsv_encoding`.
-        This information supplements the ``colorspace`` and must be set by
+      - This information supplements the ``colorspace`` and must be set by
 	the driver for capture streams and by the application for output
 	streams, see :ref:`colorspaces`.
-    * - :cspan:`2` }
-    * - __u8
+    * - enum :c:type:`v4l2_quantization`
       - ``quantization``
-      - Quantization range, from enum :c:type:`v4l2_quantization`.
-        This information supplements the ``colorspace`` and must be set by
+      - This information supplements the ``colorspace`` and must be set by
 	the driver for capture streams and by the application for output
 	streams, see :ref:`colorspaces`.
-    * - __u8
+    * - enum :c:type:`v4l2_xfer_func`
       - ``xfer_func``
-      - Transfer function, from enum :c:type:`v4l2_xfer_func`.
-        This information supplements the ``colorspace`` and must be set by
+      - This information supplements the ``colorspace`` and must be set by
 	the driver for capture streams and by the application for output
 	streams, see :ref:`colorspaces`.
     * - __u8
       - ``reserved[7]``
       - Reserved for future extensions. Should be zeroed by drivers and
 	applications.
-
-.. raw:: latex
-
-    \normalsize

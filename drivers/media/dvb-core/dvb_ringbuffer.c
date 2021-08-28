@@ -29,7 +29,7 @@
 #include <linux/string.h>
 #include <linux/uaccess.h>
 
-#include <media/dvb_ringbuffer.h>
+#include "dvb_ringbuffer.h"
 
 #define PKT_READY 0
 #define PKT_DISPOSED 1
@@ -55,7 +55,7 @@ int dvb_ringbuffer_empty(struct dvb_ringbuffer *rbuf)
 	 * this pairs with smp_store_release() in dvb_ringbuffer_write(),
 	 * dvb_ringbuffer_write_user(), or dvb_ringbuffer_reset()
 	 *
-	 * for memory barriers also see Documentation/core-api/circular-buffers.rst
+	 * for memory barriers also see Documentation/circular-buffers.txt
 	 */
 	return (rbuf->pread == smp_load_acquire(&rbuf->pwrite));
 }

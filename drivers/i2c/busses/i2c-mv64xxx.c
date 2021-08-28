@@ -135,7 +135,6 @@ struct mv64xxx_i2c_data {
 	u32			freq_m;
 	u32			freq_n;
 	struct clk              *clk;
-	struct clk              *reg_clk;
 	wait_queue_head_t	waitq;
 	spinlock_t		lock;
 	struct i2c_msg		*msg;
@@ -845,16 +844,12 @@ mv64xxx_of_config(struct mv64xxx_i2c_data *drv_data,
 	 */
 	if (of_device_is_compatible(np, "marvell,mv78230-i2c")) {
 		drv_data->offload_enabled = true;
-		/* The delay is only needed in standard mode (100kHz) */
-		if (bus_freq <= 100000)
-			drv_data->errata_delay = true;
+		drv_data->errata_delay = true;
 	}
 
 	if (of_device_is_compatible(np, "marvell,mv78230-a0-i2c")) {
 		drv_data->offload_enabled = false;
-		/* The delay is only needed in standard mode (100kHz) */
-		if (bus_freq <= 100000)
-			drv_data->errata_delay = true;
+		drv_data->errata_delay = true;
 	}
 
 	if (of_device_is_compatible(np, "allwinner,sun6i-a31-i2c"))
@@ -899,19 +894,12 @@ mv64xxx_i2c_probe(struct platform_device *pd)
 	init_waitqueue_head(&drv_data->waitq);
 	spin_lock_init(&drv_data->lock);
 
-	/* Not all platforms have clocks */
+	/* Not all platforms have a clk */
 	drv_data->clk = devm_clk_get(&pd->dev, NULL);
 	if (IS_ERR(drv_data->clk) && PTR_ERR(drv_data->clk) == -EPROBE_DEFER)
 		return -EPROBE_DEFER;
 	if (!IS_ERR(drv_data->clk))
 		clk_prepare_enable(drv_data->clk);
-
-	drv_data->reg_clk = devm_clk_get(&pd->dev, "reg");
-	if (IS_ERR(drv_data->reg_clk) &&
-	    PTR_ERR(drv_data->reg_clk) == -EPROBE_DEFER)
-		return -EPROBE_DEFER;
-	if (!IS_ERR(drv_data->reg_clk))
-		clk_prepare_enable(drv_data->reg_clk);
 
 	drv_data->irq = platform_get_irq(pd, 0);
 
@@ -962,8 +950,9 @@ exit_free_irq:
 exit_reset:
 	reset_control_assert(drv_data->rstc);
 exit_clk:
-	clk_disable_unprepare(drv_data->reg_clk);
-	clk_disable_unprepare(drv_data->clk);
+	/* Not all platforms have a clk */
+	if (!IS_ERR(drv_data->clk))
+		clk_disable_unprepare(drv_data->clk);
 
 	return rc;
 }
@@ -976,8 +965,9 @@ mv64xxx_i2c_remove(struct platform_device *dev)
 	i2c_del_adapter(&drv_data->adapter);
 	free_irq(drv_data->irq, drv_data);
 	reset_control_assert(drv_data->rstc);
-	clk_disable_unprepare(drv_data->reg_clk);
-	clk_disable_unprepare(drv_data->clk);
+	/* Not all platforms have a clk */
+	if (!IS_ERR(drv_data->clk))
+		clk_disable_unprepare(drv_data->clk);
 
 	return 0;
 }

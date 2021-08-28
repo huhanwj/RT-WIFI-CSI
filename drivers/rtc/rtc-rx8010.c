@@ -1,9 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Driver for the Epson RTC module RX-8010 SJ
  *
  * Copyright(C) Timesys Corporation 2015
  * Copyright(C) General Electric Company 2015
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
 
 #include <linux/bcd.h>
@@ -134,7 +138,7 @@ static int rx8010_get_time(struct device *dev, struct rtc_time *dt)
 	dt->tm_year = bcd2bin(date[RX8010_YEAR - RX8010_SEC]) + 100;
 	dt->tm_wday = ffs(date[RX8010_WDAY - RX8010_SEC] & 0x7f);
 
-	return 0;
+	return rtc_valid_tm(dt);
 }
 
 static int rx8010_set_time(struct device *dev, struct rtc_time *dt)
@@ -433,7 +437,7 @@ static struct rtc_class_ops rx8010_rtc_ops = {
 static int rx8010_probe(struct i2c_client *client,
 			const struct i2c_device_id *id)
 {
-	struct i2c_adapter *adapter = client->adapter;
+	struct i2c_adapter *adapter = to_i2c_adapter(client->dev.parent);
 	struct rx8010_data *rx8010;
 	int err = 0;
 

@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 /*
  * Copyright (c) 2017 BayLibre, SAS.
  * Author: Neil Armstrong <narmstrong@baylibre.com>
  * Author: Jerome Brunet <jbrunet@baylibre.com>
+ *
+ * SPDX-License-Identifier: (GPL-2.0+ OR MIT)
  */
 
 /dts-v1/;
@@ -13,11 +14,10 @@
 
 / {
 	compatible = "libretech,cc", "amlogic,s905x", "amlogic,meson-gxl";
-	model = "Libre Computer Board AML-S905X-CC";
+	model = "Libre Technology CC";
 
 	aliases {
 		serial0 = &uart_AO;
-		ethernet0 = &ethmac;
 	};
 
 	chosen {
@@ -72,18 +72,6 @@
 		reg = <0x0 0x0 0x0 0x80000000>;
 	};
 
-	hdmi_5v: regulator-hdmi-5v {
-		compatible = "regulator-fixed";
-
-		regulator-name = "HDMI_5V";
-		regulator-min-microvolt = <5000000>;
-		regulator-max-microvolt = <5000000>;
-
-		gpio = <&gpio GPIOH_3 GPIO_ACTIVE_HIGH>;
-		enable-active-high;
-		regulator-always-on;
-	};
-
 	vcc_3v3: regulator-vcc_3v3 {
 		compatible = "regulator-fixed";
 		regulator-name = "VCC_3V3";
@@ -115,13 +103,11 @@
 		regulator-max-microvolt = <1800000>;
 	};
 
-	/* This is provided by LDOs on the eMMC daugther card */
 	vddio_boot: regulator-vddio_boot {
 		compatible = "regulator-fixed";
 		regulator-name = "VDDIO_BOOT";
-		regulator-min-microvolt = <1800000>;
-		regulator-max-microvolt = <1800000>;
-		vin-supply = <&vcc_3v3>;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
 	};
 };
 
@@ -157,7 +143,6 @@
 	status = "okay";
 	pinctrl-0 = <&hdmi_hpd_pins>, <&hdmi_i2c_pins>;
 	pinctrl-names = "default";
-	hdmi-supply = <&hdmi_5v>;
 };
 
 &hdmi_tx_tmds_port {
@@ -166,7 +151,7 @@
 	};
 };
 
-&gpio_ao {
+&pinctrl_aobus {
 	gpio-line-names = "UART TX",
 			  "UART RX",
 			  "Blue LED",
@@ -181,7 +166,7 @@
 			  "7J1 Header Pin15";
 };
 
-&gpio {
+&pinctrl_periphs {
 	gpio-line-names = /* Bank GPIOZ */
 			  "", "", "", "", "", "", "",
 			  "", "", "", "", "", "", "",
@@ -237,10 +222,14 @@
 
 	bus-width = <4>;
 	cap-sd-highspeed;
-	max-frequency = <50000000>;
+	sd-uhs-sdr12;
+	sd-uhs-sdr25;
+	sd-uhs-sdr50;
+	max-frequency = <100000000>;
 	disable-wp;
 
-	cd-gpios = <&gpio CARD_6 GPIO_ACTIVE_LOW>;
+	cd-gpios = <&gpio CARD_6 GPIO_ACTIVE_HIGH>;
+	cd-inverted;
 
 	vmmc-supply = <&vcc_3v3>;
 	vqmmc-supply = <&vcc_card>;
@@ -255,9 +244,9 @@
 
 	bus-width = <8>;
 	cap-mmc-highspeed;
-	mmc-ddr-1_8v;
-	mmc-hs200-1_8v;
-	max-frequency = <200000000>;
+	mmc-ddr-3_3v;
+	max-frequency = <50000000>;
+	non-removable;
 	disable-wp;
 
 	mmc-pwrseq = <&emmc_pwrseq>;
@@ -269,16 +258,4 @@
 	status = "okay";
 	pinctrl-0 = <&uart_ao_a_pins>;
 	pinctrl-names = "default";
-};
-
-&usb0 {
-	status = "okay";
-};
-
-&usb2_phy0 {
-	/*
-	 * even though the schematics don't show it:
-	 * HDMI_5V is also used as supply for the USB VBUS.
-	 */
-	phy-supply = <&hdmi_5v>;
 };

@@ -18,6 +18,11 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * General Public License for more details.
  *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110,
+ * USA
+ *
  * The full GNU General Public License is included in this distribution
  * in the file called COPYING.
  *
@@ -196,10 +201,6 @@ int iwl_mvm_update_quotas(struct iwl_mvm *mvm,
 	bool send = false;
 
 	lockdep_assert_held(&mvm->mutex);
-
-	if (fw_has_capa(&mvm->fw->ucode_capa,
-			IWL_UCODE_TLV_CAPA_DYNAMIC_QUOTA))
-		return 0;
 
 	/* update all upon completion */
 	if (test_bit(IWL_MVM_STATUS_IN_HW_RESTART, &mvm->status))

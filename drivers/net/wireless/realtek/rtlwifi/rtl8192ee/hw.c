@@ -1,5 +1,27 @@
-// SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2009-2014  Realtek Corporation.*/
+/******************************************************************************
+ *
+ * Copyright(c) 2009-2014  Realtek Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * The full GNU General Public License is included in this distribution in the
+ * file called LICENSE.
+ *
+ * Contact Information:
+ * wlanfae <wlanfae@realtek.com>
+ * Realtek Corporation, No. 2, Innovation Road II, Hsinchu Science Park,
+ * Hsinchu 300, Taiwan.
+ *
+ * Larry Finger <Larry.Finger@lwfinger.net>
+ *
+ *****************************************************************************/
 
 #include "../wifi.h"
 #include "../efuse.h"
@@ -1672,16 +1694,17 @@ void rtl92ee_card_disable(struct ieee80211_hw *hw)
 }
 
 void rtl92ee_interrupt_recognized(struct ieee80211_hw *hw,
-				  struct rtl_int *intvec)
+				  u32 *p_inta, u32 *p_intb,
+				  u32 *p_intc, u32 *p_intd)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	struct rtl_pci *rtlpci = rtl_pcidev(rtl_pcipriv(hw));
 
-	intvec->inta = rtl_read_dword(rtlpriv, ISR) & rtlpci->irq_mask[0];
-	rtl_write_dword(rtlpriv, ISR, intvec->inta);
+	*p_inta = rtl_read_dword(rtlpriv, ISR) & rtlpci->irq_mask[0];
+	rtl_write_dword(rtlpriv, ISR, *p_inta);
 
-	intvec->intb = rtl_read_dword(rtlpriv, REG_HISRE) & rtlpci->irq_mask[1];
-	rtl_write_dword(rtlpriv, REG_HISRE, intvec->intb);
+	*p_intb = rtl_read_dword(rtlpriv, REG_HISRE) & rtlpci->irq_mask[1];
+	rtl_write_dword(rtlpriv, REG_HISRE, *p_intb);
 }
 
 void rtl92ee_set_beacon_related_registers(struct ieee80211_hw *hw)
@@ -2552,11 +2575,11 @@ void rtl92ee_read_bt_coexist_info_from_hwpg(struct ieee80211_hw *hw,
 			rtlpriv->btcoexist.btc_info.btcoexist = 0;
 
 		rtlpriv->btcoexist.btc_info.bt_type = BT_RTL8192E;
-		rtlpriv->btcoexist.btc_info.ant_num = ANT_X2;
+		rtlpriv->btcoexist.btc_info.ant_num = ANT_TOTAL_X2;
 	} else {
 		rtlpriv->btcoexist.btc_info.btcoexist = 1;
 		rtlpriv->btcoexist.btc_info.bt_type = BT_RTL8192E;
-		rtlpriv->btcoexist.btc_info.ant_num = ANT_X1;
+		rtlpriv->btcoexist.btc_info.ant_num = ANT_TOTAL_X1;
 	}
 }
 

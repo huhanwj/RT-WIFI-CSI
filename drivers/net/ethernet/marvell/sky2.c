@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * New driver for Marvell Yukon 2 chipset.
  * Based on earlier sk98lin, and skge driver.
@@ -8,6 +7,19 @@
  * those should be done at higher levels.
  *
  * Copyright (C) 2005 Stephen Hemminger <shemminger@osdl.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -34,7 +46,6 @@
 #include <linux/mii.h>
 #include <linux/of_device.h>
 #include <linux/of_net.h>
-#include <linux/dmi.h>
 
 #include <asm/irq.h>
 
@@ -82,7 +93,7 @@ static int copybreak __read_mostly = 128;
 module_param(copybreak, int, 0);
 MODULE_PARM_DESC(copybreak, "Receive copy threshold");
 
-static int disable_msi = -1;
+static int disable_msi = 0;
 module_param(disable_msi, int, 0);
 MODULE_PARM_DESC(disable_msi, "Disable Message Signaled Interrupt (MSI)");
 
@@ -1127,6 +1138,9 @@ static inline void sky2_put_idx(struct sky2_hw *hw, unsigned q, u16 idx)
 	/* Make sure write' to descriptors are complete before we tell hardware */
 	wmb();
 	sky2_write16(hw, Y2_QADDR(q, PREF_UNIT_PUT_IDX), idx);
+
+	/* Synchronize I/O on since next processor may write to tail */
+	mmiowb();
 }
 
 
@@ -1339,6 +1353,7 @@ stopped:
 
 	/* reset the Rx prefetch unit */
 	sky2_write32(hw, Y2_QADDR(rxq, PREF_UNIT_CTRL), PREF_UNIT_RST_SET);
+	mmiowb();
 }
 
 /* Clean out receive buffer area, assumes receiver hardware stopped */
@@ -2470,11 +2485,13 @@ static struct sk_buff *receive_copy(struct sky2_port *sky2,
 		skb->ip_summed = re->skb->ip_summed;
 		skb->csum = re->skb->csum;
 		skb_copy_hash(skb, re->skb);
-		__vlan_hwaccel_copy_tag(skb, re->skb);
+		skb->vlan_proto = re->skb->vlan_proto;
+		skb->vlan_tci = re->skb->vlan_tci;
 
 		pci_dma_sync_single_for_device(sky2->hw->pdev, re->data_addr,
 					       length, PCI_DMA_FROMDEVICE);
-		__vlan_hwaccel_clear_tag(re->skb);
+		re->skb->vlan_proto = 0;
+		re->skb->vlan_tci = 0;
 		skb_clear_hash(re->skb);
 		re->skb->ip_summed = CHECKSUM_NONE;
 		skb_put(skb, length);
@@ -4270,7 +4287,7 @@ static int sky2_vpd_wait(const struct sky2_hw *hw, int cap, u16 busy)
 			dev_err(&hw->pdev->dev, "VPD cycle timed out\n");
 			return -ETIMEDOUT;
 		}
-		msleep(1);
+		mdelay(1);
 	}
 
 	return 0;
@@ -4606,7 +4623,19 @@ static int sky2_debug_show(struct seq_file *seq, void *v)
 	napi_enable(&hw->napi);
 	return 0;
 }
-DEFINE_SHOW_ATTRIBUTE(sky2_debug);
+
+static int sky2_debug_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, sky2_debug_show, inode->i_private);
+}
+
+static const struct file_operations sky2_debug_fops = {
+	.owner		= THIS_MODULE,
+	.open		= sky2_debug_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
 
 /*
  * Use network device events to create/remove/rename
@@ -4638,7 +4667,7 @@ static int sky2_device_event(struct notifier_block *unused,
 		break;
 
 	case NETDEV_UP:
-		sky2->debugfs = debugfs_create_file(dev->name, 0444,
+		sky2->debugfs = debugfs_create_file(dev->name, S_IRUGO,
 						    sky2_debug, dev,
 						    &sky2_debug_fops);
 		if (IS_ERR(sky2->debugfs))
@@ -4792,8 +4821,8 @@ static struct net_device *sky2_init_netdev(struct sky2_hw *hw, unsigned port,
 	 * 2) from internal registers set by bootloader
 	 */
 	iap = of_get_mac_address(hw->pdev->dev.of_node);
-	if (!IS_ERR(iap))
-		ether_addr_copy(dev->dev_addr, iap);
+	if (iap)
+		memcpy(dev->dev_addr, iap, ETH_ALEN);
 	else
 		memcpy_fromio(dev->dev_addr, hw->regs + B2_MAC_1 + port * 8,
 			      ETH_ALEN);
@@ -4901,45 +4930,6 @@ static const char *sky2_name(u8 chipid, char *buf, int sz)
 		snprintf(buf, sz, "(chip %#x)", chipid);
 	return buf;
 }
-
-static const struct dmi_system_id msi_blacklist[] = {
-	{
-		.ident = "Dell Inspiron 1545",
-		.matches = {
-			DMI_MATCH(DMI_SYS_VENDOR, "Dell Inc."),
-			DMI_MATCH(DMI_PRODUCT_NAME, "Inspiron 1545"),
-		},
-	},
-	{
-		.ident = "Gateway P-79",
-		.matches = {
-			DMI_MATCH(DMI_SYS_VENDOR, "Gateway"),
-			DMI_MATCH(DMI_PRODUCT_NAME, "P-79"),
-		},
-	},
-	{
-		.ident = "ASUS P5W DH Deluxe",
-		.matches = {
-			DMI_MATCH(DMI_SYS_VENDOR, "ASUSTEK COMPUTER INC"),
-			DMI_MATCH(DMI_PRODUCT_NAME, "P5W DH Deluxe"),
-		},
-	},
-	{
-		.ident = "ASUS P6T",
-		.matches = {
-			DMI_MATCH(DMI_BOARD_VENDOR, "ASUSTeK Computer INC."),
-			DMI_MATCH(DMI_BOARD_NAME, "P6T"),
-		},
-	},
-	{
-		.ident = "ASUS P6X",
-		.matches = {
-			DMI_MATCH(DMI_BOARD_VENDOR, "ASUSTeK Computer INC."),
-			DMI_MATCH(DMI_BOARD_NAME, "P6X"),
-		},
-	},
-	{}
-};
 
 static int sky2_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
@@ -5052,9 +5042,6 @@ static int sky2_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto err_out_free_pci;
 	}
 
-	if (disable_msi == -1)
-		disable_msi = !!dmi_check_system(msi_blacklist);
-
 	if (!disable_msi && pci_enable_msi(pdev) == 0) {
 		err = sky2_test_msi(hw);
 		if (err) {
@@ -5100,7 +5087,7 @@ static int sky2_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	INIT_WORK(&hw->restart_work, sky2_restart);
 
 	pci_set_drvdata(pdev, hw);
-	pdev->d3_delay = 300;
+	pdev->d3_delay = 150;
 
 	return 0;
 
@@ -5174,7 +5161,8 @@ static void sky2_remove(struct pci_dev *pdev)
 
 static int sky2_suspend(struct device *dev)
 {
-	struct sky2_hw *hw = dev_get_drvdata(dev);
+	struct pci_dev *pdev = to_pci_dev(dev);
+	struct sky2_hw *hw = pci_get_drvdata(pdev);
 	int i;
 
 	if (!hw)

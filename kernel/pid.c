@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Generic pidhash and scalable, time-bounded PID allocator
  *
@@ -32,30 +31,17 @@
 #include <linux/slab.h>
 #include <linux/init.h>
 #include <linux/rculist.h>
-#include <linux/memblock.h>
+#include <linux/bootmem.h>
+#include <linux/hash.h>
 #include <linux/pid_namespace.h>
 #include <linux/init_task.h>
 #include <linux/syscalls.h>
 #include <linux/proc_ns.h>
-#include <linux/refcount.h>
-#include <linux/anon_inodes.h>
-#include <linux/sched/signal.h>
+#include <linux/proc_fs.h>
 #include <linux/sched/task.h>
 #include <linux/idr.h>
 
-struct pid init_struct_pid = {
-	.count		= REFCOUNT_INIT(1),
-	.tasks		= {
-		{ .first = NULL },
-		{ .first = NULL },
-		{ .first = NULL },
-	},
-	.level		= 0,
-	.numbers	= { {
-		.nr		= 0,
-		.ns		= &init_pid_ns,
-	}, }
-};
+struct pid init_struct_pid = INIT_STRUCT_PID;
 
 int pid_max = PID_MAX_DEFAULT;
 
@@ -72,7 +58,7 @@ int pid_max_max = PID_MAX_LIMIT;
  */
 struct pid_namespace init_pid_ns = {
 	.kref = KREF_INIT(2),
-	.idr = IDR_INIT(init_pid_ns.idr),
+	.idr = IDR_INIT,
 	.pid_allocated = PIDNS_ADDING,
 	.level = 0,
 	.child_reaper = &init_task,
@@ -108,7 +94,8 @@ void put_pid(struct pid *pid)
 		return;
 
 	ns = pid->numbers[pid->level].ns;
-	if (refcount_dec_and_test(&pid->count)) {
+	if ((atomic_read(&pid->count) == 1) ||
+	     atomic_dec_and_test(&pid->count)) {
 		kmem_cache_free(ns->pid_cachep, pid);
 		put_pid_ns(ns);
 	}
@@ -196,7 +183,7 @@ struct pid *alloc_pid(struct pid_namespace *ns)
 		idr_preload_end();
 
 		if (nr < 0) {
-			retval = (nr == -ENOSPC) ? -EAGAIN : nr;
+			retval = nr;
 			goto out_free;
 		}
 
@@ -211,11 +198,9 @@ struct pid *alloc_pid(struct pid_namespace *ns)
 	}
 
 	get_pid_ns(ns);
-	refcount_set(&pid->count, 1);
+	atomic_set(&pid->count, 1);
 	for (type = 0; type < PIDTYPE_MAX; ++type)
 		INIT_HLIST_HEAD(&pid->tasks[type]);
-
-	init_waitqueue_head(&pid->wait_pidfd);
 
 	upid = pid->numbers + ns->level;
 	spin_lock_irq(&pidmap_lock);
@@ -236,10 +221,8 @@ out_unlock:
 
 out_free:
 	spin_lock_irq(&pidmap_lock);
-	while (++i <= ns->level) {
-		upid = pid->numbers + i;
-		idr_remove(&upid->ns->idr, upid->nr);
-	}
+	while (++i <= ns->level)
+		idr_remove(&ns->idr, (pid->numbers + i)->nr);
 
 	/* On failure to allocate the first pid, reset the state */
 	if (ns->pid_allocated == PIDNS_ADDING)
@@ -270,33 +253,27 @@ struct pid *find_vpid(int nr)
 }
 EXPORT_SYMBOL_GPL(find_vpid);
 
-static struct pid **task_pid_ptr(struct task_struct *task, enum pid_type type)
-{
-	return (type == PIDTYPE_PID) ?
-		&task->thread_pid :
-		&task->signal->pids[type];
-}
-
 /*
  * attach_pid() must be called with the tasklist_lock write-held.
  */
 void attach_pid(struct task_struct *task, enum pid_type type)
 {
-	struct pid *pid = *task_pid_ptr(task, type);
-	hlist_add_head_rcu(&task->pid_links[type], &pid->tasks[type]);
+	struct pid_link *link = &task->pids[type];
+	hlist_add_head_rcu(&link->node, &link->pid->tasks[type]);
 }
 
 static void __change_pid(struct task_struct *task, enum pid_type type,
 			struct pid *new)
 {
-	struct pid **pid_ptr = task_pid_ptr(task, type);
+	struct pid_link *link;
 	struct pid *pid;
 	int tmp;
 
-	pid = *pid_ptr;
+	link = &task->pids[type];
+	pid = link->pid;
 
-	hlist_del_rcu(&task->pid_links[type]);
-	*pid_ptr = new;
+	hlist_del_rcu(&link->node);
+	link->pid = new;
 
 	for (tmp = PIDTYPE_MAX; --tmp >= 0; )
 		if (!hlist_empty(&pid->tasks[tmp]))
@@ -321,9 +298,8 @@ void change_pid(struct task_struct *task, enum pid_type type,
 void transfer_pid(struct task_struct *old, struct task_struct *new,
 			   enum pid_type type)
 {
-	if (type == PIDTYPE_PID)
-		new->thread_pid = old->thread_pid;
-	hlist_replace_rcu(&old->pid_links[type], &new->pid_links[type]);
+	new->pids[type].pid = old->pids[type].pid;
+	hlist_replace_rcu(&old->pids[type].node, &new->pids[type].node);
 }
 
 struct task_struct *pid_task(struct pid *pid, enum pid_type type)
@@ -334,7 +310,7 @@ struct task_struct *pid_task(struct pid *pid, enum pid_type type)
 		first = rcu_dereference_check(hlist_first_rcu(&pid->tasks[type]),
 					      lockdep_tasklist_lock_is_held());
 		if (first)
-			result = hlist_entry(first, struct task_struct, pid_links[(type)]);
+			result = hlist_entry(first, struct task_struct, pids[(type)].node);
 	}
 	return result;
 }
@@ -355,24 +331,13 @@ struct task_struct *find_task_by_vpid(pid_t vnr)
 	return find_task_by_pid_ns(vnr, task_active_pid_ns(current));
 }
 
-struct task_struct *find_get_task_by_vpid(pid_t nr)
-{
-	struct task_struct *task;
-
-	rcu_read_lock();
-	task = find_task_by_vpid(nr);
-	if (task)
-		get_task_struct(task);
-	rcu_read_unlock();
-
-	return task;
-}
-
 struct pid *get_task_pid(struct task_struct *task, enum pid_type type)
 {
 	struct pid *pid;
 	rcu_read_lock();
-	pid = get_pid(rcu_dereference(*task_pid_ptr(task, type)));
+	if (type != PIDTYPE_PID)
+		task = task->group_leader;
+	pid = get_pid(rcu_dereference(task->pids[type].pid));
 	rcu_read_unlock();
 	return pid;
 }
@@ -430,8 +395,15 @@ pid_t __task_pid_nr_ns(struct task_struct *task, enum pid_type type,
 	rcu_read_lock();
 	if (!ns)
 		ns = task_active_pid_ns(current);
-	if (likely(pid_alive(task)))
-		nr = pid_nr_ns(rcu_dereference(*task_pid_ptr(task, type)), ns);
+	if (likely(pid_alive(task))) {
+		if (type != PIDTYPE_PID) {
+			if (type == __PIDTYPE_TGID)
+				type = PIDTYPE_PID;
+
+			task = task->group_leader;
+		}
+		nr = pid_nr_ns(rcu_dereference(task->pids[type].pid), ns);
+	}
 	rcu_read_unlock();
 
 	return nr;
@@ -452,73 +424,6 @@ EXPORT_SYMBOL_GPL(task_active_pid_ns);
 struct pid *find_ge_pid(int nr, struct pid_namespace *ns)
 {
 	return idr_get_next(&ns->idr, &nr);
-}
-
-/**
- * pidfd_create() - Create a new pid file descriptor.
- *
- * @pid:  struct pid that the pidfd will reference
- *
- * This creates a new pid file descriptor with the O_CLOEXEC flag set.
- *
- * Note, that this function can only be called after the fd table has
- * been unshared to avoid leaking the pidfd to the new process.
- *
- * Return: On success, a cloexec pidfd is returned.
- *         On error, a negative errno number will be returned.
- */
-static int pidfd_create(struct pid *pid)
-{
-	int fd;
-
-	fd = anon_inode_getfd("[pidfd]", &pidfd_fops, get_pid(pid),
-			      O_RDWR | O_CLOEXEC);
-	if (fd < 0)
-		put_pid(pid);
-
-	return fd;
-}
-
-/**
- * pidfd_open() - Open new pid file descriptor.
- *
- * @pid:   pid for which to retrieve a pidfd
- * @flags: flags to pass
- *
- * This creates a new pid file descriptor with the O_CLOEXEC flag set for
- * the process identified by @pid. Currently, the process identified by
- * @pid must be a thread-group leader. This restriction currently exists
- * for all aspects of pidfds including pidfd creation (CLONE_PIDFD cannot
- * be used with CLONE_THREAD) and pidfd polling (only supports thread group
- * leaders).
- *
- * Return: On success, a cloexec pidfd is returned.
- *         On error, a negative errno number will be returned.
- */
-SYSCALL_DEFINE2(pidfd_open, pid_t, pid, unsigned int, flags)
-{
-	int fd, ret;
-	struct pid *p;
-
-	if (flags)
-		return -EINVAL;
-
-	if (pid <= 0)
-		return -EINVAL;
-
-	p = find_get_pid(pid);
-	if (!p)
-		return -ESRCH;
-
-	ret = 0;
-	rcu_read_lock();
-	if (!pid_task(p, PIDTYPE_TGID))
-		ret = -EINVAL;
-	rcu_read_unlock();
-
-	fd = ret ?: pidfd_create(p);
-	put_pid(p);
-	return fd;
 }
 
 void __init pid_idr_init(void)

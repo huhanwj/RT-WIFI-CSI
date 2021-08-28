@@ -31,8 +31,8 @@
 #define __DCN_CALCS_H__
 
 #include "bw_fixed.h"
+#include "display_clock.h"
 #include "../dml/display_mode_lib.h"
-
 
 struct dc;
 struct dc_state;
@@ -349,10 +349,10 @@ struct dcn_bw_internal_vars {
 	float dst_x_after_scaler;
 	float dst_y_after_scaler;
 	float time_calc;
-	float v_update_offset[number_of_planes_minus_one + 1][2];
+	float v_update_offset[number_of_planes_minus_one + 1];
 	float total_repeater_delay;
-	float v_update_width[number_of_planes_minus_one + 1][2];
-	float v_ready_offset[number_of_planes_minus_one + 1][2];
+	float v_update_width[number_of_planes_minus_one + 1];
+	float v_ready_offset[number_of_planes_minus_one + 1];
 	float time_setup;
 	float extra_latency;
 	float maximum_vstartup;
@@ -504,10 +504,10 @@ struct dcn_bw_internal_vars {
 	float prefetch_mode;
 	float dstx_after_scaler;
 	float dsty_after_scaler;
-	float v_update_offset_pix[number_of_planes_minus_one + 1];
+	float v_update_offset_pix;
 	float total_repeater_delay_time;
-	float v_update_width_pix[number_of_planes_minus_one + 1];
-	float v_ready_offset_pix[number_of_planes_minus_one + 1];
+	float v_update_width_pix;
+	float v_ready_offset_pix;
 	float t_setup;
 	float t_wait;
 	float bandwidth_available_for_immediate_flip;
@@ -621,18 +621,15 @@ extern const struct dcn_ip_params dcn10_ip_defaults;
 
 bool dcn_validate_bandwidth(
 		struct dc *dc,
-		struct dc_state *context,
-		bool fast_validate);
+		struct dc_state *context);
 
 unsigned int dcn_find_dcfclk_suits_all(
 	const struct dc *dc,
-	struct dc_clocks *clocks);
+	struct clocks_value *clocks);
 
 void dcn_bw_update_from_pplib(struct dc *dc);
 void dcn_bw_notify_pplib_of_wm_ranges(struct dc *dc);
 void dcn_bw_sync_calcs_and_dml(struct dc *dc);
-
-enum source_macro_tile_size swizzle_mode_to_macro_tile_size(enum swizzle_mode_values sw_mode);
 
 #endif /* __DCN_CALCS_H__ */
 

@@ -1,14 +1,18 @@
-// SPDX-License-Identifier: GPL-1.0+
-//
-// Copyright (c) 2008 Simtec Electronics
-//	http://armlinux.simtec.co.uk/
-//	Ben Dooks <ben@simtec.co.uk>, <ben-linux@fluff.org>
-//
-// Samsung ADC device core
+/* arch/arm/plat-samsung/adc.c
+ *
+ * Copyright (c) 2008 Simtec Electronics
+ *	http://armlinux.simtec.co.uk/
+ *	Ben Dooks <ben@simtec.co.uk>, <ben-linux@fluff.org>
+ *
+ * Samsung ADC device core
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License.
+*/
 
 #include <linux/module.h>
 #include <linux/kernel.h>
-#include <linux/mod_devicetable.h>
 #include <linux/platform_device.h>
 #include <linux/sched.h>
 #include <linux/list.h>
@@ -414,7 +418,8 @@ static int s3c_adc_remove(struct platform_device *pdev)
 #ifdef CONFIG_PM
 static int s3c_adc_suspend(struct device *dev)
 {
-	struct adc_device *adc = dev_get_drvdata(dev);
+	struct platform_device *pdev = to_platform_device(dev);
+	struct adc_device *adc = platform_get_drvdata(pdev);
 	unsigned long flags;
 	u32 con;
 

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  ebtable_nat
  *
@@ -10,7 +9,6 @@
  */
 
 #include <linux/netfilter_bridge/ebtables.h>
-#include <uapi/linux/netfilter_bridge.h>
 #include <linux/module.h>
 
 #define NAT_VALID_HOOKS ((1 << NF_BR_PRE_ROUTING) | (1 << NF_BR_LOCAL_OUT) | \

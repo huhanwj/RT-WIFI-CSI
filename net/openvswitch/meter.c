@@ -1,6 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017 Nicira, Inc.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of version 2 of the GNU General Public
+ * License as published by the Free Software Foundation.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -124,7 +127,7 @@ static int ovs_meter_cmd_reply_stats(struct sk_buff *reply, u32 meter_id,
 			      OVS_METER_ATTR_PAD))
 		goto error;
 
-	nla = nla_nest_start_noflag(reply, OVS_METER_ATTR_BANDS);
+	nla = nla_nest_start(reply, OVS_METER_ATTR_BANDS);
 	if (!nla)
 		goto error;
 
@@ -133,7 +136,7 @@ static int ovs_meter_cmd_reply_stats(struct sk_buff *reply, u32 meter_id,
 	for (i = 0; i < meter->n_bands; ++i, ++band) {
 		struct nlattr *band_nla;
 
-		band_nla = nla_nest_start_noflag(reply, OVS_BAND_ATTR_UNSPEC);
+		band_nla = nla_nest_start(reply, OVS_BAND_ATTR_UNSPEC);
 		if (!band_nla || nla_put(reply, OVS_BAND_ATTR_STATS,
 					 sizeof(struct ovs_flow_stats),
 					 &band->stats))
@@ -163,11 +166,11 @@ static int ovs_meter_cmd_features(struct sk_buff *skb, struct genl_info *info)
 	    nla_put_u32(reply, OVS_METER_ATTR_MAX_BANDS, DP_MAX_BANDS))
 		goto nla_put_failure;
 
-	nla = nla_nest_start_noflag(reply, OVS_METER_ATTR_BANDS);
+	nla = nla_nest_start(reply, OVS_METER_ATTR_BANDS);
 	if (!nla)
 		goto nla_put_failure;
 
-	band_nla = nla_nest_start_noflag(reply, OVS_BAND_ATTR_UNSPEC);
+	band_nla = nla_nest_start(reply, OVS_BAND_ATTR_UNSPEC);
 	if (!band_nla)
 		goto nla_put_failure;
 	/* Currently only DROP band type is supported. */
@@ -203,11 +206,11 @@ static struct dp_meter *dp_meter_create(struct nlattr **a)
 			return ERR_PTR(-EINVAL);
 
 	/* Allocate and set up the meter before locking anything. */
-	meter = kzalloc(struct_size(meter, bands, n_bands), GFP_KERNEL);
+	meter = kzalloc(n_bands * sizeof(struct dp_meter_band) +
+			sizeof(*meter), GFP_KERNEL);
 	if (!meter)
 		return ERR_PTR(-ENOMEM);
 
-	meter->id = nla_get_u32(a[OVS_METER_ATTR_ID]);
 	meter->used = div_u64(ktime_get_ns(), 1000 * 1000);
 	meter->kbps = a[OVS_METER_ATTR_KBPS] ? 1 : 0;
 	meter->keep_stats = !a[OVS_METER_ATTR_CLEAR];
@@ -224,9 +227,9 @@ static struct dp_meter *dp_meter_create(struct nlattr **a)
 		struct nlattr *attr[OVS_BAND_ATTR_MAX + 1];
 		u32 band_max_delta_t;
 
-		err = nla_parse_deprecated((struct nlattr **)&attr,
-					   OVS_BAND_ATTR_MAX, nla_data(nla),
-					   nla_len(nla), band_policy, NULL);
+		err = nla_parse((struct nlattr **)&attr, OVS_BAND_ATTR_MAX,
+				nla_data(nla), nla_len(nla), band_policy,
+				NULL);
 		if (err)
 			goto exit_free_meter;
 
@@ -239,20 +242,14 @@ static struct dp_meter *dp_meter_create(struct nlattr **a)
 
 		band->type = nla_get_u32(attr[OVS_BAND_ATTR_TYPE]);
 		band->rate = nla_get_u32(attr[OVS_BAND_ATTR_RATE]);
-		if (band->rate == 0) {
-			err = -EINVAL;
-			goto exit_free_meter;
-		}
-
 		band->burst_size = nla_get_u32(attr[OVS_BAND_ATTR_BURST]);
 		/* Figure out max delta_t that is enough to fill any bucket.
 		 * Keep max_delta_t size to the bucket units:
 		 * pkts => 1/1000 packets, kilobits => bits.
-		 *
-		 * Start with a full bucket.
 		 */
-		band->bucket = (band->burst_size + band->rate) * 1000;
-		band_max_delta_t = band->bucket / band->rate;
+		band_max_delta_t = (band->burst_size + band->rate) * 1000;
+		/* Start with a full bucket. */
+		band->bucket = band_max_delta_t;
 		if (band_max_delta_t > meter->max_delta_t)
 			meter->max_delta_t = band_max_delta_t;
 		band++;
@@ -277,10 +274,6 @@ static int ovs_meter_cmd_set(struct sk_buff *skb, struct genl_info *info)
 	u32 meter_id;
 	bool failed;
 
-	if (!a[OVS_METER_ATTR_ID]) {
-		return -ENODEV;
-	}
-
 	meter = dp_meter_create(a);
 	if (IS_ERR_OR_NULL(meter))
 		return PTR_ERR(meter);
@@ -295,6 +288,11 @@ static int ovs_meter_cmd_set(struct sk_buff *skb, struct genl_info *info)
 	ovs_lock();
 	dp = get_dp(sock_net(skb->sk), ovs_header->dp_ifindex);
 	if (!dp) {
+		err = -ENODEV;
+		goto exit_unlock;
+	}
+
+	if (!a[OVS_METER_ATTR_ID]) {
 		err = -ENODEV;
 		goto exit_unlock;
 	}
@@ -490,7 +488,7 @@ bool ovs_meter_execute(struct datapath *dp, struct sk_buff *skb,
 		long long int max_bucket_size;
 
 		band = &meter->bands[i];
-		max_bucket_size = (band->burst_size + band->rate) * 1000LL;
+		max_bucket_size = (band->burst_size + band->rate) * 1000;
 
 		band->bucket += delta_ms * band->rate;
 		if (band->bucket > max_bucket_size)
@@ -523,27 +521,27 @@ bool ovs_meter_execute(struct datapath *dp, struct sk_buff *skb,
 
 static struct genl_ops dp_meter_genl_ops[] = {
 	{ .cmd = OVS_METER_CMD_FEATURES,
-		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags = 0,		  /* OK for unprivileged users. */
+		.policy = meter_policy,
 		.doit = ovs_meter_cmd_features
 	},
 	{ .cmd = OVS_METER_CMD_SET,
-		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags = GENL_ADMIN_PERM, /* Requires CAP_NET_ADMIN
 					   *  privilege.
 					   */
+		.policy = meter_policy,
 		.doit = ovs_meter_cmd_set,
 	},
 	{ .cmd = OVS_METER_CMD_GET,
-		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags = 0,		  /* OK for unprivileged users. */
+		.policy = meter_policy,
 		.doit = ovs_meter_cmd_get,
 	},
 	{ .cmd = OVS_METER_CMD_DEL,
-		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags = GENL_ADMIN_PERM, /* Requires CAP_NET_ADMIN
 					   *  privilege.
 					   */
+		.policy = meter_policy,
 		.doit = ovs_meter_cmd_del
 	},
 };
@@ -557,7 +555,6 @@ struct genl_family dp_meter_genl_family __ro_after_init = {
 	.name = OVS_METER_FAMILY,
 	.version = OVS_METER_VERSION,
 	.maxattr = OVS_METER_ATTR_MAX,
-	.policy = meter_policy,
 	.netnsok = true,
 	.parallel_ops = true,
 	.ops = dp_meter_genl_ops,

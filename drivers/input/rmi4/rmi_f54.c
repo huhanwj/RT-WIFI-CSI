@@ -1,7 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2012-2015 Synaptics Incorporated
  * Copyright (C) 2016 Zodiac Inflight Innovations
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
  */
 
 #include <linux/kernel.h>
@@ -359,7 +362,7 @@ static const struct vb2_ops rmi_f54_queue_ops = {
 static const struct vb2_queue rmi_f54_queue = {
 	.type = V4L2_BUF_TYPE_VIDEO_CAPTURE,
 	.io_modes = VB2_MMAP | VB2_USERPTR | VB2_DMABUF | VB2_READ,
-	.buf_struct_size = sizeof(struct vb2_v4l2_buffer),
+	.buf_struct_size = sizeof(struct vb2_buffer),
 	.ops = &rmi_f54_queue_ops,
 	.mem_ops = &vb2_vmalloc_memops,
 	.timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC,
@@ -453,15 +456,25 @@ static int rmi_f54_vidioc_fmt(struct file *file, void *priv,
 static int rmi_f54_vidioc_enum_fmt(struct file *file, void *priv,
 				   struct v4l2_fmtdesc *fmt)
 {
-	struct f54_data *f54 = video_drvdata(file);
-
 	if (fmt->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
 		return -EINVAL;
 
-	if (fmt->index)
-		return -EINVAL;
+	switch (fmt->index) {
+	case 0:
+		fmt->pixelformat = V4L2_TCH_FMT_DELTA_TD16;
+		break;
 
-	fmt->pixelformat = f54->format.pixelformat;
+	case 1:
+		fmt->pixelformat = V4L2_TCH_FMT_DELTA_TD08;
+		break;
+
+	case 2:
+		fmt->pixelformat = V4L2_TCH_FMT_TU16;
+		break;
+
+	default:
+		return -EINVAL;
+	}
 
 	return 0;
 }
@@ -597,11 +610,16 @@ error:
 	mutex_unlock(&f54->data_mutex);
 }
 
+static int rmi_f54_attention(struct rmi_function *fn, unsigned long *irqbits)
+{
+	return 0;
+}
+
 static int rmi_f54_config(struct rmi_function *fn)
 {
 	struct rmi_driver *drv = fn->rmi_dev->driver;
 
-	drv->clear_irq_bits(fn->rmi_dev, fn->irq_mask);
+	drv->set_irq_bits(fn->rmi_dev, fn->irq_mask);
 
 	return 0;
 }
@@ -667,7 +685,7 @@ static int rmi_f54_probe(struct rmi_function *fn)
 	rx = f54->num_rx_electrodes;
 	tx = f54->num_tx_electrodes;
 	f54->report_data = devm_kzalloc(&fn->dev,
-					array3_size(tx, rx, sizeof(u16)),
+					sizeof(u16) * tx * rx,
 					GFP_KERNEL);
 	if (f54->report_data == NULL)
 		return -ENOMEM;
@@ -679,7 +697,6 @@ static int rmi_f54_probe(struct rmi_function *fn)
 		return -ENOMEM;
 
 	rmi_f54_create_input_map(f54);
-	rmi_f54_set_input(f54, 0);
 
 	/* register video device */
 	strlcpy(f54->v4l2.name, F54_NAME, sizeof(f54->v4l2.name));
@@ -730,7 +747,6 @@ static void rmi_f54_remove(struct rmi_function *fn)
 
 	video_unregister_device(&f54->vdev);
 	v4l2_device_unregister(&f54->v4l2);
-	destroy_workqueue(f54->workqueue);
 }
 
 struct rmi_function_handler rmi_f54_handler = {
@@ -740,5 +756,6 @@ struct rmi_function_handler rmi_f54_handler = {
 	.func = 0x54,
 	.probe = rmi_f54_probe,
 	.config = rmi_f54_config,
+	.attention = rmi_f54_attention,
 	.remove = rmi_f54_remove,
 };

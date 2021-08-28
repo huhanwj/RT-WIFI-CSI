@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * PCI Express Hot Plug Controller Driver
  *
@@ -9,32 +8,39 @@
  *
  * All rights reserved.
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or (at
+ * your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE, GOOD TITLE or
+ * NON INFRINGEMENT.  See the GNU General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ *
  * Send feedback to <greg@kroah.com>, <kristen.c.accardi@intel.com>
  *
  */
 
-#define dev_fmt(fmt) "pciehp: " fmt
-
+#include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/types.h>
 #include <linux/pci.h>
 #include "../pci.h"
 #include "pciehp.h"
 
-/**
- * pciehp_configure_device() - enumerate PCI devices below a hotplug bridge
- * @ctrl: PCIe hotplug controller
- *
- * Enumerate PCI devices below a hotplug bridge and add them to the system.
- * Return 0 on success, %-EEXIST if the devices are already enumerated or
- * %-ENODEV if enumeration failed.
- */
-int pciehp_configure_device(struct controller *ctrl)
+int pciehp_configure_device(struct slot *p_slot)
 {
 	struct pci_dev *dev;
-	struct pci_dev *bridge = ctrl->pcie->port;
+	struct pci_dev *bridge = p_slot->ctrl->pcie->port;
 	struct pci_bus *parent = bridge->subordinate;
 	int num, ret = 0;
+	struct controller *ctrl = p_slot->ctrl;
 
 	pci_lock_rescan_remove();
 
@@ -70,28 +76,19 @@ int pciehp_configure_device(struct controller *ctrl)
 	return ret;
 }
 
-/**
- * pciehp_unconfigure_device() - remove PCI devices below a hotplug bridge
- * @ctrl: PCIe hotplug controller
- * @presence: whether the card is still present in the slot;
- *	true for safe removal via sysfs or an Attention Button press,
- *	false for surprise removal
- *
- * Unbind PCI devices below a hotplug bridge from their drivers and remove
- * them from the system.  Safely removed devices are quiesced.  Surprise
- * removed devices are marked as such to prevent further accesses.
- */
-void pciehp_unconfigure_device(struct controller *ctrl, bool presence)
+int pciehp_unconfigure_device(struct slot *p_slot)
 {
+	int rc = 0;
+	u8 bctl = 0;
+	u8 presence = 0;
 	struct pci_dev *dev, *temp;
-	struct pci_bus *parent = ctrl->pcie->port->subordinate;
+	struct pci_bus *parent = p_slot->ctrl->pcie->port->subordinate;
 	u16 command;
+	struct controller *ctrl = p_slot->ctrl;
 
 	ctrl_dbg(ctrl, "%s: domain:bus:dev = %04x:%02x:00\n",
 		 __func__, pci_domain_nr(parent), parent->number);
-
-	if (!presence)
-		pci_walk_bus(parent, pci_dev_set_disconnected, NULL);
+	pciehp_get_adapter_status(p_slot, &presence);
 
 	pci_lock_rescan_remove();
 
@@ -104,6 +101,23 @@ void pciehp_unconfigure_device(struct controller *ctrl, bool presence)
 	list_for_each_entry_safe_reverse(dev, temp, &parent->devices,
 					 bus_list) {
 		pci_dev_get(dev);
+		if (dev->hdr_type == PCI_HEADER_TYPE_BRIDGE && presence) {
+			pci_read_config_byte(dev, PCI_BRIDGE_CONTROL, &bctl);
+			if (bctl & PCI_BRIDGE_CTL_VGA) {
+				ctrl_err(ctrl,
+					 "Cannot remove display device %s\n",
+					 pci_name(dev));
+				pci_dev_put(dev);
+				rc = -EINVAL;
+				break;
+			}
+		}
+		if (!presence) {
+			pci_dev_set_disconnected(dev, NULL);
+			if (pci_has_subordinate(dev))
+				pci_walk_bus(dev->subordinate,
+					     pci_dev_set_disconnected, NULL);
+		}
 		pci_stop_and_remove_bus_device(dev);
 		/*
 		 * Ensure that no new Requests will be generated from
@@ -119,4 +133,5 @@ void pciehp_unconfigure_device(struct controller *ctrl, bool presence)
 	}
 
 	pci_unlock_rescan_remove();
+	return rc;
 }

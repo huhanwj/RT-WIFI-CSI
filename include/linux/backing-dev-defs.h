@@ -12,7 +12,6 @@
 #include <linux/timer.h>
 #include <linux/workqueue.h>
 #include <linux/kref.h>
-#include <linux/refcount.h>
 
 struct page;
 struct device;
@@ -23,6 +22,7 @@ struct dentry;
  */
 enum wb_state {
 	WB_registered,		/* bdi_register() was done */
+	WB_shutting_down,	/* wb_shutdown() in progress */
 	WB_writeback_running,	/* Writeback is in progress */
 	WB_has_dirty_io,	/* Dirty inodes on ->b_{dirty|io|more_io} */
 	WB_start_all,		/* nr_pages == 0 (all) work pending */
@@ -63,30 +63,9 @@ enum wb_reason {
 	 * so it has a mismatch name.
 	 */
 	WB_REASON_FORKER_THREAD,
-	WB_REASON_FOREIGN_FLUSH,
 
 	WB_REASON_MAX,
 };
-
-struct wb_completion {
-	atomic_t		cnt;
-	wait_queue_head_t	*waitq;
-};
-
-#define __WB_COMPLETION_INIT(_waitq)	\
-	(struct wb_completion){ .cnt = ATOMIC_INIT(1), .waitq = (_waitq) }
-
-/*
- * If one wants to wait for one or more wb_writeback_works, each work's
- * ->done should be set to a wb_completion defined using the following
- * macro.  Once all work items are issued with wb_queue_work(), the caller
- * can wait for the completion of all using wb_wait_for_completion().  Work
- * items which are waited upon aren't freed automatically on completion.
- */
-#define WB_COMPLETION_INIT(bdi)		__WB_COMPLETION_INIT(&(bdi)->wb_waitq)
-
-#define DEFINE_WB_COMPLETION(cmpl, bdi)	\
-	struct wb_completion cmpl = WB_COMPLETION_INIT(bdi)
 
 /*
  * For cgroup writeback, multiple wb's may map to the same blkcg.  Those
@@ -97,7 +76,7 @@ struct wb_completion {
  */
 struct bdi_writeback_congested {
 	unsigned long state;		/* WB_[a]sync_congested flags */
-	refcount_t refcnt;		/* nr of attached wb's and blkg */
+	atomic_t refcnt;		/* nr of attached wb's and blkg */
 
 #ifdef CONFIG_CGROUP_WRITEBACK
 	struct backing_dev_info *__bdi;	/* the associated bdi, set to NULL
@@ -186,8 +165,6 @@ struct bdi_writeback {
 };
 
 struct backing_dev_info {
-	u64 id;
-	struct rb_node rb_node; /* keyed by ->id */
 	struct list_head bdi_list;
 	unsigned long ra_pages;	/* max readahead in PAGE_SIZE units */
 	unsigned long io_pages;	/* max allowed IO size */
@@ -212,8 +189,6 @@ struct backing_dev_info {
 #ifdef CONFIG_CGROUP_WRITEBACK
 	struct radix_tree_root cgwb_tree; /* radix tree of active cgroup wbs */
 	struct rb_root cgwb_congested_tree; /* their congested states */
-	struct mutex cgwb_release_mutex;  /* protect shutdown of wb structs */
-	struct rw_semaphore wb_switch_rwsem; /* no cgwb switch while syncing */
 #else
 	struct bdi_writeback_congested *wb_congested;
 #endif
@@ -226,6 +201,7 @@ struct backing_dev_info {
 
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *debug_dir;
+	struct dentry *debug_stats;
 #endif
 };
 
@@ -246,11 +222,6 @@ static inline void set_bdi_congested(struct backing_dev_info *bdi, int sync)
 {
 	set_wb_congested(bdi->wb.congested, sync);
 }
-
-struct wb_lock_cookie {
-	bool locked;
-	unsigned long flags;
-};
 
 #ifdef CONFIG_CGROUP_WRITEBACK
 
@@ -281,14 +252,6 @@ static inline void wb_get(struct bdi_writeback *wb)
  */
 static inline void wb_put(struct bdi_writeback *wb)
 {
-	if (WARN_ON_ONCE(!wb->bdi)) {
-		/*
-		 * A driver bug might cause a file to be removed before bdi was
-		 * initialized.
-		 */
-		return;
-	}
-
 	if (wb != &wb->bdi->wb)
 		percpu_ref_put(&wb->refcnt);
 }

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 2016 CNEX Labs
  * Initial release: Javier Gonzalez <javier@cnexlabs.com>
@@ -18,19 +17,13 @@
 
 #include "pblk.h"
 
-void pblk_write_to_cache(struct pblk *pblk, struct bio *bio,
-				unsigned long flags)
+int pblk_write_to_cache(struct pblk *pblk, struct bio *bio, unsigned long flags)
 {
-	struct request_queue *q = pblk->dev->q;
 	struct pblk_w_ctx w_ctx;
 	sector_t lba = pblk_get_lba(bio);
-	unsigned long start_time = jiffies;
 	unsigned int bpos, pos;
 	int nr_entries = pblk_get_secs(bio);
 	int i, ret;
-
-	generic_start_io_acct(q, REQ_OP_WRITE, bio_sectors(bio),
-			      &pblk->disk->part0);
 
 	/* Update the write buffer head (mem) with the entries that we can
 	 * write. The write in itself cannot fail, so there is no need to
@@ -44,19 +37,16 @@ retry:
 		goto retry;
 	case NVM_IO_ERR:
 		pblk_pipeline_stop(pblk);
-		bio_io_error(bio);
 		goto out;
-	}
-
-	pblk_ppa_set_empty(&w_ctx.ppa);
-	w_ctx.flags = flags;
-	if (bio->bi_opf & REQ_PREFLUSH) {
-		w_ctx.flags |= PBLK_FLUSH_ENTRY;
-		pblk_write_kick(pblk);
 	}
 
 	if (unlikely(!bio_has_data(bio)))
 		goto out;
+
+	pblk_ppa_set_empty(&w_ctx.ppa);
+	w_ctx.flags = flags;
+	if (bio->bi_opf & REQ_PREFLUSH)
+		w_ctx.flags |= PBLK_FLUSH_ENTRY;
 
 	for (i = 0; i < nr_entries; i++) {
 		void *data = bio_data(bio);
@@ -69,9 +59,7 @@ retry:
 		bio_advance(bio, PBLK_EXPOSED_PAGE_SIZE);
 	}
 
-	atomic64_add(nr_entries, &pblk->user_wa);
-
-#ifdef CONFIG_NVM_PBLK_DEBUG
+#ifdef CONFIG_NVM_DEBUG
 	atomic_long_add(nr_entries, &pblk->inflight_writes);
 	atomic_long_add(nr_entries, &pblk->req_writes);
 #endif
@@ -79,11 +67,8 @@ retry:
 	pblk_rl_inserted(&pblk->rl, nr_entries);
 
 out:
-	generic_end_io_acct(q, REQ_OP_WRITE, &pblk->disk->part0, start_time);
 	pblk_write_should_kick(pblk);
-
-	if (ret == NVM_IO_DONE)
-		bio_endio(bio);
+	return ret;
 }
 
 /*
@@ -127,9 +112,7 @@ retry:
 	WARN_ONCE(gc_rq->secs_to_gc != valid_entries,
 					"pblk: inconsistent GC write\n");
 
-	atomic64_add(valid_entries, &pblk->gc_wa);
-
-#ifdef CONFIG_NVM_PBLK_DEBUG
+#ifdef CONFIG_NVM_DEBUG
 	atomic_long_add(valid_entries, &pblk->inflight_writes);
 	atomic_long_add(valid_entries, &pblk->recov_gc_writes);
 #endif

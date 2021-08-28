@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Network Service Header
  *
  * Copyright (c) 2017 Red Hat, Inc. -- Jiri Benc <jbenc@redhat.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/module.h>
@@ -54,8 +57,6 @@ int nsh_pop(struct sk_buff *skb)
 		return -ENOMEM;
 	nh = (struct nshhdr *)(skb->data);
 	length = nsh_hdr_len(nh);
-	if (length < NSH_BASE_HDR_LEN)
-		return -EINVAL;
 	inner_proto = tun_p_to_eth_p(nh->np);
 	if (!pskb_may_pull(skb, length))
 		return -ENOMEM;
@@ -89,8 +90,6 @@ static struct sk_buff *nsh_gso_segment(struct sk_buff *skb,
 	if (unlikely(!pskb_may_pull(skb, NSH_BASE_HDR_LEN)))
 		goto out;
 	nsh_len = nsh_hdr_len(nsh_hdr(skb));
-	if (nsh_len < NSH_BASE_HDR_LEN)
-		goto out;
 	if (unlikely(!pskb_may_pull(skb, nsh_len)))
 		goto out;
 
@@ -101,7 +100,7 @@ static struct sk_buff *nsh_gso_segment(struct sk_buff *skb,
 	__skb_pull(skb, nsh_len);
 
 	skb_reset_mac_header(skb);
-	skb->mac_len = proto == htons(ETH_P_TEB) ? ETH_HLEN : 0;
+	skb_reset_mac_len(skb);
 	skb->protocol = proto;
 
 	features &= NETIF_F_SG;

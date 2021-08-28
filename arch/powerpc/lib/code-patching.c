@@ -1,6 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Copyright 2008 Michael Ellerman, IBM Corporation.
+ *
+ *  This program is free software; you can redistribute it and/or
+ *  modify it under the terms of the GNU General Public License
+ *  as published by the Free Software Foundation; either version
+ *  2 of the License, or (at your option) any later version.
  */
 
 #include <linux/kernel.h>
@@ -11,6 +15,7 @@
 #include <linux/cpuhotplug.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
+#include <linux/kprobes.h>
 
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
@@ -18,24 +23,17 @@
 #include <asm/code-patching.h>
 #include <asm/setup.h>
 
-static int __patch_instruction(unsigned int *exec_addr, unsigned int instr,
-			       unsigned int *patch_addr)
+static int __patch_instruction(unsigned int *addr, unsigned int instr)
 {
-	int err = 0;
+	int err;
 
-	__put_user_asm(instr, patch_addr, err, "stw");
+	__put_user_size(instr, addr, 4, err);
 	if (err)
 		return err;
 
-	asm ("dcbst 0, %0; sync; icbi 0,%1; sync; isync" :: "r" (patch_addr),
-							    "r" (exec_addr));
+	asm ("dcbst 0, %0; sync; icbi 0,%0; sync; isync" :: "r" (addr));
 
 	return 0;
-}
-
-int raw_patch_instruction(unsigned int *addr, unsigned int instr)
-{
-	return __patch_instruction(addr, instr, addr);
 }
 
 #ifdef CONFIG_STRICT_KERNEL_RWX
@@ -93,7 +91,8 @@ static int map_patch_area(void *addr, unsigned long text_poke_addr)
 	else
 		pfn = __pa_symbol(addr) >> PAGE_SHIFT;
 
-	err = map_kernel_page(text_poke_addr, (pfn << PAGE_SHIFT), PAGE_KERNEL);
+	err = map_kernel_page(text_poke_addr, (pfn << PAGE_SHIFT),
+				pgprot_val(PAGE_KERNEL));
 
 	pr_devel("Mapped addr %lx with pfn %lx:%d\n", text_poke_addr, pfn, err);
 	if (err)
@@ -136,10 +135,10 @@ static inline int unmap_patch_area(unsigned long addr)
 	return 0;
 }
 
-static int do_patch_instruction(unsigned int *addr, unsigned int instr)
+int patch_instruction(unsigned int *addr, unsigned int instr)
 {
 	int err;
-	unsigned int *patch_addr = NULL;
+	unsigned int *dest = NULL;
 	unsigned long flags;
 	unsigned long text_poke_addr;
 	unsigned long kaddr = (unsigned long)addr;
@@ -149,8 +148,8 @@ static int do_patch_instruction(unsigned int *addr, unsigned int instr)
 	 * when text_poke_area is not ready, but we still need
 	 * to allow patching. We just do the plain old patching
 	 */
-	if (!this_cpu_read(text_poke_area))
-		return raw_patch_instruction(addr, instr);
+	if (!this_cpu_read(*PTRRELOC(&text_poke_area)))
+		return __patch_instruction(addr, instr);
 
 	local_irq_save(flags);
 
@@ -160,10 +159,17 @@ static int do_patch_instruction(unsigned int *addr, unsigned int instr)
 		goto out;
 	}
 
-	patch_addr = (unsigned int *)(text_poke_addr) +
+	dest = (unsigned int *)(text_poke_addr) +
 			((kaddr & ~PAGE_MASK) / sizeof(unsigned int));
 
-	__patch_instruction(addr, instr, patch_addr);
+	/*
+	 * We use __put_user_size so that we can handle faults while
+	 * writing to dest and return err to handle faults gracefully
+	 */
+	__put_user_size(instr, dest, 4, err);
+	if (!err)
+		asm ("dcbst 0, %0; sync; icbi 0,%0; icbi 0,%1; sync; isync"
+			::"r" (dest), "r"(addr));
 
 	err = unmap_patch_area(text_poke_addr);
 	if (err)
@@ -176,22 +182,12 @@ out:
 }
 #else /* !CONFIG_STRICT_KERNEL_RWX */
 
-static int do_patch_instruction(unsigned int *addr, unsigned int instr)
+int patch_instruction(unsigned int *addr, unsigned int instr)
 {
-	return raw_patch_instruction(addr, instr);
+	return __patch_instruction(addr, instr);
 }
 
 #endif /* CONFIG_STRICT_KERNEL_RWX */
-
-int patch_instruction(unsigned int *addr, unsigned int instr)
-{
-	/* Make sure we aren't patching a freed init section */
-	if (init_mem_is_free && init_section_contains(addr, 4)) {
-		pr_debug("Skipping init section patching addr: 0x%px\n", addr);
-		return 0;
-	}
-	return do_patch_instruction(addr, instr);
-}
 NOKPROBE_SYMBOL(patch_instruction);
 
 int patch_branch(unsigned int *addr, unsigned long target, int flags)
@@ -304,11 +300,6 @@ int instr_is_relative_branch(unsigned int instr)
 		return 0;
 
 	return instr_is_branch_iform(instr) || instr_is_branch_bform(instr);
-}
-
-int instr_is_relative_link_branch(unsigned int instr)
-{
-	return instr_is_relative_branch(instr) && (instr & BRANCH_SET_LINK);
 }
 
 static unsigned long branch_iform_target(const unsigned int *instr)

@@ -12,8 +12,6 @@
 #include <asm/processor.h>
 #include <asm/ptrace.h>
 
-#define THREAD_SIZE			KERNEL_STACK_SIZE
-
 #ifndef __ASSEMBLY__
 
 /*
@@ -42,6 +40,8 @@ struct thread_info {
 	__u64 ac_utime;
 #endif
 };
+
+#define THREAD_SIZE			KERNEL_STACK_SIZE
 
 #define INIT_THREAD_INFO(tsk)			\
 {						\

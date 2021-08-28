@@ -16,6 +16,7 @@
 #include <linux/miscdevice.h>
 #include <linux/kernel_stat.h>
 
+#include <asm/compat.h>
 #include <asm/cio.h>
 #include <asm/chsc.h>
 #include <asm/isc.h>
@@ -203,7 +204,7 @@ static void chsc_cleanup_sch_driver(void)
 
 static DEFINE_SPINLOCK(chsc_lock);
 
-static int chsc_subchannel_match_next_free(struct device *dev, const void *data)
+static int chsc_subchannel_match_next_free(struct device *dev, void *data)
 {
 	struct subchannel *sch = to_subchannel(dev);
 

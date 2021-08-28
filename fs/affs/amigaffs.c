@@ -10,7 +10,6 @@
  */
 
 #include <linux/math64.h>
-#include <linux/iversion.h>
 #include "affs.h"
 
 /*
@@ -61,7 +60,7 @@ affs_insert_hash(struct inode *dir, struct buffer_head *bh)
 	affs_brelse(dir_bh);
 
 	dir->i_mtime = dir->i_ctime = current_time(dir);
-	inode_inc_iversion(dir);
+	dir->i_version++;
 	mark_inode_dirty(dir);
 
 	return 0;
@@ -115,7 +114,7 @@ affs_remove_hash(struct inode *dir, struct buffer_head *rem_bh)
 	affs_brelse(bh);
 
 	dir->i_mtime = dir->i_ctime = current_time(dir);
-	inode_inc_iversion(dir);
+	dir->i_version++;
 	mark_inode_dirty(dir);
 
 	return retval;
@@ -375,7 +374,7 @@ affs_secs_to_datestamp(time64_t secs, struct affs_date *ds)
 	u32	 minute;
 	s32	 rem;
 
-	secs -= sys_tz.tz_minuteswest * 60 + AFFS_EPOCH_DELTA;
+	secs -= sys_tz.tz_minuteswest * 60 + ((8 * 365 + 2) * 24 * 60 * 60);
 	if (secs < 0)
 		secs = 0;
 	days    = div_s64_rem(secs, 86400, &rem);

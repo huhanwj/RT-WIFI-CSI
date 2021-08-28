@@ -1,5 +1,4 @@
 #!/bin/bash
-# SPDX-License-Identifier: GPL-2.0+
 #
 # Run a kvm-based test of the specified tree on the specified configs.
 # Fully automated run and error checking, no graphics console.
@@ -21,21 +20,40 @@
 #
 # More sophisticated argument parsing is clearly needed.
 #
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, you can access it online at
+# http://www.gnu.org/licenses/gpl-2.0.html.
+#
 # Copyright (C) IBM Corporation, 2011
 #
-# Authors: Paul E. McKenney <paulmck@linux.ibm.com>
+# Authors: Paul E. McKenney <paulmck@linux.vnet.ibm.com>
 
 T=${TMPDIR-/tmp}/kvm-test-1-run.sh.$$
 trap 'rm -rf $T' 0
 mkdir $T
 
-. functions.sh
+. $KVM/bin/functions.sh
 . $CONFIGFRAG/ver_functions.sh
 
 config_template=${1}
 config_dir=`echo $config_template | sed -e 's,/[^/]*$,,'`
 title=`echo $config_template | sed -e 's/^.*\///'`
 builddir=${2}
+if test -z "$builddir" -o ! -d "$builddir" -o ! -w "$builddir"
+then
+	echo "kvm-test-1-run.sh :$builddir: Not a writable directory, cannot build into it"
+	exit 1
+fi
 resdir=${3}
 if test -z "$resdir" -o ! -d "$resdir" -o ! -w "$resdir"
 then
@@ -80,18 +98,17 @@ then
 	ln -s $base_resdir/.config $resdir  # for kvm-recheck.sh
 	# Arch-independent indicator
 	touch $resdir/builtkernel
-elif kvm-build.sh $T/Kc2 $resdir
+elif kvm-build.sh $T/Kc2 $builddir
 then
 	# Had to build a kernel for this test.
-	QEMU="`identify_qemu vmlinux`"
+	QEMU="`identify_qemu $builddir/vmlinux`"
 	BOOT_IMAGE="`identify_boot_image $QEMU`"
-	cp vmlinux $resdir
-	cp .config $resdir
-	cp Module.symvers $resdir > /dev/null || :
-	cp System.map $resdir > /dev/null || :
+	cp $builddir/Make*.out $resdir
+	cp $builddir/vmlinux $resdir
+	cp $builddir/.config $resdir
 	if test -n "$BOOT_IMAGE"
 	then
-		cp $BOOT_IMAGE $resdir
+		cp $builddir/$BOOT_IMAGE $resdir
 		KERNEL=$resdir/${BOOT_IMAGE##*/}
 		# Arch-independent indicator
 		touch $resdir/builtkernel
@@ -102,7 +119,8 @@ then
 	parse-build.sh $resdir/Make.out $title
 else
 	# Build failed.
-	cp .config $resdir || :
+	cp $builddir/Make*.out $resdir
+	cp $builddir/.config $resdir || :
 	echo Build failed, not running KVM, see $resdir.
 	if test -f $builddir.wait
 	then
@@ -136,7 +154,9 @@ cpu_count=`configfrag_boot_cpus "$boot_args" "$config_template" "$cpu_count"`
 vcpus=`identify_qemu_vcpus`
 if test $cpu_count -gt $vcpus
 then
-	echo CPU count limited from $cpu_count to $vcpus | tee -a $resdir/Warnings
+	echo CPU count limited from $cpu_count to $vcpus
+	touch $resdir/Warnings
+	echo CPU count limited from $cpu_count to $vcpus >> $resdir/Warnings
 	cpu_count=$vcpus
 fi
 qemu_args="`specify_qemu_cpus "$QEMU" "$qemu_args" "$cpu_count"`"
@@ -159,8 +179,8 @@ then
 	exit 0
 fi
 echo "NOTE: $QEMU either did not run or was interactive" > $resdir/console.log
-echo $QEMU $qemu_args -m $TORTURE_QEMU_MEM -kernel $KERNEL -append \"$qemu_append $boot_args\" > $resdir/qemu-cmd
-( $QEMU $qemu_args -m $TORTURE_QEMU_MEM -kernel $KERNEL -append "$qemu_append $boot_args" > $resdir/qemu-output 2>&1 & echo $! > $resdir/qemu_pid; wait `cat  $resdir/qemu_pid`; echo $? > $resdir/qemu-retval ) &
+echo $QEMU $qemu_args -m 512 -kernel $KERNEL -append \"$qemu_append $boot_args\" > $resdir/qemu-cmd
+( $QEMU $qemu_args -m 512 -kernel $KERNEL -append "$qemu_append $boot_args"& echo $! > $resdir/qemu_pid; wait `cat  $resdir/qemu_pid`; echo $? > $resdir/qemu-retval ) &
 commandcompleted=0
 sleep 10 # Give qemu's pid a chance to reach the file
 if test -s "$resdir/qemu_pid"
@@ -227,7 +247,7 @@ then
 			must_continue=yes
 		fi
 		last_ts="`tail $resdir/console.log | grep '^\[ *[0-9]\+\.[0-9]\+]' | tail -1 | sed -e 's/^\[ *//' -e 's/\..*$//'`"
-		if test -z "$last_ts"
+		if test -z "last_ts"
 		then
 			last_ts=0
 		fi
@@ -249,4 +269,5 @@ then
 	echo Unknown PID, cannot kill qemu command
 fi
 
+parse-torture.sh $resdir/console.log $title
 parse-console.sh $resdir/console.log $title

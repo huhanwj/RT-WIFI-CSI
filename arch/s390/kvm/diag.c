@@ -257,7 +257,6 @@ int kvm_s390_handle_diag(struct kvm_vcpu *vcpu)
 	case 0x500:
 		return __diag_virtio_hypercall(vcpu);
 	default:
-		vcpu->stat.diagnose_other++;
 		return -EOPNOTSUPP;
 	}
 }

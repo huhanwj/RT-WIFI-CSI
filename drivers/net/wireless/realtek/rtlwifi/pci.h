@@ -1,5 +1,27 @@
-/* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright(c) 2009-2012  Realtek Corporation.*/
+/******************************************************************************
+ *
+ * Copyright(c) 2009-2012  Realtek Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * The full GNU General Public License is included in this distribution in the
+ * file called LICENSE.
+ *
+ * Contact Information:
+ * wlanfae <wlanfae@realtek.com>
+ * Realtek Corporation, No. 2, Innovation Road II, Hsinchu Science Park,
+ * Hsinchu 300, Taiwan.
+ *
+ * Larry Finger <Larry.Finger@lwfinger.net>
+ *
+ *****************************************************************************/
 
 #ifndef __RTL_PCI_H__
 #define __RTL_PCI_H__
@@ -151,6 +173,7 @@ struct rtl8192_tx_ring {
 	/*add for new trx flow*/
 	struct rtl_tx_buffer_desc *buffer_desc; /*tx buffer descriptor*/
 	dma_addr_t buffer_desc_dma; /*tx bufferd desc dma memory*/
+	u16 avl_desc; /* available_desc_to_write */
 	u16 cur_tx_wp; /* current_tx_write_point */
 	u16 cur_tx_rp; /* current_tx_read_point */
 };
@@ -297,10 +320,10 @@ static inline void pci_write32_async(struct rtl_priv *rtlpriv,
 	writel(val, (u8 __iomem *)rtlpriv->io.pci_mem_start + addr);
 }
 
-static inline u16 calc_fifo_space(u16 rp, u16 wp, u16 size)
+static inline u16 calc_fifo_space(u16 rp, u16 wp)
 {
 	if (rp <= wp)
-		return size - 1 + rp - wp;
+		return RTL_PCI_MAX_RX_COUNT - 1 + rp - wp;
 	return rp - wp - 1;
 }
 

@@ -1,5 +1,28 @@
-/* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright(c) 2013 - 2018 Intel Corporation. */
+/*******************************************************************************
+ *
+ * Intel Ethernet Controller XL710 Family Linux Driver
+ * Copyright(c) 2013 - 2015 Intel Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * The full GNU General Public License is included in this distribution in
+ * the file called "COPYING".
+ *
+ * Contact Information:
+ * e1000-devel Mailing List <e1000-devel@lists.sourceforge.net>
+ * Intel Corporation, 5200 N.E. Elam Young Parkway, Hillsboro, OR 97124-6497
+ *
+ ******************************************************************************/
 
 #ifndef _I40E_TYPE_H_
 #define _I40E_TYPE_H_
@@ -16,7 +39,7 @@
 #define I40E_MASK(mask, shift) ((u32)(mask) << (shift))
 
 #define I40E_MAX_VSI_QP			16
-#define I40E_MAX_VF_VSI			4
+#define I40E_MAX_VF_VSI			3
 #define I40E_MAX_CHAINED_RX_BUFFERS	5
 #define I40E_MAX_PF_UDP_OFFLOAD_PORTS	16
 
@@ -252,12 +275,6 @@ struct i40e_phy_info {
 					     I40E_PHY_TYPE_OFFSET)
 #define I40E_CAP_PHY_TYPE_25GBASE_ACC BIT_ULL(I40E_PHY_TYPE_25GBASE_ACC + \
 					     I40E_PHY_TYPE_OFFSET)
-/* Offset for 2.5G/5G PHY Types value to bit number conversion */
-#define I40E_PHY_TYPE_OFFSET2 (-10)
-#define I40E_CAP_PHY_TYPE_2_5GBASE_T BIT_ULL(I40E_PHY_TYPE_2_5GBASE_T + \
-					     I40E_PHY_TYPE_OFFSET2)
-#define I40E_CAP_PHY_TYPE_5GBASE_T BIT_ULL(I40E_PHY_TYPE_5GBASE_T + \
-					     I40E_PHY_TYPE_OFFSET2)
 #define I40E_HW_CAP_MAX_GPIO			30
 /* Capabilities of a PF or a VF or the whole device */
 struct i40e_hw_capabilities {
@@ -385,7 +402,6 @@ enum i40e_nvmupd_cmd {
 	I40E_NVMUPD_STATUS,
 	I40E_NVMUPD_EXEC_AQ,
 	I40E_NVMUPD_GET_AQ_RESULT,
-	I40E_NVMUPD_GET_AQ_EVENT,
 };
 
 enum i40e_nvmupd_state {
@@ -405,21 +421,15 @@ enum i40e_nvmupd_state {
 
 #define I40E_NVM_MOD_PNT_MASK 0xFF
 
-#define I40E_NVM_TRANS_SHIFT			8
-#define I40E_NVM_TRANS_MASK			(0xf << I40E_NVM_TRANS_SHIFT)
-#define I40E_NVM_PRESERVATION_FLAGS_SHIFT	12
-#define I40E_NVM_PRESERVATION_FLAGS_MASK \
-				(0x3 << I40E_NVM_PRESERVATION_FLAGS_SHIFT)
-#define I40E_NVM_PRESERVATION_FLAGS_SELECTED	0x01
-#define I40E_NVM_PRESERVATION_FLAGS_ALL		0x02
-#define I40E_NVM_CON				0x0
-#define I40E_NVM_SNT				0x1
-#define I40E_NVM_LCB				0x2
-#define I40E_NVM_SA				(I40E_NVM_SNT | I40E_NVM_LCB)
-#define I40E_NVM_ERA				0x4
-#define I40E_NVM_CSUM				0x8
-#define I40E_NVM_AQE				0xe
-#define I40E_NVM_EXEC				0xf
+#define I40E_NVM_TRANS_SHIFT	8
+#define I40E_NVM_TRANS_MASK	(0xf << I40E_NVM_TRANS_SHIFT)
+#define I40E_NVM_CON		0x0
+#define I40E_NVM_SNT		0x1
+#define I40E_NVM_LCB		0x2
+#define I40E_NVM_SA		(I40E_NVM_SNT | I40E_NVM_LCB)
+#define I40E_NVM_ERA		0x4
+#define I40E_NVM_CSUM		0x8
+#define I40E_NVM_EXEC		0xf
 
 #define I40E_NVM_ADAPT_SHIFT	16
 #define I40E_NVM_ADAPT_MASK	(0xffff << I40E_NVM_ADAPT_SHIFT)
@@ -443,7 +453,6 @@ struct i40e_nvm_access {
 #define I40E_MODULE_SFF_8472_COMP	0x5E
 #define I40E_MODULE_SFF_8472_SWAP	0x5C
 #define I40E_MODULE_SFF_ADDR_MODE	0x04
-#define I40E_MODULE_SFF_DDM_IMPLEMENTED 0x40
 #define I40E_MODULE_TYPE_QSFP_PLUS	0x0D
 #define I40E_MODULE_TYPE_QSFP28		0x11
 #define I40E_MODULE_QSFP_MAX_LEN	640
@@ -602,7 +611,6 @@ struct i40e_hw {
 	/* state of nvm update process */
 	enum i40e_nvmupd_state nvmupd_state;
 	struct i40e_aq_desc nvm_wb_desc;
-	struct i40e_aq_desc nvm_aq_event_desc;
 	struct i40e_virt_mem nvm_buff;
 	bool nvm_release_on_done;
 	u16 nvm_wait_opcode;
@@ -622,9 +630,6 @@ struct i40e_hw {
 #define I40E_HW_FLAG_802_1AD_CAPABLE        BIT_ULL(1)
 #define I40E_HW_FLAG_AQ_PHY_ACCESS_CAPABLE  BIT_ULL(2)
 #define I40E_HW_FLAG_NVM_READ_REQUIRES_LOCK BIT_ULL(3)
-#define I40E_HW_FLAG_FW_LLDP_STOPPABLE      BIT_ULL(4)
-#define I40E_HW_FLAG_FW_LLDP_PERSISTENT     BIT_ULL(5)
-#define I40E_HW_FLAG_DROP_MODE              BIT_ULL(7)
 	u64 flags;
 
 	/* Used in set switch config AQ command */
@@ -1304,8 +1309,7 @@ struct i40e_hw_port_stats {
 
 /* Checksum and Shadow RAM pointers */
 #define I40E_SR_NVM_CONTROL_WORD		0x00
-#define I40E_EMP_MODULE_PTR			0x0F
-#define I40E_SR_EMP_MODULE_PTR			0x48
+#define I40E_SR_EMP_MODULE_PTR			0x0F
 #define I40E_SR_PBA_FLAGS			0x15
 #define I40E_SR_PBA_BLOCK_PTR			0x16
 #define I40E_SR_BOOT_CONFIG_PTR			0x17
@@ -1318,18 +1322,12 @@ struct i40e_hw_port_stats {
 #define I40E_SR_VPD_PTR				0x2F
 #define I40E_SR_PCIE_ALT_AUTO_LOAD_PTR		0x3E
 #define I40E_SR_SW_CHECKSUM_WORD		0x3F
-#define I40E_SR_EMP_SR_SETTINGS_PTR		0x48
 
 /* Auxiliary field, mask and shift definition for Shadow RAM and NVM Flash */
 #define I40E_SR_VPD_MODULE_MAX_SIZE		1024
 #define I40E_SR_PCIE_ALT_MODULE_MAX_SIZE	1024
 #define I40E_SR_CONTROL_WORD_1_SHIFT		0x06
 #define I40E_SR_CONTROL_WORD_1_MASK	(0x03 << I40E_SR_CONTROL_WORD_1_SHIFT)
-#define I40E_SR_CONTROL_WORD_1_NVM_BANK_VALID	BIT(5)
-#define I40E_SR_NVM_MAP_STRUCTURE_TYPE		BIT(12)
-#define I40E_PTR_TYPE				BIT(15)
-#define I40E_SR_OCP_CFG_WORD0			0x2B
-#define I40E_SR_OCP_ENABLED			BIT(15)
 
 /* Shadow RAM related */
 #define I40E_SR_SECTOR_SIZE_IN_WORDS	0x800
@@ -1444,8 +1442,7 @@ enum i40e_reset_type {
 };
 
 /* IEEE 802.1AB LLDP Agent Variables from NVM */
-#define I40E_NVM_LLDP_CFG_PTR	0x06
-#define I40E_SR_LLDP_CFG_PTR	0x31
+#define I40E_NVM_LLDP_CFG_PTR		0xD
 struct i40e_lldp_variables {
 	u16 length;
 	u16 adminstatus;
@@ -1505,19 +1502,19 @@ struct i40e_lldp_variables {
 #define I40E_FLEX_57_SHIFT		6
 #define I40E_FLEX_57_MASK		(0x1ULL << I40E_FLEX_57_SHIFT)
 
-/* Version format for Dynamic Device Personalization(DDP) */
-struct i40e_ddp_version {
+/* Version format for PPP */
+struct i40e_ppp_version {
 	u8 major;
 	u8 minor;
 	u8 update;
 	u8 draft;
 };
 
-#define I40E_DDP_NAME_SIZE	32
+#define I40E_PPP_NAME_SIZE	32
 
 /* Package header */
 struct i40e_package_header {
-	struct i40e_ddp_version version;
+	struct i40e_ppp_version version;
 	u32 segment_count;
 	u32 segment_offset[1];
 };
@@ -1529,18 +1526,16 @@ struct i40e_generic_seg_header {
 #define SEGMENT_TYPE_I40E	0x00000011
 #define SEGMENT_TYPE_X722	0x00000012
 	u32 type;
-	struct i40e_ddp_version version;
+	struct i40e_ppp_version version;
 	u32 size;
-	char name[I40E_DDP_NAME_SIZE];
+	char name[I40E_PPP_NAME_SIZE];
 };
 
 struct i40e_metadata_segment {
 	struct i40e_generic_seg_header header;
-	struct i40e_ddp_version version;
-#define I40E_DDP_TRACKID_RDONLY		0
-#define I40E_DDP_TRACKID_INVALID	0xFFFFFFFF
+	struct i40e_ppp_version version;
 	u32 track_id;
-	char name[I40E_DDP_NAME_SIZE];
+	char name[I40E_PPP_NAME_SIZE];
 };
 
 struct i40e_device_id_entry {
@@ -1550,8 +1545,8 @@ struct i40e_device_id_entry {
 
 struct i40e_profile_segment {
 	struct i40e_generic_seg_header header;
-	struct i40e_ddp_version version;
-	char name[I40E_DDP_NAME_SIZE];
+	struct i40e_ppp_version version;
+	char name[I40E_PPP_NAME_SIZE];
 	u32 device_table_count;
 	struct i40e_device_id_entry device_table[1];
 };
@@ -1567,43 +1562,22 @@ struct i40e_profile_section_header {
 	struct {
 #define SECTION_TYPE_INFO	0x00000010
 #define SECTION_TYPE_MMIO	0x00000800
-#define SECTION_TYPE_RB_MMIO	0x00001800
 #define SECTION_TYPE_AQ		0x00000801
-#define SECTION_TYPE_RB_AQ	0x00001801
 #define SECTION_TYPE_NOTE	0x80000000
 #define SECTION_TYPE_NAME	0x80000001
-#define SECTION_TYPE_PROTO	0x80000002
-#define SECTION_TYPE_PCTYPE	0x80000003
-#define SECTION_TYPE_PTYPE	0x80000004
 		u32 type;
 		u32 offset;
 		u32 size;
 	} section;
 };
 
-struct i40e_profile_tlv_section_record {
-	u8 rtype;
-	u8 type;
-	u16 len;
-	u8 data[12];
-};
-
-/* Generic AQ section in proflie */
-struct i40e_profile_aq_section {
-	u16 opcode;
-	u16 flags;
-	u8  param[16];
-	u16 datalen;
-	u8  data[1];
-};
-
 struct i40e_profile_info {
 	u32 track_id;
-	struct i40e_ddp_version version;
+	struct i40e_ppp_version version;
 	u8 op;
-#define I40E_DDP_ADD_TRACKID		0x01
-#define I40E_DDP_REMOVE_TRACKID	0x02
+#define I40E_PPP_ADD_TRACKID		0x01
+#define I40E_PPP_REMOVE_TRACKID	0x02
 	u8 reserved[7];
-	u8 name[I40E_DDP_NAME_SIZE];
+	u8 name[I40E_PPP_NAME_SIZE];
 };
 #endif /* _I40E_TYPE_H_ */

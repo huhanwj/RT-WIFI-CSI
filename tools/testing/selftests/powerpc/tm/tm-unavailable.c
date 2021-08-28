@@ -1,6 +1,6 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright 2017, Gustavo Romero, Breno Leitao, Cyril Bur, IBM Corp.
+ * Licensed under GPLv2.
  *
  * Force FP, VEC and VSX unavailable exception during transaction in all
  * possible scenarios regarding the MSR.FP and MSR.VEC state, e.g. when FP
@@ -15,7 +15,6 @@
  */
 
 #define _GNU_SOURCE
-#include <error.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -34,11 +33,6 @@
 #define VSX_UNA_EXCEPTION	2
 
 #define NUM_EXCEPTIONS		3
-#define err_at_line(status, errnum, format, ...) \
-	error_at_line(status, errnum,  __FILE__, __LINE__, format ##__VA_ARGS__)
-
-#define pr_warn(code, format, ...) err_at_line(0, code, format, ##__VA_ARGS__)
-#define pr_err(code, format, ...) err_at_line(1, code, format, ##__VA_ARGS__)
 
 struct Flags {
 	int touch_fp;
@@ -80,7 +74,7 @@ bool is_failure(uint64_t condition_reg)
 	return ((condition_reg >> 28) & 0xa) == 0xa;
 }
 
-void *tm_una_ping(void *input)
+void *ping(void *input)
 {
 
 	/*
@@ -236,8 +230,7 @@ void *tm_una_ping(void *input)
 	}
 
 	/* Check if we were not expecting a failure and a it occurred. */
-	if (!expecting_failure() && is_failure(cr_) &&
-	    !failure_is_reschedule()) {
+	if (!expecting_failure() && is_failure(cr_)) {
 		printf("\n\tUnexpected transaction failure 0x%02lx\n\t",
 			failure_code());
 		return (void *) -1;
@@ -245,11 +238,9 @@ void *tm_una_ping(void *input)
 
 	/*
 	 * Check if TM failed due to the cause we were expecting. 0xda is a
-	 * TM_CAUSE_FAC_UNAV cause, otherwise it's an unexpected cause, unless
-	 * it was caused by a reschedule.
+	 * TM_CAUSE_FAC_UNAV cause, otherwise it's an unexpected cause.
 	 */
-	if (is_failure(cr_) && !failure_is_unavailable() &&
-	    !failure_is_reschedule()) {
+	if (is_failure(cr_) && !failure_is_unavailable()) {
 		printf("\n\tUnexpected failure cause 0x%02lx\n\t",
 			failure_code());
 		return (void *) -1;
@@ -283,7 +274,7 @@ void *tm_una_ping(void *input)
 }
 
 /* Thread to force context switch */
-void *tm_una_pong(void *not_used)
+void *pong(void *not_used)
 {
 	/* Wait thread get its name "pong". */
 	if (DEBUG)
@@ -312,19 +303,10 @@ void test_fp_vec(int fp, int vec, pthread_attr_t *attr)
 	 * checking if the failure cause is the one we expect.
 	 */
 	do {
-		int rc;
-
-		/* Bind to CPU 0, as specified in 'attr'. */
-		rc = pthread_create(&t0, attr, tm_una_ping, (void *) &flags);
-		if (rc)
-			pr_err(rc, "pthread_create()");
-		rc = pthread_setname_np(t0, "tm_una_ping");
-		if (rc)
-			pr_warn(rc, "pthread_setname_np");
-		rc = pthread_join(t0, &ret_value);
-		if (rc)
-			pr_err(rc, "pthread_join");
-
+		/* Bind 'ping' to CPU 0, as specified in 'attr'. */
+		pthread_create(&t0, attr, ping, (void *) &flags);
+		pthread_setname_np(t0, "ping");
+		pthread_join(t0, &ret_value);
 		retries--;
 	} while (ret_value != NULL && retries);
 
@@ -336,37 +318,25 @@ void test_fp_vec(int fp, int vec, pthread_attr_t *attr)
 	}
 }
 
-int tm_unavailable_test(void)
+int main(int argc, char **argv)
 {
-	int rc, exception; /* FP = 0, VEC = 1, VSX = 2 */
+	int exception; /* FP = 0, VEC = 1, VSX = 2 */
 	pthread_t t1;
 	pthread_attr_t attr;
 	cpu_set_t cpuset;
-
-	SKIP_IF(!have_htm());
 
 	/* Set only CPU 0 in the mask. Both threads will be bound to CPU 0. */
 	CPU_ZERO(&cpuset);
 	CPU_SET(0, &cpuset);
 
 	/* Init pthread attribute. */
-	rc = pthread_attr_init(&attr);
-	if (rc)
-		pr_err(rc, "pthread_attr_init()");
+	pthread_attr_init(&attr);
 
 	/* Set CPU 0 mask into the pthread attribute. */
-	rc = pthread_attr_setaffinity_np(&attr, sizeof(cpu_set_t), &cpuset);
-	if (rc)
-		pr_err(rc, "pthread_attr_setaffinity_np()");
+	pthread_attr_setaffinity_np(&attr, sizeof(cpu_set_t), &cpuset);
 
-	rc = pthread_create(&t1, &attr /* Bind to CPU 0 */, tm_una_pong, NULL);
-	if (rc)
-		pr_err(rc, "pthread_create()");
-
-	/* Name it for systemtap convenience */
-	rc = pthread_setname_np(t1, "tm_una_pong");
-	if (rc)
-		pr_warn(rc, "pthread_create()");
+	pthread_create(&t1, &attr /* Bind 'pong' to CPU 0 */, pong, NULL);
+	pthread_setname_np(t1, "pong"); /* Name it for systemtap convenience */
 
 	flags.result = 0;
 
@@ -398,10 +368,4 @@ int tm_unavailable_test(void)
 		printf("result: success\n");
 		exit(0);
 	}
-}
-
-int main(int argc, char **argv)
-{
-	test_harness_set_timeout(220);
-	return test_harness(tm_unavailable_test, "tm_unavailable_test");
 }

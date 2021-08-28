@@ -9,7 +9,6 @@ cleanup()
 	fi
 
 	set +e
-	ip link del veth1 2> /dev/null
 	ip netns del ns1 2> /dev/null
 	ip netns del ns2 2> /dev/null
 }

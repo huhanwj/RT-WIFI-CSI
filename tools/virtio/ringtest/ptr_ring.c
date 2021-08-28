@@ -17,7 +17,6 @@
 #define likely(x)    (__builtin_expect(!!(x), 1))
 #define ALIGN(x, a) (((x) + (a) - 1) / (a) * (a))
 #define SIZE_MAX        (~(size_t)0)
-#define KMALLOC_MAX_SIZE SIZE_MAX
 
 typedef pthread_spinlock_t  spinlock_t;
 
@@ -57,9 +56,6 @@ static void kfree(void *p)
 	if (p)
 		free(p);
 }
-
-#define kvmalloc_array kmalloc_array
-#define kvfree kfree
 
 static void spin_lock_init(spinlock_t *lock)
 {
@@ -191,7 +187,7 @@ bool enable_kick()
 
 bool avail_empty()
 {
-	return __ptr_ring_empty(&array);
+	return !__ptr_ring_peek(&array);
 }
 
 bool use_buf(unsigned *lenp, void **bufp)

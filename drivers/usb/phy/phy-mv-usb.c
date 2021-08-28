@@ -401,6 +401,7 @@ static void mv_otg_update_state(struct mv_otg *mvotg)
 static void mv_otg_work(struct work_struct *work)
 {
 	struct mv_otg *mvotg;
+	struct usb_phy *phy;
 	struct usb_otg *otg;
 	int old_state;
 
@@ -408,6 +409,7 @@ static void mv_otg_work(struct work_struct *work)
 
 run:
 	/* work queue is single thread, or we need spin_lock to protect */
+	phy = &mvotg->phy;
 	otg = mvotg->phy.otg;
 	old_state = otg->state;
 
@@ -517,7 +519,7 @@ static irqreturn_t mv_otg_inputs_irq(int irq, void *dev)
 }
 
 static ssize_t
-a_bus_req_show(struct device *dev, struct device_attribute *attr, char *buf)
+get_a_bus_req(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct mv_otg *mvotg = dev_get_drvdata(dev);
 	return scnprintf(buf, PAGE_SIZE, "%d\n",
@@ -525,7 +527,7 @@ a_bus_req_show(struct device *dev, struct device_attribute *attr, char *buf)
 }
 
 static ssize_t
-a_bus_req_store(struct device *dev, struct device_attribute *attr,
+set_a_bus_req(struct device *dev, struct device_attribute *attr,
 	      const char *buf, size_t count)
 {
 	struct mv_otg *mvotg = dev_get_drvdata(dev);
@@ -557,10 +559,11 @@ a_bus_req_store(struct device *dev, struct device_attribute *attr,
 	return count;
 }
 
-static DEVICE_ATTR_RW(a_bus_req);
+static DEVICE_ATTR(a_bus_req, S_IRUGO | S_IWUSR, get_a_bus_req,
+		   set_a_bus_req);
 
 static ssize_t
-a_clr_err_store(struct device *dev, struct device_attribute *attr,
+set_a_clr_err(struct device *dev, struct device_attribute *attr,
 	      const char *buf, size_t count)
 {
 	struct mv_otg *mvotg = dev_get_drvdata(dev);
@@ -584,10 +587,10 @@ a_clr_err_store(struct device *dev, struct device_attribute *attr,
 	return count;
 }
 
-static DEVICE_ATTR_WO(a_clr_err);
+static DEVICE_ATTR(a_clr_err, S_IWUSR, NULL, set_a_clr_err);
 
 static ssize_t
-a_bus_drop_show(struct device *dev, struct device_attribute *attr,
+get_a_bus_drop(struct device *dev, struct device_attribute *attr,
 	       char *buf)
 {
 	struct mv_otg *mvotg = dev_get_drvdata(dev);
@@ -596,7 +599,7 @@ a_bus_drop_show(struct device *dev, struct device_attribute *attr,
 }
 
 static ssize_t
-a_bus_drop_store(struct device *dev, struct device_attribute *attr,
+set_a_bus_drop(struct device *dev, struct device_attribute *attr,
 	       const char *buf, size_t count)
 {
 	struct mv_otg *mvotg = dev_get_drvdata(dev);
@@ -627,7 +630,8 @@ a_bus_drop_store(struct device *dev, struct device_attribute *attr,
 	return count;
 }
 
-static DEVICE_ATTR_RW(a_bus_drop);
+static DEVICE_ATTR(a_bus_drop, S_IRUGO | S_IWUSR,
+		   get_a_bus_drop, set_a_bus_drop);
 
 static struct attribute *inputs_attrs[] = {
 	&dev_attr_a_bus_req.attr,
@@ -641,14 +645,11 @@ static const struct attribute_group inputs_attr_group = {
 	.attrs = inputs_attrs,
 };
 
-static const struct attribute_group *mv_otg_groups[] = {
-	&inputs_attr_group,
-	NULL,
-};
-
 static int mv_otg_remove(struct platform_device *pdev)
 {
 	struct mv_otg *mvotg = platform_get_drvdata(pdev);
+
+	sysfs_remove_group(&mvotg->pdev->dev.kobj, &inputs_attr_group);
 
 	if (mvotg->qwork) {
 		flush_workqueue(mvotg->qwork);
@@ -812,6 +813,13 @@ static int mv_otg_probe(struct platform_device *pdev)
 		goto err_disable_clk;
 	}
 
+	retval = sysfs_create_group(&pdev->dev.kobj, &inputs_attr_group);
+	if (retval < 0) {
+		dev_dbg(&pdev->dev,
+			"Can't register sysfs attr group: %d\n", retval);
+		goto err_remove_phy;
+	}
+
 	spin_lock_init(&mvotg->wq_lock);
 	if (spin_trylock(&mvotg->wq_lock)) {
 		mv_otg_run_state_machine(mvotg, 2 * HZ);
@@ -824,6 +832,8 @@ static int mv_otg_probe(struct platform_device *pdev)
 
 	return 0;
 
+err_remove_phy:
+	usb_remove_phy(&mvotg->phy);
 err_disable_clk:
 	mv_otg_disable_internal(mvotg);
 err_destroy_workqueue:
@@ -877,7 +887,6 @@ static struct platform_driver mv_otg_driver = {
 	.remove = mv_otg_remove,
 	.driver = {
 		   .name = driver_name,
-		   .dev_groups = mv_otg_groups,
 		   },
 #ifdef CONFIG_PM
 	.suspend = mv_otg_suspend,

@@ -18,11 +18,10 @@
 #include <linux/init.h>
 #include <linux/ioport.h>
 #include <linux/kernel.h>
-#include <linux/memblock.h>
+#include <linux/bootmem.h>
 #include <linux/module.h>
 #include <linux/cache.h>
 #include <linux/slab.h>
-#include <linux/syscalls.h>
 #include <asm/machvec.h>
 
 #include "proto.h"
@@ -392,10 +391,7 @@ alloc_pci_controller(void)
 {
 	struct pci_controller *hose;
 
-	hose = memblock_alloc(sizeof(*hose), SMP_CACHE_BYTES);
-	if (!hose)
-		panic("%s: Failed to allocate %zu bytes\n", __func__,
-		      sizeof(*hose));
+	hose = alloc_bootmem(sizeof(*hose));
 
 	*hose_tail = hose;
 	hose_tail = &hose->next;
@@ -406,21 +402,15 @@ alloc_pci_controller(void)
 struct resource * __init
 alloc_resource(void)
 {
-	void *ptr = memblock_alloc(sizeof(struct resource), SMP_CACHE_BYTES);
-
-	if (!ptr)
-		panic("%s: Failed to allocate %zu bytes\n", __func__,
-		      sizeof(struct resource));
-
-	return ptr;
+	return alloc_bootmem(sizeof(struct resource));
 }
 
 
 /* Provide information on locations of various I/O regions in physical
    memory.  Do this on a per-card basis so that we choose the right hose.  */
 
-SYSCALL_DEFINE3(pciconfig_iobase, long, which, unsigned long, bus,
-		unsigned long, dfn)
+asmlinkage long
+sys_pciconfig_iobase(long which, unsigned long bus, unsigned long dfn)
 {
 	struct pci_controller *hose;
 	struct pci_dev *dev;
@@ -435,7 +425,7 @@ SYSCALL_DEFINE3(pciconfig_iobase, long, which, unsigned long, bus,
 		if (bus == 0 && dfn == 0) {
 			hose = pci_isa_hose;
 		} else {
-			dev = pci_get_domain_bus_and_slot(0, bus, dfn);
+			dev = pci_get_bus_and_slot(bus, dfn);
 			if (!dev)
 				return -ENODEV;
 			hose = dev->sysdata;

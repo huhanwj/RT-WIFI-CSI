@@ -1,6 +1,20 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Copyright © 1999-2010 David Woodhouse <dwmw2@infradead.org> et al.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+ *
  */
 
 #ifndef __MTD_MTD_H__
@@ -11,15 +25,18 @@
 #include <linux/notifier.h>
 #include <linux/device.h>
 #include <linux/of.h>
-#include <linux/nvmem-provider.h>
 
 #include <mtd/mtd-abi.h>
 
 #include <asm/div64.h>
 
-#define MTD_FAIL_ADDR_UNKNOWN -1LL
+#define MTD_ERASE_PENDING	0x01
+#define MTD_ERASING		0x02
+#define MTD_ERASE_SUSPEND	0x04
+#define MTD_ERASE_DONE		0x08
+#define MTD_ERASE_FAILED	0x10
 
-struct mtd_info;
+#define MTD_FAIL_ADDR_UNKNOWN -1LL
 
 /*
  * If the erase fails, fail_addr might indicate exactly which block failed. If
@@ -27,9 +44,18 @@ struct mtd_info;
  * or was not specific to any particular block.
  */
 struct erase_info {
+	struct mtd_info *mtd;
 	uint64_t addr;
 	uint64_t len;
 	uint64_t fail_addr;
+	u_long time;
+	u_long retries;
+	unsigned dev;
+	unsigned cell;
+	void (*callback) (struct erase_info *self);
+	u_long priv;
+	u_char state;
+	struct erase_info *next;
 };
 
 struct mtd_erase_region_info {
@@ -54,11 +80,9 @@ struct mtd_erase_region_info {
  * @datbuf:	data buffer - if NULL only oob data are read/written
  * @oobbuf:	oob data buffer
  *
- * Note, some MTD drivers do not allow you to write more than one OOB area at
- * one go. If you try to do that on such an MTD device, -EINVAL will be
- * returned. If you want to make your implementation portable on all kind of MTD
- * devices you should split the write request into several sub-requests when the
- * request crosses a page boundary.
+ * Note, it is allowed to read more than one OOB area at one go, but not write.
+ * The interface assumes that the OOB write requests program only one page's
+ * OOB area.
  */
 struct mtd_oob_ops {
 	unsigned int	mode;
@@ -189,15 +213,11 @@ struct module;	/* only needed for owner field in mtd_info */
  */
 struct mtd_debug_info {
 	struct dentry *dfs_dir;
-
-	const char *partname;
-	const char *partid;
 };
 
 struct mtd_info {
 	u_char type;
 	uint32_t flags;
-	uint32_t orig_flags; /* Flags as before running mtd checks */
 	uint64_t size;	 // Total size of the MTD
 
 	/* "Major" erase size for the device. Naïve users may take this
@@ -319,12 +339,6 @@ struct mtd_info {
 	int (*_get_device) (struct mtd_info *mtd);
 	void (*_put_device) (struct mtd_info *mtd);
 
-	/*
-	 * flag indicates a panic write, low level drivers can take appropriate
-	 * action if required to ensure writes go through
-	 */
-	bool oops_panic_write;
-
 	struct notifier_block reboot_notifier;  /* default mode before reboot */
 
 	/* ECC status information */
@@ -338,7 +352,6 @@ struct mtd_info {
 	struct device dev;
 	int usecount;
 	struct mtd_debug_info dbg;
-	struct nvmem_device *nvmem;
 };
 
 int mtd_ooblayout_ecc(struct mtd_info *mtd, int section,
@@ -384,7 +397,7 @@ static inline struct device_node *mtd_get_of_node(struct mtd_info *mtd)
 	return dev_of_node(&mtd->dev);
 }
 
-static inline u32 mtd_oobavail(struct mtd_info *mtd, struct mtd_oob_ops *ops)
+static inline int mtd_oobavail(struct mtd_info *mtd, struct mtd_oob_ops *ops)
 {
 	return ops->mode == MTD_OPS_AUTO_OOB ? mtd->oobavail : mtd->oobsize;
 }
@@ -476,34 +489,6 @@ static inline uint32_t mtd_mod_by_eb(uint64_t sz, struct mtd_info *mtd)
 	return do_div(sz, mtd->erasesize);
 }
 
-/**
- * mtd_align_erase_req - Adjust an erase request to align things on eraseblock
- *			 boundaries.
- * @mtd: the MTD device this erase request applies on
- * @req: the erase request to adjust
- *
- * This function will adjust @req->addr and @req->len to align them on
- * @mtd->erasesize. Of course we expect @mtd->erasesize to be != 0.
- */
-static inline void mtd_align_erase_req(struct mtd_info *mtd,
-				       struct erase_info *req)
-{
-	u32 mod;
-
-	if (WARN_ON(!mtd->erasesize))
-		return;
-
-	mod = mtd_mod_by_eb(req->addr, mtd);
-	if (mod) {
-		req->addr -= mod;
-		req->len += mod;
-	}
-
-	mod = mtd_mod_by_eb(req->addr + req->len, mtd);
-	if (mod)
-		req->len += mtd->erasesize - mod;
-}
-
 static inline uint32_t mtd_div_by_ws(uint64_t sz, struct mtd_info *mtd)
 {
 	if (mtd->writesize_shift)
@@ -581,6 +566,8 @@ struct mtd_notifier {
 extern void register_mtd_user (struct mtd_notifier *new);
 extern int unregister_mtd_user (struct mtd_notifier *old);
 void *mtd_kmalloc_up_to(const struct mtd_info *mtd, size_t *size);
+
+void mtd_erase_callback(struct erase_info *instr);
 
 static inline int mtd_is_bitflip(int err) {
 	return err == -EUCLEAN;

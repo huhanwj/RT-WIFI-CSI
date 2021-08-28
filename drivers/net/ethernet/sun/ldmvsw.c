@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /* ldmvsw.c: Sun4v LDOM Virtual Switch Driver.
  *
  * Copyright (C) 2016-2017 Oracle. All rights reserved.
@@ -101,7 +100,7 @@ static struct vnet_port *vsw_tx_port_find(struct sk_buff *skb,
 }
 
 static u16 vsw_select_queue(struct net_device *dev, struct sk_buff *skb,
-			    struct net_device *sb_dev)
+			    void *accel_priv, select_queue_fallback_t fallback)
 {
 	struct vnet_port *port = netdev_priv(dev);
 
@@ -112,7 +111,7 @@ static u16 vsw_select_queue(struct net_device *dev, struct sk_buff *skb,
 }
 
 /* Wrappers to common functions */
-static netdev_tx_t vsw_start_xmit(struct sk_buff *skb, struct net_device *dev)
+static int vsw_start_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	return sunvnet_start_xmit_common(skb, dev, vsw_tx_port_find);
 }

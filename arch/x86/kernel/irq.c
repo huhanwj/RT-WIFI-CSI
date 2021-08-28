@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Common interrupt code for 32 and 64 bit
  */
@@ -11,7 +10,6 @@
 #include <linux/ftrace.h>
 #include <linux/delay.h>
 #include <linux/export.h>
-#include <linux/irq.h>
 
 #include <asm/apic.h>
 #include <asm/io_apic.h>
@@ -135,29 +133,13 @@ int arch_show_interrupts(struct seq_file *p, int prec)
 		seq_printf(p, "%10u ", per_cpu(mce_poll_count, j));
 	seq_puts(p, "  Machine check polls\n");
 #endif
-#ifdef CONFIG_X86_HV_CALLBACK_VECTOR
+#if IS_ENABLED(CONFIG_HYPERV) || defined(CONFIG_XEN)
 	if (test_bit(HYPERVISOR_CALLBACK_VECTOR, system_vectors)) {
 		seq_printf(p, "%*s: ", prec, "HYP");
 		for_each_online_cpu(j)
 			seq_printf(p, "%10u ",
 				   irq_stats(j)->irq_hv_callback_count);
 		seq_puts(p, "  Hypervisor callback interrupts\n");
-	}
-#endif
-#if IS_ENABLED(CONFIG_HYPERV)
-	if (test_bit(HYPERV_REENLIGHTENMENT_VECTOR, system_vectors)) {
-		seq_printf(p, "%*s: ", prec, "HRE");
-		for_each_online_cpu(j)
-			seq_printf(p, "%10u ",
-				   irq_stats(j)->irq_hv_reenlightenment_count);
-		seq_puts(p, "  Hyper-V reenlightenment interrupts\n");
-	}
-	if (test_bit(HYPERV_STIMER0_VECTOR, system_vectors)) {
-		seq_printf(p, "%*s: ", prec, "HVS");
-		for_each_online_cpu(j)
-			seq_printf(p, "%10u ",
-				   irq_stats(j)->hyperv_stimer0_count);
-		seq_puts(p, "  Hyper-V stimer0 interrupts\n");
 	}
 #endif
 	seq_printf(p, "%*s: %10u\n", prec, "ERR", atomic_read(&irq_err_count));
@@ -243,15 +225,11 @@ __visible unsigned int __irq_entry do_IRQ(struct pt_regs *regs)
 	RCU_LOCKDEP_WARN(!rcu_is_watching(), "IRQ failed to wake up RCU");
 
 	desc = __this_cpu_read(vector_irq[vector]);
-	if (likely(!IS_ERR_OR_NULL(desc))) {
-		if (IS_ENABLED(CONFIG_X86_32))
-			handle_irq(desc, regs);
-		else
-			generic_handle_irq_desc(desc);
-	} else {
+
+	if (!handle_irq(desc, regs)) {
 		ack_APIC_irq();
 
-		if (desc == VECTOR_UNUSED) {
+		if (desc != VECTOR_RETRIGGERED) {
 			pr_emerg_ratelimited("%s: %d.%d No irq handler for vector\n",
 					     __func__, smp_processor_id(),
 					     vector);

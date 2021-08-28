@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Rockchip SoC DP (Display Port) interface driver.
  *
@@ -6,6 +5,11 @@
  * Author: Andy Yan <andy.yan@rock-chips.com>
  *         Yakir Yang <ykk@rock-chips.com>
  *         Jeff Chen <jeff.chen@rock-chips.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
  */
 
 #include <linux/component.h>
@@ -16,18 +20,19 @@
 #include <linux/reset.h>
 #include <linux/clk.h>
 
-#include <video/of_videomode.h>
-#include <video/videomode.h>
-
-#include <drm/drm_atomic.h>
-#include <drm/drm_atomic_helper.h>
-#include <drm/bridge/analogix_dp.h>
+#include <drm/drmP.h>
+#include <drm/drm_crtc_helper.h>
 #include <drm/drm_dp_helper.h>
 #include <drm/drm_of.h>
 #include <drm/drm_panel.h>
-#include <drm/drm_probe_helper.h>
+
+#include <video/of_videomode.h>
+#include <video/videomode.h>
+
+#include <drm/bridge/analogix_dp.h>
 
 #include "rockchip_drm_drv.h"
+#include "rockchip_drm_psr.h"
 #include "rockchip_drm_vop.h"
 
 #define RK3288_GRF_SOC_CON6		0x25c
@@ -66,11 +71,54 @@ struct rockchip_dp_device {
 	struct regmap            *grf;
 	struct reset_control     *rst;
 
+	struct work_struct	 psr_work;
+	struct mutex             psr_lock;
+	unsigned int             psr_state;
+
 	const struct rockchip_dp_chip_data *data;
 
-	struct analogix_dp_device *adp;
 	struct analogix_dp_plat_data plat_data;
 };
+
+static void analogix_dp_psr_set(struct drm_encoder *encoder, bool enabled)
+{
+	struct rockchip_dp_device *dp = to_dp(encoder);
+
+	if (!analogix_dp_psr_supported(dp->dev))
+		return;
+
+	DRM_DEV_DEBUG(dp->dev, "%s PSR...\n", enabled ? "Entry" : "Exit");
+
+	mutex_lock(&dp->psr_lock);
+	if (enabled)
+		dp->psr_state = EDP_VSC_PSR_STATE_ACTIVE;
+	else
+		dp->psr_state = ~EDP_VSC_PSR_STATE_ACTIVE;
+
+	schedule_work(&dp->psr_work);
+	mutex_unlock(&dp->psr_lock);
+}
+
+static void analogix_dp_psr_work(struct work_struct *work)
+{
+	struct rockchip_dp_device *dp =
+				container_of(work, typeof(*dp), psr_work);
+	int ret;
+
+	ret = rockchip_drm_wait_vact_end(dp->encoder.crtc,
+					 PSR_WAIT_LINE_FLAG_TIMEOUT_MS);
+	if (ret) {
+		DRM_DEV_ERROR(dp->dev, "line flag interrupt did not arrive\n");
+		return;
+	}
+
+	mutex_lock(&dp->psr_lock);
+	if (dp->psr_state == EDP_VSC_PSR_STATE_ACTIVE)
+		analogix_dp_enable_psr(dp->dev);
+	else
+		analogix_dp_disable_psr(dp->dev);
+	mutex_unlock(&dp->psr_lock);
+}
 
 static int rockchip_dp_pre_init(struct rockchip_dp_device *dp)
 {
@@ -81,10 +129,12 @@ static int rockchip_dp_pre_init(struct rockchip_dp_device *dp)
 	return 0;
 }
 
-static int rockchip_dp_poweron_start(struct analogix_dp_plat_data *plat_data)
+static int rockchip_dp_poweron(struct analogix_dp_plat_data *plat_data)
 {
 	struct rockchip_dp_device *dp = to_dp(plat_data);
 	int ret;
+
+	cancel_work_sync(&dp->psr_work);
 
 	ret = clk_prepare_enable(dp->pclk);
 	if (ret < 0) {
@@ -99,7 +149,7 @@ static int rockchip_dp_poweron_start(struct analogix_dp_plat_data *plat_data)
 		return ret;
 	}
 
-	return ret;
+	return 0;
 }
 
 static int rockchip_dp_powerdown(struct analogix_dp_plat_data *plat_data)
@@ -144,41 +194,11 @@ static void rockchip_dp_drm_encoder_mode_set(struct drm_encoder *encoder,
 	/* do nothing */
 }
 
-static
-struct drm_crtc *rockchip_dp_drm_get_new_crtc(struct drm_encoder *encoder,
-					      struct drm_atomic_state *state)
-{
-	struct drm_connector *connector;
-	struct drm_connector_state *conn_state;
-
-	connector = drm_atomic_get_new_connector_for_encoder(state, encoder);
-	if (!connector)
-		return NULL;
-
-	conn_state = drm_atomic_get_new_connector_state(state, connector);
-	if (!conn_state)
-		return NULL;
-
-	return conn_state->crtc;
-}
-
-static void rockchip_dp_drm_encoder_enable(struct drm_encoder *encoder,
-					   struct drm_atomic_state *state)
+static void rockchip_dp_drm_encoder_enable(struct drm_encoder *encoder)
 {
 	struct rockchip_dp_device *dp = to_dp(encoder);
-	struct drm_crtc *crtc;
-	struct drm_crtc_state *old_crtc_state;
 	int ret;
 	u32 val;
-
-	crtc = rockchip_dp_drm_get_new_crtc(encoder, state);
-	if (!crtc)
-		return;
-
-	old_crtc_state = drm_atomic_get_old_crtc_state(state, crtc);
-	/* Coming back from self refresh, nothing to do */
-	if (old_crtc_state && old_crtc_state->self_refresh_active)
-		return;
 
 	ret = drm_of_encoder_active_endpoint_id(dp->dev->of_node, encoder);
 	if (ret < 0)
@@ -204,27 +224,9 @@ static void rockchip_dp_drm_encoder_enable(struct drm_encoder *encoder,
 	clk_disable_unprepare(dp->grfclk);
 }
 
-static void rockchip_dp_drm_encoder_disable(struct drm_encoder *encoder,
-					    struct drm_atomic_state *state)
+static void rockchip_dp_drm_encoder_nop(struct drm_encoder *encoder)
 {
-	struct rockchip_dp_device *dp = to_dp(encoder);
-	struct drm_crtc *crtc;
-	struct drm_crtc_state *new_crtc_state = NULL;
-	int ret;
-
-	crtc = rockchip_dp_drm_get_new_crtc(encoder, state);
-	/* No crtc means we're doing a full shutdown */
-	if (!crtc)
-		return;
-
-	new_crtc_state = drm_atomic_get_new_crtc_state(state, crtc);
-	/* If we're not entering self-refresh, no need to wait for vact */
-	if (!new_crtc_state || !new_crtc_state->self_refresh_active)
-		return;
-
-	ret = rockchip_drm_wait_vact_end(crtc, PSR_WAIT_LINE_FLAG_TIMEOUT_MS);
-	if (ret)
-		DRM_DEV_ERROR(dp->dev, "line flag irq timed out\n");
+	/* do nothing */
 }
 
 static int
@@ -233,7 +235,6 @@ rockchip_dp_drm_encoder_atomic_check(struct drm_encoder *encoder,
 				      struct drm_connector_state *conn_state)
 {
 	struct rockchip_crtc_state *s = to_rockchip_crtc_state(crtc_state);
-	struct drm_display_info *di = &conn_state->connector->display_info;
 
 	/*
 	 * The hardware IC designed that VOP must output the RGB10 video
@@ -245,7 +246,6 @@ rockchip_dp_drm_encoder_atomic_check(struct drm_encoder *encoder,
 
 	s->output_mode = ROCKCHIP_OUT_MODE_AAAA;
 	s->output_type = DRM_MODE_CONNECTOR_eDP;
-	s->output_bpc = di->bpc;
 
 	return 0;
 }
@@ -253,19 +253,25 @@ rockchip_dp_drm_encoder_atomic_check(struct drm_encoder *encoder,
 static struct drm_encoder_helper_funcs rockchip_dp_encoder_helper_funcs = {
 	.mode_fixup = rockchip_dp_drm_encoder_mode_fixup,
 	.mode_set = rockchip_dp_drm_encoder_mode_set,
-	.atomic_enable = rockchip_dp_drm_encoder_enable,
-	.atomic_disable = rockchip_dp_drm_encoder_disable,
+	.enable = rockchip_dp_drm_encoder_enable,
+	.disable = rockchip_dp_drm_encoder_nop,
 	.atomic_check = rockchip_dp_drm_encoder_atomic_check,
 };
 
+static void rockchip_dp_drm_encoder_destroy(struct drm_encoder *encoder)
+{
+	drm_encoder_cleanup(encoder);
+}
+
 static struct drm_encoder_funcs rockchip_dp_encoder_funcs = {
-	.destroy = drm_encoder_cleanup,
+	.destroy = rockchip_dp_drm_encoder_destroy,
 };
 
-static int rockchip_dp_of_probe(struct rockchip_dp_device *dp)
+static int rockchip_dp_init(struct rockchip_dp_device *dp)
 {
 	struct device *dev = dp->dev;
 	struct device_node *np = dev->of_node;
+	int ret;
 
 	dp->grf = syscon_regmap_lookup_by_phandle(np, "rockchip,grf");
 	if (IS_ERR(dp->grf)) {
@@ -293,6 +299,19 @@ static int rockchip_dp_of_probe(struct rockchip_dp_device *dp)
 	if (IS_ERR(dp->rst)) {
 		DRM_DEV_ERROR(dev, "failed to get dp reset control\n");
 		return PTR_ERR(dp->rst);
+	}
+
+	ret = clk_prepare_enable(dp->pclk);
+	if (ret < 0) {
+		DRM_DEV_ERROR(dp->dev, "failed to enable pclk %d\n", ret);
+		return ret;
+	}
+
+	ret = rockchip_dp_pre_init(dp);
+	if (ret < 0) {
+		DRM_DEV_ERROR(dp->dev, "failed to pre init %d\n", ret);
+		clk_disable_unprepare(dp->pclk);
+		return ret;
 	}
 
 	return 0;
@@ -329,9 +348,20 @@ static int rockchip_dp_bind(struct device *dev, struct device *master,
 	struct drm_device *drm_dev = data;
 	int ret;
 
+	/*
+	 * Just like the probe function said, we don't need the
+	 * device drvrate anymore, we should leave the charge to
+	 * analogix dp driver, set the device drvdata to NULL.
+	 */
+	dev_set_drvdata(dev, NULL);
+
 	dp_data = of_device_get_match_data(dev);
 	if (!dp_data)
 		return -ENODEV;
+
+	ret = rockchip_dp_init(dp);
+	if (ret < 0)
+		return ret;
 
 	dp->data = dp_data;
 	dp->drm_dev = drm_dev;
@@ -345,20 +375,17 @@ static int rockchip_dp_bind(struct device *dev, struct device *master,
 	dp->plat_data.encoder = &dp->encoder;
 
 	dp->plat_data.dev_type = dp->data->chip_type;
-	dp->plat_data.power_on_start = rockchip_dp_poweron_start;
+	dp->plat_data.power_on = rockchip_dp_poweron;
 	dp->plat_data.power_off = rockchip_dp_powerdown;
 	dp->plat_data.get_modes = rockchip_dp_get_modes;
 
-	dp->adp = analogix_dp_bind(dev, dp->drm_dev, &dp->plat_data);
-	if (IS_ERR(dp->adp)) {
-		ret = PTR_ERR(dp->adp);
-		goto err_cleanup_encoder;
-	}
+	mutex_init(&dp->psr_lock);
+	dp->psr_state = ~EDP_VSC_PSR_STATE_ACTIVE;
+	INIT_WORK(&dp->psr_work, analogix_dp_psr_work);
 
-	return 0;
-err_cleanup_encoder:
-	dp->encoder.funcs->destroy(&dp->encoder);
-	return ret;
+	rockchip_drm_psr_register(&dp->encoder, analogix_dp_psr_set);
+
+	return analogix_dp_bind(dev, dp->drm_dev, &dp->plat_data);
 }
 
 static void rockchip_dp_unbind(struct device *dev, struct device *master,
@@ -366,10 +393,10 @@ static void rockchip_dp_unbind(struct device *dev, struct device *master,
 {
 	struct rockchip_dp_device *dp = dev_get_drvdata(dev);
 
-	analogix_dp_unbind(dp->adp);
-	dp->encoder.funcs->destroy(&dp->encoder);
+	rockchip_drm_psr_unregister(&dp->encoder);
 
-	dp->adp = ERR_PTR(-ENODEV);
+	analogix_dp_unbind(dev, master, data);
+	clk_disable_unprepare(dp->pclk);
 }
 
 static const struct component_ops rockchip_dp_component_ops = {
@@ -385,7 +412,7 @@ static int rockchip_dp_probe(struct platform_device *pdev)
 	int ret;
 
 	ret = drm_of_find_panel_or_bridge(dev->of_node, 1, 0, &panel, NULL);
-	if (ret < 0)
+	if (ret)
 		return ret;
 
 	dp = devm_kzalloc(dev, sizeof(*dp), GFP_KERNEL);
@@ -393,13 +420,14 @@ static int rockchip_dp_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	dp->dev = dev;
-	dp->adp = ERR_PTR(-ENODEV);
+
 	dp->plat_data.panel = panel;
 
-	ret = rockchip_dp_of_probe(dp);
-	if (ret < 0)
-		return ret;
-
+	/*
+	 * We just use the drvdata until driver run into component
+	 * add function, and then we would set drvdata to null, so
+	 * that analogix dp driver could take charge of the drvdata.
+	 */
 	platform_set_drvdata(pdev, dp);
 
 	return component_add(dev, &rockchip_dp_component_ops);
@@ -412,32 +440,10 @@ static int rockchip_dp_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef CONFIG_PM_SLEEP
-static int rockchip_dp_suspend(struct device *dev)
-{
-	struct rockchip_dp_device *dp = dev_get_drvdata(dev);
-
-	if (IS_ERR(dp->adp))
-		return 0;
-
-	return analogix_dp_suspend(dp->adp);
-}
-
-static int rockchip_dp_resume(struct device *dev)
-{
-	struct rockchip_dp_device *dp = dev_get_drvdata(dev);
-
-	if (IS_ERR(dp->adp))
-		return 0;
-
-	return analogix_dp_resume(dp->adp);
-}
-#endif
-
 static const struct dev_pm_ops rockchip_dp_pm_ops = {
 #ifdef CONFIG_PM_SLEEP
-	.suspend_late = rockchip_dp_suspend,
-	.resume_early = rockchip_dp_resume,
+	.suspend = analogix_dp_suspend,
+	.resume_early = analogix_dp_resume,
 #endif
 };
 

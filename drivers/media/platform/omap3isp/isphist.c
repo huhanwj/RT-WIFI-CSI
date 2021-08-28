@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * isphist.c
  *
@@ -10,6 +9,10 @@
  * Contacts: David Cohen <dacohen@gmail.com>
  *	     Laurent Pinchart <laurent.pinchart@ideasonboard.com>
  *	     Sakari Ailus <sakari.ailus@iki.fi>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/delay.h>
@@ -432,8 +435,6 @@ static long hist_ioctl(struct v4l2_subdev *sd, unsigned int cmd, void *arg)
 		return omap3isp_stat_config(stat, arg);
 	case VIDIOC_OMAP3ISP_STAT_REQ:
 		return omap3isp_stat_request_statistics(stat, arg);
-	case VIDIOC_OMAP3ISP_STAT_REQ_TIME32:
-		return omap3isp_stat_request_statistics_time32(stat, arg);
 	case VIDIOC_OMAP3ISP_STAT_EN: {
 		int *en = arg;
 		return omap3isp_stat_enable(stat, !!*en);
@@ -475,9 +476,9 @@ int omap3isp_hist_init(struct isp_device *isp)
 {
 	struct ispstat *hist = &isp->isp_hist;
 	struct omap3isp_hist_config *hist_cfg;
-	int ret;
+	int ret = -1;
 
-	hist_cfg = kzalloc(sizeof(*hist_cfg), GFP_KERNEL);
+	hist_cfg = devm_kzalloc(isp->dev, sizeof(*hist_cfg), GFP_KERNEL);
 	if (hist_cfg == NULL)
 		return -ENOMEM;
 
@@ -499,7 +500,7 @@ int omap3isp_hist_init(struct isp_device *isp)
 		if (IS_ERR(hist->dma_ch)) {
 			ret = PTR_ERR(hist->dma_ch);
 			if (ret == -EPROBE_DEFER)
-				goto err;
+				return ret;
 
 			hist->dma_ch = NULL;
 			dev_warn(isp->dev,
@@ -515,12 +516,9 @@ int omap3isp_hist_init(struct isp_device *isp)
 	hist->event_type = V4L2_EVENT_OMAP3ISP_HIST;
 
 	ret = omap3isp_stat_init(hist, "histogram", &hist_subdev_ops);
-
-err:
 	if (ret) {
-		if (!IS_ERR_OR_NULL(hist->dma_ch))
+		if (hist->dma_ch)
 			dma_release_channel(hist->dma_ch);
-		kfree(hist_cfg);
 	}
 
 	return ret;

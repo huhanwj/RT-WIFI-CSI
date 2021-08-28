@@ -1,6 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2006-2010 Red Hat, Inc.  All rights reserved.
+ *
+ * This copyrighted material is made available to anyone wishing to use,
+ * modify, copy, or redistribute it subject to the terms and conditions
+ * of the GNU General Public License v.2.
  */
 
 #include <linux/miscdevice.h>
@@ -22,7 +25,6 @@
 #include "lvb_table.h"
 #include "user.h"
 #include "ast.h"
-#include "config.h"
 
 static const char name_prefix[] = "dlm";
 static const struct file_operations device_fops;
@@ -402,7 +404,7 @@ static int device_create_lockspace(struct dlm_lspace_params *params)
 	if (!capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
-	error = dlm_new_lockspace(params->name, dlm_config.ci_cluster_name, params->flags,
+	error = dlm_new_lockspace(params->name, NULL, params->flags,
 				  DLM_USER_LVB_LEN, NULL, NULL, NULL,
 				  &lockspace);
 	if (error)
@@ -700,7 +702,7 @@ static int copy_result_to_user(struct dlm_user_args *ua, int compat,
 	result.version[0] = DLM_DEVICE_VERSION_MAJOR;
 	result.version[1] = DLM_DEVICE_VERSION_MINOR;
 	result.version[2] = DLM_DEVICE_VERSION_PATCH;
-	memcpy(&result.lksb, &ua->lksb, offsetof(struct dlm_lksb, sb_lvbptr));
+	memcpy(&result.lksb, &ua->lksb, sizeof(struct dlm_lksb));
 	result.user_lksb = ua->user_lksb;
 
 	/* FIXME: dlm1 provides for the user's bastparam/addr to not be updated
@@ -885,7 +887,7 @@ static ssize_t device_read(struct file *file, char __user *buf, size_t count,
 	return rv;
 }
 
-static __poll_t device_poll(struct file *file, poll_table *wait)
+static unsigned int device_poll(struct file *file, poll_table *wait)
 {
 	struct dlm_user_proc *proc = file->private_data;
 
@@ -894,7 +896,7 @@ static __poll_t device_poll(struct file *file, poll_table *wait)
 	spin_lock(&proc->asts_spin);
 	if (!list_empty(&proc->asts)) {
 		spin_unlock(&proc->asts_spin);
-		return EPOLLIN | EPOLLRDNORM;
+		return POLLIN | POLLRDNORM;
 	}
 	spin_unlock(&proc->asts_spin);
 	return 0;

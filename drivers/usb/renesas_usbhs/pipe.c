@@ -277,21 +277,6 @@ int usbhs_pipe_is_accessible(struct usbhs_pipe *pipe)
 	return -EBUSY;
 }
 
-bool usbhs_pipe_contains_transmittable_data(struct usbhs_pipe *pipe)
-{
-	u16 val;
-
-	/* Do not support for DCP pipe */
-	if (usbhs_pipe_is_dcp(pipe))
-		return false;
-
-	val = usbhsp_pipectrl_get(pipe);
-	if (val & INBUFM)
-		return true;
-
-	return false;
-}
-
 /*
  *		PID ctrl
  */
@@ -605,22 +590,10 @@ void usbhs_pipe_clear(struct usbhs_pipe *pipe)
 	}
 }
 
-/* Should call usbhsp_pipe_select() before */
-void usbhs_pipe_clear_without_sequence(struct usbhs_pipe *pipe,
-				       int needs_bfre, int bfre_enable)
+void usbhs_pipe_config_change_bfre(struct usbhs_pipe *pipe, int enable)
 {
 	int sequence;
 
-	usbhsp_pipe_select(pipe);
-	sequence = usbhs_pipe_get_data_sequence(pipe);
-	if (needs_bfre)
-		usbhsp_pipe_cfg_set(pipe, BFRE, bfre_enable ? BFRE : 0);
-	usbhs_pipe_clear(pipe);
-	usbhs_pipe_data_sequence(pipe, sequence);
-}
-
-void usbhs_pipe_config_change_bfre(struct usbhs_pipe *pipe, int enable)
-{
 	if (usbhs_pipe_is_dcp(pipe))
 		return;
 
@@ -629,7 +602,10 @@ void usbhs_pipe_config_change_bfre(struct usbhs_pipe *pipe, int enable)
 	if (!(enable ^ !!(usbhsp_pipe_cfg_get(pipe) & BFRE)))
 		return;
 
-	usbhs_pipe_clear_without_sequence(pipe, 1, enable);
+	sequence = usbhs_pipe_get_data_sequence(pipe);
+	usbhsp_pipe_cfg_set(pipe, BFRE, enable ? BFRE : 0);
+	usbhs_pipe_clear(pipe);
+	usbhs_pipe_data_sequence(pipe, sequence);
 }
 
 static struct usbhs_pipe *usbhsp_get_pipe(struct usbhs_priv *priv, u32 type)
@@ -818,8 +794,7 @@ int usbhs_pipe_probe(struct usbhs_priv *priv)
 		return -EINVAL;
 	}
 
-	info->pipe = kcalloc(pipe_size, sizeof(struct usbhs_pipe),
-			     GFP_KERNEL);
+	info->pipe = kzalloc(sizeof(struct usbhs_pipe) * pipe_size, GFP_KERNEL);
 	if (!info->pipe)
 		return -ENOMEM;
 

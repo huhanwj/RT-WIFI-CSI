@@ -1,7 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0
-// tm6000-cards.c - driver for TM5600/TM6000/TM6010 USB video capture devices
-//
-// Copyright (c) 2006-2007 Mauro Carvalho Chehab <mchehab@kernel.org>
+/*
+ *  tm6000-cards.c - driver for TM5600/TM6000/TM6010 USB video capture devices
+ *
+ *  Copyright (C) 2006-2007 Mauro Carvalho Chehab <mchehab@infradead.org>
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation version 2
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ */
 
 #include <linux/init.h>
 #include <linux/module.h>
@@ -13,6 +23,7 @@
 #include <media/v4l2-common.h>
 #include <media/tuner.h>
 #include <media/i2c/tvaudio.h>
+#include <media/i2c-addr.h>
 #include <media/rc-map.h>
 
 #include "tm6000.h"
@@ -1174,7 +1185,7 @@ static int tm6000_usb_probe(struct usb_interface *interface,
 {
 	struct usb_device *usbdev;
 	struct tm6000_core *dev;
-	int i, rc;
+	int i, rc = 0;
 	int nr = 0;
 	char *speed;
 
@@ -1328,7 +1339,7 @@ put_device:
 
 /*
  * tm6000_usb_disconnect()
- * called when the device gets disconnected
+ * called when the device gets diconencted
  * video device will be unregistered on v4l2_close in case it is still open
  */
 static void tm6000_usb_disconnect(struct usb_interface *interface)
@@ -1394,4 +1405,4 @@ module_usb_driver(tm6000_usb_driver);
 
 MODULE_DESCRIPTION("Trident TVMaster TM5600/TM6000/TM6010 USB2 adapter");
 MODULE_AUTHOR("Mauro Carvalho Chehab");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");

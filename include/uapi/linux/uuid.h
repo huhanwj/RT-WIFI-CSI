@@ -19,6 +19,7 @@
 #define _UAPI_LINUX_UUID_H_
 
 #include <linux/types.h>
+#include <linux/string.h>
 
 typedef struct {
 	__u8 b[16];

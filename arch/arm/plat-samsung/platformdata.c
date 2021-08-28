@@ -1,8 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0
-//
-// Copyright 2010 Ben Dooks <ben-linux <at> fluff.org>
-//
-// Helper for platform data setting
+/* linux/arch/arm/plat-samsung/platformdata.c
+ *
+ * Copyright 2010 Ben Dooks <ben-linux <at> fluff.org>
+ *
+ * Helper for platform data setting
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+*/
 
 #include <linux/kernel.h>
 #include <linux/slab.h>

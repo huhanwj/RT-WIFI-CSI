@@ -1,10 +1,23 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * coretemp.c - Linux kernel module for hardware monitoring
  *
  * Copyright (C) 2007 Rudolf Marek <r.marek@assembler.cz>
  *
  * Inspired from many hwmon drivers
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301 USA.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -96,10 +109,10 @@ struct platform_data {
 	struct device_attribute name_attr;
 };
 
-/* Keep track of how many zone pointers we allocated in init() */
-static int max_zones __read_mostly;
-/* Array of zone pointers. Serialized by cpu hotplug lock */
-static struct platform_device **zone_devices;
+/* Keep track of how many package pointers we allocated in init() */
+static int max_packages __read_mostly;
+/* Array of package pointers. Serialized by cpu hotplug lock */
+static struct platform_device **pkg_devices;
 
 static ssize_t show_label(struct device *dev,
 				struct device_attribute *devattr, char *buf)
@@ -233,8 +246,7 @@ static int adjust_tjmax(struct cpuinfo_x86 *c, u32 id, struct device *dev)
 	int err;
 	u32 eax, edx;
 	int i;
-	u16 devfn = PCI_DEVFN(0, 0);
-	struct pci_dev *host_bridge = pci_get_domain_bus_and_slot(0, 0, devfn);
+	struct pci_dev *host_bridge = pci_get_bus_and_slot(0, PCI_DEVFN(0, 0));
 
 	/*
 	 * Explicit tjmax table entries override heuristics.
@@ -256,13 +268,13 @@ static int adjust_tjmax(struct cpuinfo_x86 *c, u32 id, struct device *dev)
 	for (i = 0; i < ARRAY_SIZE(tjmax_model_table); i++) {
 		const struct tjmax_model *tm = &tjmax_model_table[i];
 		if (c->x86_model == tm->model &&
-		    (tm->mask == ANY || c->x86_stepping == tm->mask))
+		    (tm->mask == ANY || c->x86_mask == tm->mask))
 			return tm->tjmax;
 	}
 
 	/* Early chips have no MSR for TjMax */
 
-	if (c->x86_model == 0xf && c->x86_stepping < 4)
+	if (c->x86_model == 0xf && c->x86_mask < 4)
 		usemsr_ee = 0;
 
 	if (c->x86_model > 0xe && usemsr_ee) {
@@ -394,7 +406,7 @@ static int create_core_attrs(struct temp_data *tdata, struct device *dev,
 			 "temp%d_%s", attr_no, suffixes[i]);
 		sysfs_attr_init(&tdata->sd_attrs[i].dev_attr.attr);
 		tdata->sd_attrs[i].dev_attr.attr.name = tdata->attr_name[i];
-		tdata->sd_attrs[i].dev_attr.attr.mode = 0444;
+		tdata->sd_attrs[i].dev_attr.attr.mode = S_IRUGO;
 		tdata->sd_attrs[i].dev_attr.show = rd_ptr[i];
 		tdata->sd_attrs[i].index = attr_no;
 		tdata->attrs[i] = &tdata->sd_attrs[i].dev_attr.attr;
@@ -413,7 +425,7 @@ static int chk_ucode_version(unsigned int cpu)
 	 * Readings might stop update when processor visited too deep sleep,
 	 * fixed for stepping D0 (6EC).
 	 */
-	if (c->x86_model == 0xe && c->x86_stepping < 0xc && c->microcode < 0x39) {
+	if (c->x86_model == 0xe && c->x86_mask < 0xc && c->microcode < 0x39) {
 		pr_err("Errata AE18 not fixed, update BIOS or microcode of the CPU!\n");
 		return -ENODEV;
 	}
@@ -422,10 +434,10 @@ static int chk_ucode_version(unsigned int cpu)
 
 static struct platform_device *coretemp_get_pdev(unsigned int cpu)
 {
-	int id = topology_logical_die_id(cpu);
+	int pkgid = topology_logical_package_id(cpu);
 
-	if (id >= 0 && id < max_zones)
-		return zone_devices[id];
+	if (pkgid >= 0 && pkgid < max_packages)
+		return pkg_devices[pkgid];
 	return NULL;
 }
 
@@ -531,7 +543,7 @@ static int coretemp_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct platform_data *pdata;
 
-	/* Initialize the per-zone data structures */
+	/* Initialize the per-package data structures */
 	pdata = devm_kzalloc(dev, sizeof(struct platform_data), GFP_KERNEL);
 	if (!pdata)
 		return -ENOMEM;
@@ -566,13 +578,13 @@ static struct platform_driver coretemp_driver = {
 
 static struct platform_device *coretemp_device_add(unsigned int cpu)
 {
-	int err, zoneid = topology_logical_die_id(cpu);
+	int err, pkgid = topology_logical_package_id(cpu);
 	struct platform_device *pdev;
 
-	if (zoneid < 0)
+	if (pkgid < 0)
 		return ERR_PTR(-ENOMEM);
 
-	pdev = platform_device_alloc(DRVNAME, zoneid);
+	pdev = platform_device_alloc(DRVNAME, pkgid);
 	if (!pdev)
 		return ERR_PTR(-ENOMEM);
 
@@ -582,7 +594,7 @@ static struct platform_device *coretemp_device_add(unsigned int cpu)
 		return ERR_PTR(err);
 	}
 
-	zone_devices[zoneid] = pdev;
+	pkg_devices[pkgid] = pdev;
 	return pdev;
 }
 
@@ -690,7 +702,7 @@ static int coretemp_cpu_offline(unsigned int cpu)
 	 * the rest.
 	 */
 	if (cpumask_empty(&pd->cpumask)) {
-		zone_devices[topology_logical_die_id(cpu)] = NULL;
+		pkg_devices[topology_logical_package_id(cpu)] = NULL;
 		platform_device_unregister(pdev);
 		return 0;
 	}
@@ -728,15 +740,15 @@ static int __init coretemp_init(void)
 	if (!x86_match_cpu(coretemp_ids))
 		return -ENODEV;
 
-	max_zones = topology_max_packages() * topology_max_die_per_package();
-	zone_devices = kcalloc(max_zones, sizeof(struct platform_device *),
+	max_packages = topology_max_packages();
+	pkg_devices = kzalloc(max_packages * sizeof(struct platform_device *),
 			      GFP_KERNEL);
-	if (!zone_devices)
+	if (!pkg_devices)
 		return -ENOMEM;
 
 	err = platform_driver_register(&coretemp_driver);
 	if (err)
-		goto outzone;
+		return err;
 
 	err = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN, "hwmon/coretemp:online",
 				coretemp_cpu_online, coretemp_cpu_offline);
@@ -747,8 +759,7 @@ static int __init coretemp_init(void)
 
 outdrv:
 	platform_driver_unregister(&coretemp_driver);
-outzone:
-	kfree(zone_devices);
+	kfree(pkg_devices);
 	return err;
 }
 module_init(coretemp_init)
@@ -757,7 +768,7 @@ static void __exit coretemp_exit(void)
 {
 	cpuhp_remove_state(coretemp_hp_online);
 	platform_driver_unregister(&coretemp_driver);
-	kfree(zone_devices);
+	kfree(pkg_devices);
 }
 module_exit(coretemp_exit)
 

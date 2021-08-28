@@ -1,5 +1,4 @@
-# SPDX-License-Identifier: ISC
-obj-m   +=      ar9003_csi.o 
+# SPDX-License-Identifier: GPL-2.0
 ath9k-y +=	beacon.o \
 		gpio.o \
 		init.o \
@@ -63,8 +62,8 @@ ath9k_common-y:=	common.o \
 			common-init.o \
 			common-beacon.o \
 
-ath9k_common-$(CONFIG_ATH9K_COMMON_DEBUG) += common-debug.o
-ath9k_common-$(CONFIG_ATH9K_COMMON_SPECTRAL) += common-spectral.o
+ath9k_common-$(CONFIG_ATH9K_COMMON_DEBUG) += common-debug.o \
+					     common-spectral.o
 
 ath9k_htc-y +=	htc_hst.o \
 		hif_usb.o \
@@ -78,6 +77,3 @@ ath9k_htc-y +=	htc_hst.o \
 ath9k_htc-$(CONFIG_ATH9K_HTC_DEBUGFS) += htc_drv_debug.o
 
 obj-$(CONFIG_ATH9K_HTC) += ath9k_htc.o
-
-obj-$(CONFIG_ATH9K_PCI_NO_EEPROM) += ath9k_pci_owl_loader.o
-ath9k-$(CONFIG_RT_WIFI) += rt-wifi.o

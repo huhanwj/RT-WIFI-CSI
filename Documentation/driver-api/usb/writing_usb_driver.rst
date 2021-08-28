@@ -321,6 +321,6 @@ linux-usb-devel Mailing List Archives:
 http://marc.theaimsgroup.com/?l=linux-usb-devel
 
 Programming Guide for Linux USB Device Drivers:
-http://lmu.web.psi.ch/docu/manuals/software_manuals/linux_sl/usb_linux_programming_guide.pdf
+http://usb.cs.tum.edu/usbdoc
 
 USB Home Page: http://www.usb.org

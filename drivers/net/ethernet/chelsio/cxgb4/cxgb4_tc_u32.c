@@ -93,13 +93,14 @@ static int fill_action_fields(struct adapter *adap,
 	unsigned int num_actions = 0;
 	const struct tc_action *a;
 	struct tcf_exts *exts;
-	int i;
+	LIST_HEAD(actions);
 
 	exts = cls->knode.exts;
 	if (!tcf_exts_has_actions(exts))
 		return -EINVAL;
 
-	tcf_exts_for_each_action(i, a, exts) {
+	tcf_exts_to_list(exts, &actions);
+	list_for_each_entry(a, &actions, list) {
 		/* Don't allow more than one action per rule. */
 		if (num_actions)
 			return -EINVAL;
@@ -113,14 +114,14 @@ static int fill_action_fields(struct adapter *adap,
 
 		/* Re-direct to specified port in hardware. */
 		if (is_tcf_mirred_egress_redirect(a)) {
-			struct net_device *n_dev, *target_dev;
+			struct net_device *n_dev;
+			unsigned int i, index;
 			bool found = false;
-			unsigned int i;
 
-			target_dev = tcf_mirred_dev(a);
+			index = tcf_mirred_ifindex(a);
 			for_each_port(adap, i) {
 				n_dev = adap->port[i];
-				if (target_dev == n_dev) {
+				if (index == n_dev->ifindex) {
 					fs->action = FILTER_SWITCH;
 					fs->eport = i;
 					found = true;
@@ -444,7 +445,8 @@ struct cxgb4_tc_u32_table *cxgb4_init_tc_u32(struct adapter *adap)
 	if (!max_tids)
 		return NULL;
 
-	t = kvzalloc(struct_size(t, table, max_tids), GFP_KERNEL);
+	t = kvzalloc(sizeof(*t) +
+			 (max_tids * sizeof(struct cxgb4_link)), GFP_KERNEL);
 	if (!t)
 		return NULL;
 
@@ -455,8 +457,7 @@ struct cxgb4_tc_u32_table *cxgb4_init_tc_u32(struct adapter *adap)
 		unsigned int bmap_size;
 
 		bmap_size = BITS_TO_LONGS(max_tids);
-		link->tid_map = kvcalloc(bmap_size, sizeof(unsigned long),
-					 GFP_KERNEL);
+		link->tid_map = kvzalloc(sizeof(unsigned long) * bmap_size, GFP_KERNEL);
 		if (!link->tid_map)
 			goto out_no_mem;
 		bitmap_zero(link->tid_map, max_tids);

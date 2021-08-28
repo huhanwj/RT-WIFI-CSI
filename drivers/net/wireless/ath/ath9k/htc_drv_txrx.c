@@ -574,12 +574,12 @@ void ath9k_tx_failed_tasklet(unsigned long data)
 {
 	struct ath9k_htc_priv *priv = (struct ath9k_htc_priv *)data;
 
-	spin_lock(&priv->tx.tx_lock);
+	spin_lock_bh(&priv->tx.tx_lock);
 	if (priv->tx.flags & ATH9K_HTC_OP_TX_DRAIN) {
-		spin_unlock(&priv->tx.tx_lock);
+		spin_unlock_bh(&priv->tx.tx_lock);
 		return;
 	}
-	spin_unlock(&priv->tx.tx_lock);
+	spin_unlock_bh(&priv->tx.tx_lock);
 
 	ath9k_htc_tx_drainq(priv, &priv->tx.tx_failed);
 }
@@ -1107,26 +1107,25 @@ void ath9k_htc_rxep(void *drv_priv, struct sk_buff *skb,
 	struct ath_hw *ah = priv->ah;
 	struct ath_common *common = ath9k_hw_common(ah);
 	struct ath9k_htc_rxbuf *rxbuf = NULL, *tmp_buf = NULL;
-	unsigned long flags;
 
-	spin_lock_irqsave(&priv->rx.rxbuflock, flags);
+	spin_lock(&priv->rx.rxbuflock);
 	list_for_each_entry(tmp_buf, &priv->rx.rxbuf, list) {
 		if (!tmp_buf->in_process) {
 			rxbuf = tmp_buf;
 			break;
 		}
 	}
-	spin_unlock_irqrestore(&priv->rx.rxbuflock, flags);
+	spin_unlock(&priv->rx.rxbuflock);
 
 	if (rxbuf == NULL) {
 		ath_dbg(common, ANY, "No free RX buffer\n");
 		goto err;
 	}
 
-	spin_lock_irqsave(&priv->rx.rxbuflock, flags);
+	spin_lock(&priv->rx.rxbuflock);
 	rxbuf->skb = skb;
 	rxbuf->in_process = true;
-	spin_unlock_irqrestore(&priv->rx.rxbuflock, flags);
+	spin_unlock(&priv->rx.rxbuflock);
 
 	tasklet_schedule(&priv->rx_tasklet);
 	return;

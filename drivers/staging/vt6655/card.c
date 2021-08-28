@@ -1,7 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (c) 1996, 2003 VIA Networking Technologies, Inc.
  * All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
  * File: card.c
  * Purpose: Provide functions to setup NIC operation mode
@@ -60,9 +69,14 @@ static const unsigned short cwRXBCNTSFOff[MAX_RATE] = {
 
 /*---------------------  Static Functions  --------------------------*/
 
-static void s_vCalculateOFDMRParameter(unsigned char byRate, u8 bb_type,
-				       unsigned char *pbyTxRate,
-				       unsigned char *pbyRsvTime);
+static
+void
+s_vCalculateOFDMRParameter(
+	unsigned char byRate,
+	u8 bb_type,
+	unsigned char *pbyTxRate,
+	unsigned char *pbyRsvTime
+);
 
 /*---------------------  Export Functions  --------------------------*/
 
@@ -409,11 +423,14 @@ bool CARDbSetBeaconPeriod(struct vnt_private *priv,
  *  Out:
  *      none
  *
+ * Return Value: true if success; otherwise false
  */
-void CARDbRadioPowerOff(struct vnt_private *priv)
+bool CARDbRadioPowerOff(struct vnt_private *priv)
 {
+	bool bResult = true;
+
 	if (priv->bRadioOff)
-		return;
+		return true;
 
 	switch (priv->byRFType) {
 	case RF_RFMD2959:
@@ -441,6 +458,7 @@ void CARDbRadioPowerOff(struct vnt_private *priv)
 	pr_debug("chester power off\n");
 	MACvRegBitsOn(priv->PortOffset, MAC_REG_GPIOCTL0,
 		      LED_ACTSET);  /* LED issue */
+	return bResult;
 }
 
 /*
@@ -497,7 +515,10 @@ bool CARDbRadioPowerOn(struct vnt_private *priv)
 	return bResult;
 }
 
-void CARDvSafeResetTx(struct vnt_private *priv)
+void
+CARDvSafeResetTx(
+	struct vnt_private *priv
+)
 {
 	unsigned int uu;
 	struct vnt_tx_desc *pCurrTD;
@@ -545,7 +566,10 @@ void CARDvSafeResetTx(struct vnt_private *priv)
  *
  * Return Value: none
  */
-void CARDvSafeResetRx(struct vnt_private *priv)
+void
+CARDvSafeResetRx(
+	struct vnt_private *priv
+)
 {
 	unsigned int uu;
 	struct vnt_rx_desc *pDesc;

@@ -12,7 +12,6 @@
 #ifndef __ASSEMBLY__
 #include <linux/compiler.h>
 #include <linux/types.h>
-#include <linux/bits.h>
 /*
  * Resources are tree-like, allowing
  * nesting etc..
@@ -133,15 +132,7 @@ enum {
 	IORES_DESC_PERSISTENT_MEMORY		= 4,
 	IORES_DESC_PERSISTENT_MEMORY_LEGACY	= 5,
 	IORES_DESC_DEVICE_PRIVATE_MEMORY	= 6,
-	IORES_DESC_RESERVED			= 7,
-};
-
-/*
- * Flags controlling ioremap() behavior.
- */
-enum {
-	IORES_MAP_SYSTEM_RAM		= BIT(0),
-	IORES_MAP_ENCRYPTED		= BIT(1),
+	IORES_DESC_DEVICE_PUBLIC_MEMORY		= 7,
 };
 
 /* helpers to define resources */
@@ -274,7 +265,7 @@ extern struct resource * __devm_request_region(struct device *dev,
 extern void __devm_release_region(struct device *dev, struct resource *parent,
 				  resource_size_t start, resource_size_t n);
 extern int iomem_map_sanity_check(resource_size_t addr, unsigned long size);
-extern bool iomem_is_exclusive(u64 addr);
+extern int iomem_is_exclusive(u64 addr);
 
 extern int
 walk_system_ram_range(unsigned long start_pfn, unsigned long nr_pages,
@@ -295,10 +286,6 @@ static inline bool resource_overlaps(struct resource *r1, struct resource *r2)
        return (r1->start <= r2->end && r1->end >= r2->start);
 }
 
-struct resource *devm_request_free_mem_region(struct device *dev,
-		struct resource *base, unsigned long size);
-struct resource *request_free_mem_region(struct resource *base,
-		unsigned long size, const char *name);
 
 #endif /* __ASSEMBLY__ */
 #endif	/* _LINUX_IOPORT_H */

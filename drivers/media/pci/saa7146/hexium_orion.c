@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
     hexium_orion.c - v4l2 driver for the Hexium Orion frame grabber cards
 
@@ -7,6 +6,19 @@
 
     Copyright (C) 2003 Michael Hunold <michael@mihu.de>
 
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program; if not, write to the Free Software
+    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -15,7 +27,6 @@
 
 #include <media/drv-intf/saa7146_vv.h>
 #include <linux/module.h>
-#include <linux/kernel.h>
 
 static int debug;
 module_param(debug, int, 0);
@@ -176,19 +187,19 @@ static struct {
 
 static struct saa7146_standard hexium_standards[] = {
 	{
-		.name	= "PAL",	.id	= V4L2_STD_PAL,
-		.v_offset	= 16,	.v_field	= 288,
-		.h_offset	= 1,	.h_pixels	= 680,
+		.name	= "PAL", 	.id	= V4L2_STD_PAL,
+		.v_offset	= 16,	.v_field 	= 288,
+		.h_offset	= 1,	.h_pixels 	= 680,
 		.v_max_out	= 576,	.h_max_out	= 768,
 	}, {
-		.name	= "NTSC",	.id	= V4L2_STD_NTSC,
-		.v_offset	= 16,	.v_field	= 240,
-		.h_offset	= 1,	.h_pixels	= 640,
+		.name	= "NTSC", 	.id	= V4L2_STD_NTSC,
+		.v_offset	= 16,	.v_field 	= 240,
+		.h_offset	= 1,	.h_pixels 	= 640,
 		.v_max_out	= 480,	.h_max_out	= 640,
 	}, {
-		.name	= "SECAM",	.id	= V4L2_STD_SECAM,
-		.v_offset	= 16,	.v_field	= 288,
-		.h_offset	= 1,	.h_pixels	= 720,
+		.name	= "SECAM", 	.id	= V4L2_STD_SECAM,
+		.v_offset	= 16,	.v_field 	= 288,
+		.h_offset	= 1,	.h_pixels 	= 720,
 		.v_max_out	= 576,	.h_max_out	= 768,
 	}
 };
@@ -219,8 +230,9 @@ static int hexium_probe(struct saa7146_dev *dev)
 	saa7146_write(dev, DD1_STREAM_B, 0x00000000);
 	saa7146_write(dev, MC2, (MASK_09 | MASK_25 | MASK_10 | MASK_26));
 
-	strscpy(hexium->i2c_adapter.name, "hexium orion",
-		sizeof(hexium->i2c_adapter.name));
+	hexium->i2c_adapter = (struct i2c_adapter) {
+		.name = "hexium orion",
+	};
 	saa7146_i2c_adapter_prepare(dev, &hexium->i2c_adapter, SAA7146_I2C_BUS_BIT_RATE_480);
 	if (i2c_add_adapter(&hexium->i2c_adapter) < 0) {
 		DEB_S("cannot register i2c-device. skipping.\n");
@@ -448,7 +460,7 @@ static struct saa7146_ext_vv vv_data = {
 	.inputs = HEXIUM_INPUTS,
 	.capabilities = 0,
 	.stds = &hexium_standards[0],
-	.num_stds = ARRAY_SIZE(hexium_standards),
+	.num_stds = sizeof(hexium_standards) / sizeof(struct saa7146_standard),
 	.std_callback = &std_callback,
 };
 

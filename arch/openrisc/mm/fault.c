@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * OpenRISC fault.c
  *
@@ -9,6 +8,11 @@
  * Modifications for the OpenRISC architecture:
  * Copyright (C) 2003 Matjaz Breskvar <phoenix@bsemi.com>
  * Copyright (C) 2010-2011 Jonas Bonn <jonas@southpole.se>
+ *
+ *      This program is free software; you can redistribute it and/or
+ *      modify it under the terms of the GNU General Public License
+ *      as published by the Free Software Foundation; either version
+ *      2 of the License, or (at your option) any later version.
  */
 
 #include <linux/mm.h>
@@ -48,8 +52,8 @@ asmlinkage void do_page_fault(struct pt_regs *regs, unsigned long address,
 	struct task_struct *tsk;
 	struct mm_struct *mm;
 	struct vm_area_struct *vma;
-	int si_code;
-	vm_fault_t fault;
+	siginfo_t info;
+	int fault;
 	unsigned int flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
 
 	tsk = current;
@@ -93,7 +97,7 @@ asmlinkage void do_page_fault(struct pt_regs *regs, unsigned long address,
 	}
 
 	mm = tsk->mm;
-	si_code = SEGV_MAPERR;
+	info.si_code = SEGV_MAPERR;
 
 	/*
 	 * If we're in an interrupt or have no user
@@ -135,7 +139,7 @@ retry:
 	 */
 
 good_area:
-	si_code = SEGV_ACCERR;
+	info.si_code = SEGV_ACCERR;
 
 	/* first do some preliminary protection checks */
 
@@ -209,7 +213,11 @@ bad_area_nosemaphore:
 	/* User mode accesses just cause a SIGSEGV */
 
 	if (user_mode(regs)) {
-		force_sig_fault(SIGSEGV, si_code, (void __user *)address);
+		info.si_signo = SIGSEGV;
+		info.si_errno = 0;
+		/* info.si_code has been set above */
+		info.si_addr = (void *)address;
+		force_sig_info(SIGSEGV, &info, tsk);
 		return;
 	}
 
@@ -274,7 +282,11 @@ do_sigbus:
 	 * Send a sigbus, regardless of whether we were in kernel
 	 * or user mode.
 	 */
-	force_sig_fault(SIGBUS, BUS_ADRERR, (void __user *)address);
+	info.si_signo = SIGBUS;
+	info.si_errno = 0;
+	info.si_code = BUS_ADRERR;
+	info.si_addr = (void *)address;
+	force_sig_info(SIGBUS, &info, tsk);
 
 	/* Kernel mode? Handle exceptions or die */
 	if (!user_mode(regs))

@@ -23,7 +23,7 @@
  */
 
 #include <linux/firmware.h>
-
+#include <drm/drmP.h>
 #include "amdgpu.h"
 #include "amdgpu_uvd.h"
 #include "vid.h"
@@ -36,10 +36,6 @@
 #include "bif/bif_5_1_d.h"
 #include "gmc/gmc_8_1_d.h"
 #include "vi.h"
-#include "ivsrcid/ivsrcid_vislands30.h"
-
-/* Polaris10/11/12 firmware version */
-#define FW_1_130_16 ((1 << 24) | (130 << 16) | (16 << 8))
 
 static void uvd_v6_0_set_ring_funcs(struct amdgpu_device *adev);
 static void uvd_v6_0_set_enc_ring_funcs(struct amdgpu_device *adev);
@@ -62,9 +58,7 @@ static void uvd_v6_0_enable_mgcg(struct amdgpu_device *adev,
 */
 static inline bool uvd_v6_0_enc_support(struct amdgpu_device *adev)
 {
-	return ((adev->asic_type >= CHIP_POLARIS10) &&
-			(adev->asic_type <= CHIP_VEGAM) &&
-			(!adev->uvd.fw_version || adev->uvd.fw_version >= FW_1_130_16));
+	return ((adev->asic_type >= CHIP_POLARIS10) && (adev->asic_type <= CHIP_POLARIS12));
 }
 
 /**
@@ -92,7 +86,7 @@ static uint64_t uvd_v6_0_enc_ring_get_rptr(struct amdgpu_ring *ring)
 {
 	struct amdgpu_device *adev = ring->adev;
 
-	if (ring == &adev->uvd.inst->ring_enc[0])
+	if (ring == &adev->uvd.ring_enc[0])
 		return RREG32(mmUVD_RB_RPTR);
 	else
 		return RREG32(mmUVD_RB_RPTR2);
@@ -122,7 +116,7 @@ static uint64_t uvd_v6_0_enc_ring_get_wptr(struct amdgpu_ring *ring)
 {
 	struct amdgpu_device *adev = ring->adev;
 
-	if (ring == &adev->uvd.inst->ring_enc[0])
+	if (ring == &adev->uvd.ring_enc[0])
 		return RREG32(mmUVD_RB_WPTR);
 	else
 		return RREG32(mmUVD_RB_WPTR2);
@@ -153,7 +147,7 @@ static void uvd_v6_0_enc_ring_set_wptr(struct amdgpu_ring *ring)
 {
 	struct amdgpu_device *adev = ring->adev;
 
-	if (ring == &adev->uvd.inst->ring_enc[0])
+	if (ring == &adev->uvd.ring_enc[0])
 		WREG32(mmUVD_RB_WPTR,
 			lower_32_bits(ring->wptr));
 	else
@@ -170,27 +164,33 @@ static void uvd_v6_0_enc_ring_set_wptr(struct amdgpu_ring *ring)
 static int uvd_v6_0_enc_ring_test_ring(struct amdgpu_ring *ring)
 {
 	struct amdgpu_device *adev = ring->adev;
-	uint32_t rptr;
+	uint32_t rptr = amdgpu_ring_get_rptr(ring);
 	unsigned i;
 	int r;
 
 	r = amdgpu_ring_alloc(ring, 16);
-	if (r)
+	if (r) {
+		DRM_ERROR("amdgpu: uvd enc failed to lock ring %d (%d).\n",
+			  ring->idx, r);
 		return r;
-
-	rptr = amdgpu_ring_get_rptr(ring);
-
+	}
 	amdgpu_ring_write(ring, HEVC_ENC_CMD_END);
 	amdgpu_ring_commit(ring);
 
 	for (i = 0; i < adev->usec_timeout; i++) {
 		if (amdgpu_ring_get_rptr(ring) != rptr)
 			break;
-		udelay(1);
+		DRM_UDELAY(1);
 	}
 
-	if (i >= adev->usec_timeout)
+	if (i < adev->usec_timeout) {
+		DRM_INFO("ring test on %d succeeded in %d usecs\n",
+			 ring->idx, i);
+	} else {
+		DRM_ERROR("amdgpu: ring %d test failed\n",
+			  ring->idx);
 		r = -ETIMEDOUT;
+	}
 
 	return r;
 }
@@ -206,14 +206,13 @@ static int uvd_v6_0_enc_ring_test_ring(struct amdgpu_ring *ring)
  * Open up a stream for HW test
  */
 static int uvd_v6_0_enc_get_create_msg(struct amdgpu_ring *ring, uint32_t handle,
-				       struct amdgpu_bo *bo,
 				       struct dma_fence **fence)
 {
 	const unsigned ib_size_dw = 16;
 	struct amdgpu_job *job;
 	struct amdgpu_ib *ib;
 	struct dma_fence *f = NULL;
-	uint64_t addr;
+	uint64_t dummy;
 	int i, r;
 
 	r = amdgpu_job_alloc_with_ib(ring->adev, ib_size_dw * 4, &job);
@@ -221,15 +220,15 @@ static int uvd_v6_0_enc_get_create_msg(struct amdgpu_ring *ring, uint32_t handle
 		return r;
 
 	ib = &job->ibs[0];
-	addr = amdgpu_bo_gpu_offset(bo);
+	dummy = ib->gpu_addr + 1024;
 
 	ib->length_dw = 0;
 	ib->ptr[ib->length_dw++] = 0x00000018;
 	ib->ptr[ib->length_dw++] = 0x00000001; /* session info */
 	ib->ptr[ib->length_dw++] = handle;
 	ib->ptr[ib->length_dw++] = 0x00010000;
-	ib->ptr[ib->length_dw++] = upper_32_bits(addr);
-	ib->ptr[ib->length_dw++] = addr;
+	ib->ptr[ib->length_dw++] = upper_32_bits(dummy);
+	ib->ptr[ib->length_dw++] = dummy;
 
 	ib->ptr[ib->length_dw++] = 0x00000014;
 	ib->ptr[ib->length_dw++] = 0x00000002; /* task info */
@@ -243,10 +242,12 @@ static int uvd_v6_0_enc_get_create_msg(struct amdgpu_ring *ring, uint32_t handle
 	for (i = ib->length_dw; i < ib_size_dw; ++i)
 		ib->ptr[i] = 0x0;
 
-	r = amdgpu_job_submit_direct(job, ring, &f);
+	r = amdgpu_ib_schedule(ring, 1, ib, NULL, &f);
+	job->fence = dma_fence_get(f);
 	if (r)
 		goto err;
 
+	amdgpu_job_free(job);
 	if (fence)
 		*fence = dma_fence_get(f);
 	dma_fence_put(f);
@@ -269,14 +270,13 @@ err:
  */
 static int uvd_v6_0_enc_get_destroy_msg(struct amdgpu_ring *ring,
 					uint32_t handle,
-					struct amdgpu_bo *bo,
-					struct dma_fence **fence)
+					bool direct, struct dma_fence **fence)
 {
 	const unsigned ib_size_dw = 16;
 	struct amdgpu_job *job;
 	struct amdgpu_ib *ib;
 	struct dma_fence *f = NULL;
-	uint64_t addr;
+	uint64_t dummy;
 	int i, r;
 
 	r = amdgpu_job_alloc_with_ib(ring->adev, ib_size_dw * 4, &job);
@@ -284,15 +284,15 @@ static int uvd_v6_0_enc_get_destroy_msg(struct amdgpu_ring *ring,
 		return r;
 
 	ib = &job->ibs[0];
-	addr = amdgpu_bo_gpu_offset(bo);
+	dummy = ib->gpu_addr + 1024;
 
 	ib->length_dw = 0;
 	ib->ptr[ib->length_dw++] = 0x00000018;
 	ib->ptr[ib->length_dw++] = 0x00000001; /* session info */
 	ib->ptr[ib->length_dw++] = handle;
 	ib->ptr[ib->length_dw++] = 0x00010000;
-	ib->ptr[ib->length_dw++] = upper_32_bits(addr);
-	ib->ptr[ib->length_dw++] = addr;
+	ib->ptr[ib->length_dw++] = upper_32_bits(dummy);
+	ib->ptr[ib->length_dw++] = dummy;
 
 	ib->ptr[ib->length_dw++] = 0x00000014;
 	ib->ptr[ib->length_dw++] = 0x00000002; /* task info */
@@ -306,9 +306,19 @@ static int uvd_v6_0_enc_get_destroy_msg(struct amdgpu_ring *ring,
 	for (i = ib->length_dw; i < ib_size_dw; ++i)
 		ib->ptr[i] = 0x0;
 
-	r = amdgpu_job_submit_direct(job, ring, &f);
-	if (r)
-		goto err;
+	if (direct) {
+		r = amdgpu_ib_schedule(ring, 1, ib, NULL, &f);
+		job->fence = dma_fence_get(f);
+		if (r)
+			goto err;
+
+		amdgpu_job_free(job);
+	} else {
+		r = amdgpu_job_submit(job, ring, &ring->adev->vce.entity,
+				      AMDGPU_FENCE_OWNER_UNDEFINED, &f);
+		if (r)
+			goto err;
+	}
 
 	if (fence)
 		*fence = dma_fence_get(f);
@@ -329,40 +339,37 @@ err:
 static int uvd_v6_0_enc_ring_test_ib(struct amdgpu_ring *ring, long timeout)
 {
 	struct dma_fence *fence = NULL;
-	struct amdgpu_bo *bo = NULL;
 	long r;
 
-	r = amdgpu_bo_create_reserved(ring->adev, 128 * 1024, PAGE_SIZE,
-				      AMDGPU_GEM_DOMAIN_VRAM,
-				      &bo, NULL, NULL);
-	if (r)
-		return r;
-
-	r = uvd_v6_0_enc_get_create_msg(ring, 1, bo, NULL);
-	if (r)
+	r = uvd_v6_0_enc_get_create_msg(ring, 1, NULL);
+	if (r) {
+		DRM_ERROR("amdgpu: failed to get create msg (%ld).\n", r);
 		goto error;
+	}
 
-	r = uvd_v6_0_enc_get_destroy_msg(ring, 1, bo, &fence);
-	if (r)
+	r = uvd_v6_0_enc_get_destroy_msg(ring, 1, true, &fence);
+	if (r) {
+		DRM_ERROR("amdgpu: failed to get destroy ib (%ld).\n", r);
 		goto error;
+	}
 
 	r = dma_fence_wait_timeout(fence, false, timeout);
-	if (r == 0)
+	if (r == 0) {
+		DRM_ERROR("amdgpu: IB test timed out.\n");
 		r = -ETIMEDOUT;
-	else if (r > 0)
+	} else if (r < 0) {
+		DRM_ERROR("amdgpu: fence wait failed (%ld).\n", r);
+	} else {
+		DRM_INFO("ib test on ring %d succeeded\n", ring->idx);
 		r = 0;
-
+	}
 error:
 	dma_fence_put(fence);
-	amdgpu_bo_unreserve(bo);
-	amdgpu_bo_unref(&bo);
 	return r;
 }
-
 static int uvd_v6_0_early_init(void *handle)
 {
 	struct amdgpu_device *adev = (struct amdgpu_device *)handle;
-	adev->uvd.num_uvd_inst = 1;
 
 	if (!(adev->flags & AMD_IS_APU) &&
 	    (RREG32_SMC(ixCC_HARVEST_FUSES) & CC_HARVEST_FUSES__UVD_DISABLE_MASK))
@@ -387,14 +394,14 @@ static int uvd_v6_0_sw_init(void *handle)
 	struct amdgpu_device *adev = (struct amdgpu_device *)handle;
 
 	/* UVD TRAP */
-	r = amdgpu_irq_add_id(adev, AMDGPU_IRQ_CLIENTID_LEGACY, VISLANDS30_IV_SRCID_UVD_SYSTEM_MESSAGE, &adev->uvd.inst->irq);
+	r = amdgpu_irq_add_id(adev, AMDGPU_IH_CLIENTID_LEGACY, 124, &adev->uvd.irq);
 	if (r)
 		return r;
 
 	/* UVD ENC TRAP */
 	if (uvd_v6_0_enc_support(adev)) {
 		for (i = 0; i < adev->uvd.num_enc_rings; ++i) {
-			r = amdgpu_irq_add_id(adev, AMDGPU_IRQ_CLIENTID_LEGACY, i + VISLANDS30_IV_SRCID_UVD_ENC_GEN_PURP, &adev->uvd.inst->irq);
+			r = amdgpu_irq_add_id(adev, AMDGPU_IH_CLIENTID_LEGACY, i + 119, &adev->uvd.irq);
 			if (r)
 				return r;
 		}
@@ -404,37 +411,37 @@ static int uvd_v6_0_sw_init(void *handle)
 	if (r)
 		return r;
 
-	if (!uvd_v6_0_enc_support(adev)) {
-		for (i = 0; i < adev->uvd.num_enc_rings; ++i)
-			adev->uvd.inst->ring_enc[i].funcs = NULL;
-
-		adev->uvd.inst->irq.num_types = 1;
-		adev->uvd.num_enc_rings = 0;
-
-		DRM_INFO("UVD ENC is disabled\n");
+	if (uvd_v6_0_enc_support(adev)) {
+		struct amd_sched_rq *rq;
+		ring = &adev->uvd.ring_enc[0];
+		rq = &ring->sched.sched_rq[AMD_SCHED_PRIORITY_NORMAL];
+		r = amd_sched_entity_init(&ring->sched, &adev->uvd.entity_enc,
+					  rq, amdgpu_sched_jobs);
+		if (r) {
+			DRM_ERROR("Failed setting up UVD ENC run queue.\n");
+			return r;
+		}
 	}
-
-	ring = &adev->uvd.inst->ring;
-	sprintf(ring->name, "uvd");
-	r = amdgpu_ring_init(adev, ring, 512, &adev->uvd.inst->irq, 0);
-	if (r)
-		return r;
 
 	r = amdgpu_uvd_resume(adev);
 	if (r)
 		return r;
 
+	ring = &adev->uvd.ring;
+	sprintf(ring->name, "uvd");
+	r = amdgpu_ring_init(adev, ring, 512, &adev->uvd.irq, 0);
+	if (r)
+		return r;
+
 	if (uvd_v6_0_enc_support(adev)) {
 		for (i = 0; i < adev->uvd.num_enc_rings; ++i) {
-			ring = &adev->uvd.inst->ring_enc[i];
+			ring = &adev->uvd.ring_enc[i];
 			sprintf(ring->name, "uvd_enc%d", i);
-			r = amdgpu_ring_init(adev, ring, 512, &adev->uvd.inst->irq, 0);
+			r = amdgpu_ring_init(adev, ring, 512, &adev->uvd.irq, 0);
 			if (r)
 				return r;
 		}
 	}
-
-	r = amdgpu_uvd_entity_init(adev);
 
 	return r;
 }
@@ -449,8 +456,10 @@ static int uvd_v6_0_sw_fini(void *handle)
 		return r;
 
 	if (uvd_v6_0_enc_support(adev)) {
+		amd_sched_entity_fini(&adev->uvd.ring_enc[0].sched, &adev->uvd.entity_enc);
+
 		for (i = 0; i < adev->uvd.num_enc_rings; ++i)
-			amdgpu_ring_fini(&adev->uvd.inst->ring_enc[i]);
+			amdgpu_ring_fini(&adev->uvd.ring_enc[i]);
 	}
 
 	return amdgpu_uvd_sw_fini(adev);
@@ -466,7 +475,7 @@ static int uvd_v6_0_sw_fini(void *handle)
 static int uvd_v6_0_hw_init(void *handle)
 {
 	struct amdgpu_device *adev = (struct amdgpu_device *)handle;
-	struct amdgpu_ring *ring = &adev->uvd.inst->ring;
+	struct amdgpu_ring *ring = &adev->uvd.ring;
 	uint32_t tmp;
 	int i, r;
 
@@ -474,9 +483,12 @@ static int uvd_v6_0_hw_init(void *handle)
 	uvd_v6_0_set_clockgating_state(adev, AMD_CG_STATE_UNGATE);
 	uvd_v6_0_enable_mgcg(adev, true);
 
-	r = amdgpu_ring_test_helper(ring);
-	if (r)
+	ring->ready = true;
+	r = amdgpu_ring_test_ring(ring);
+	if (r) {
+		ring->ready = false;
 		goto done;
+	}
 
 	r = amdgpu_ring_alloc(ring, 10);
 	if (r) {
@@ -507,10 +519,13 @@ static int uvd_v6_0_hw_init(void *handle)
 
 	if (uvd_v6_0_enc_support(adev)) {
 		for (i = 0; i < adev->uvd.num_enc_rings; ++i) {
-			ring = &adev->uvd.inst->ring_enc[i];
-			r = amdgpu_ring_test_helper(ring);
-			if (r)
+			ring = &adev->uvd.ring_enc[i];
+			ring->ready = true;
+			r = amdgpu_ring_test_ring(ring);
+			if (r) {
+				ring->ready = false;
 				goto done;
+			}
 		}
 	}
 
@@ -535,12 +550,12 @@ done:
 static int uvd_v6_0_hw_fini(void *handle)
 {
 	struct amdgpu_device *adev = (struct amdgpu_device *)handle;
-	struct amdgpu_ring *ring = &adev->uvd.inst->ring;
+	struct amdgpu_ring *ring = &adev->uvd.ring;
 
 	if (RREG32(mmUVD_STATUS) != 0)
 		uvd_v6_0_stop(adev);
 
-	ring->sched.ready = false;
+	ring->ready = false;
 
 	return 0;
 }
@@ -583,12 +598,12 @@ static void uvd_v6_0_mc_resume(struct amdgpu_device *adev)
 
 	/* programm memory controller bits 0-27 */
 	WREG32(mmUVD_LMI_VCPU_CACHE_64BIT_BAR_LOW,
-			lower_32_bits(adev->uvd.inst->gpu_addr));
+			lower_32_bits(adev->uvd.gpu_addr));
 	WREG32(mmUVD_LMI_VCPU_CACHE_64BIT_BAR_HIGH,
-			upper_32_bits(adev->uvd.inst->gpu_addr));
+			upper_32_bits(adev->uvd.gpu_addr));
 
 	offset = AMDGPU_UVD_FIRMWARE_OFFSET;
-	size = AMDGPU_UVD_FIRMWARE_SIZE(adev);
+	size = AMDGPU_GPU_PAGE_ALIGN(adev->uvd.fw->size + 4);
 	WREG32(mmUVD_VCPU_CACHE_OFFSET0, offset >> 3);
 	WREG32(mmUVD_VCPU_CACHE_SIZE0, size);
 
@@ -698,7 +713,7 @@ static void cz_set_uvd_clock_gating_branches(struct amdgpu_device *adev,
  */
 static int uvd_v6_0_start(struct amdgpu_device *adev)
 {
-	struct amdgpu_ring *ring = &adev->uvd.inst->ring;
+	struct amdgpu_ring *ring = &adev->uvd.ring;
 	uint32_t rb_bufsz, tmp;
 	uint32_t lmi_swap_cntl;
 	uint32_t mp_swap_cntl;
@@ -838,14 +853,14 @@ static int uvd_v6_0_start(struct amdgpu_device *adev)
 	WREG32_FIELD(UVD_RBC_RB_CNTL, RB_NO_FETCH, 0);
 
 	if (uvd_v6_0_enc_support(adev)) {
-		ring = &adev->uvd.inst->ring_enc[0];
+		ring = &adev->uvd.ring_enc[0];
 		WREG32(mmUVD_RB_RPTR, lower_32_bits(ring->wptr));
 		WREG32(mmUVD_RB_WPTR, lower_32_bits(ring->wptr));
 		WREG32(mmUVD_RB_BASE_LO, ring->gpu_addr);
 		WREG32(mmUVD_RB_BASE_HI, upper_32_bits(ring->gpu_addr));
 		WREG32(mmUVD_RB_SIZE, ring->ring_size / 4);
 
-		ring = &adev->uvd.inst->ring_enc[1];
+		ring = &adev->uvd.ring_enc[1];
 		WREG32(mmUVD_RB_RPTR2, lower_32_bits(ring->wptr));
 		WREG32(mmUVD_RB_WPTR2, lower_32_bits(ring->wptr));
 		WREG32(mmUVD_RB_BASE_LO2, ring->gpu_addr);
@@ -936,13 +951,29 @@ static void uvd_v6_0_enc_ring_emit_fence(struct amdgpu_ring *ring, u64 addr,
 }
 
 /**
- * uvd_v6_0_ring_emit_hdp_flush - skip HDP flushing
+ * uvd_v6_0_ring_emit_hdp_flush - emit an hdp flush
  *
  * @ring: amdgpu_ring pointer
+ *
+ * Emits an hdp flush.
  */
 static void uvd_v6_0_ring_emit_hdp_flush(struct amdgpu_ring *ring)
 {
-	/* The firmware doesn't seem to like touching registers at this point. */
+	amdgpu_ring_write(ring, PACKET0(mmHDP_MEM_COHERENCY_FLUSH_CNTL, 0));
+	amdgpu_ring_write(ring, 0);
+}
+
+/**
+ * uvd_v6_0_ring_hdp_invalidate - emit an hdp invalidate
+ *
+ * @ring: amdgpu_ring pointer
+ *
+ * Emits an hdp invalidate.
+ */
+static void uvd_v6_0_ring_emit_hdp_invalidate(struct amdgpu_ring *ring)
+{
+	amdgpu_ring_write(ring, PACKET0(mmHDP_DEBUG0, 0));
+	amdgpu_ring_write(ring, 1);
 }
 
 /**
@@ -961,9 +992,11 @@ static int uvd_v6_0_ring_test_ring(struct amdgpu_ring *ring)
 
 	WREG32(mmUVD_CONTEXT_ID, 0xCAFEDEAD);
 	r = amdgpu_ring_alloc(ring, 3);
-	if (r)
+	if (r) {
+		DRM_ERROR("amdgpu: cp failed to lock ring %d (%d).\n",
+			  ring->idx, r);
 		return r;
-
+	}
 	amdgpu_ring_write(ring, PACKET0(mmUVD_CONTEXT_ID, 0));
 	amdgpu_ring_write(ring, 0xDEADBEEF);
 	amdgpu_ring_commit(ring);
@@ -971,12 +1004,17 @@ static int uvd_v6_0_ring_test_ring(struct amdgpu_ring *ring)
 		tmp = RREG32(mmUVD_CONTEXT_ID);
 		if (tmp == 0xDEADBEEF)
 			break;
-		udelay(1);
+		DRM_UDELAY(1);
 	}
 
-	if (i >= adev->usec_timeout)
-		r = -ETIMEDOUT;
-
+	if (i < adev->usec_timeout) {
+		DRM_INFO("ring test on %d succeeded in %d usecs\n",
+			 ring->idx, i);
+	} else {
+		DRM_ERROR("amdgpu: ring %d test failed (0x%08X)\n",
+			  ring->idx, tmp);
+		r = -EINVAL;
+	}
 	return r;
 }
 
@@ -989,14 +1027,11 @@ static int uvd_v6_0_ring_test_ring(struct amdgpu_ring *ring)
  * Write ring commands to execute the indirect buffer
  */
 static void uvd_v6_0_ring_emit_ib(struct amdgpu_ring *ring,
-				  struct amdgpu_job *job,
 				  struct amdgpu_ib *ib,
-				  uint32_t flags)
+				  unsigned vm_id, bool ctx_switch)
 {
-	unsigned vmid = AMDGPU_JOB_GET_VMID(job);
-
 	amdgpu_ring_write(ring, PACKET0(mmUVD_LMI_RBC_IB_VMID, 0));
-	amdgpu_ring_write(ring, vmid);
+	amdgpu_ring_write(ring, vm_id);
 
 	amdgpu_ring_write(ring, PACKET0(mmUVD_LMI_RBC_IB_64BIT_BAR_LOW, 0));
 	amdgpu_ring_write(ring, lower_32_bits(ib->gpu_addr));
@@ -1015,41 +1050,45 @@ static void uvd_v6_0_ring_emit_ib(struct amdgpu_ring *ring,
  * Write enc ring commands to execute the indirect buffer
  */
 static void uvd_v6_0_enc_ring_emit_ib(struct amdgpu_ring *ring,
-					struct amdgpu_job *job,
-					struct amdgpu_ib *ib,
-					uint32_t flags)
+		struct amdgpu_ib *ib, unsigned int vm_id, bool ctx_switch)
 {
-	unsigned vmid = AMDGPU_JOB_GET_VMID(job);
-
 	amdgpu_ring_write(ring, HEVC_ENC_CMD_IB_VM);
-	amdgpu_ring_write(ring, vmid);
+	amdgpu_ring_write(ring, vm_id);
 	amdgpu_ring_write(ring, lower_32_bits(ib->gpu_addr));
 	amdgpu_ring_write(ring, upper_32_bits(ib->gpu_addr));
 	amdgpu_ring_write(ring, ib->length_dw);
 }
 
-static void uvd_v6_0_ring_emit_wreg(struct amdgpu_ring *ring,
-				    uint32_t reg, uint32_t val)
+static void uvd_v6_0_ring_emit_vm_flush(struct amdgpu_ring *ring,
+					 unsigned vm_id, uint64_t pd_addr)
 {
+	uint32_t reg;
+
+	if (vm_id < 8)
+		reg = mmVM_CONTEXT0_PAGE_TABLE_BASE_ADDR + vm_id;
+	else
+		reg = mmVM_CONTEXT8_PAGE_TABLE_BASE_ADDR + vm_id - 8;
+
 	amdgpu_ring_write(ring, PACKET0(mmUVD_GPCOM_VCPU_DATA0, 0));
 	amdgpu_ring_write(ring, reg << 2);
 	amdgpu_ring_write(ring, PACKET0(mmUVD_GPCOM_VCPU_DATA1, 0));
-	amdgpu_ring_write(ring, val);
+	amdgpu_ring_write(ring, pd_addr >> 12);
 	amdgpu_ring_write(ring, PACKET0(mmUVD_GPCOM_VCPU_CMD, 0));
 	amdgpu_ring_write(ring, 0x8);
-}
 
-static void uvd_v6_0_ring_emit_vm_flush(struct amdgpu_ring *ring,
-					unsigned vmid, uint64_t pd_addr)
-{
-	amdgpu_gmc_emit_flush_gpu_tlb(ring, vmid, pd_addr);
+	amdgpu_ring_write(ring, PACKET0(mmUVD_GPCOM_VCPU_DATA0, 0));
+	amdgpu_ring_write(ring, mmVM_INVALIDATE_REQUEST << 2);
+	amdgpu_ring_write(ring, PACKET0(mmUVD_GPCOM_VCPU_DATA1, 0));
+	amdgpu_ring_write(ring, 1 << vm_id);
+	amdgpu_ring_write(ring, PACKET0(mmUVD_GPCOM_VCPU_CMD, 0));
+	amdgpu_ring_write(ring, 0x8);
 
 	amdgpu_ring_write(ring, PACKET0(mmUVD_GPCOM_VCPU_DATA0, 0));
 	amdgpu_ring_write(ring, mmVM_INVALIDATE_REQUEST << 2);
 	amdgpu_ring_write(ring, PACKET0(mmUVD_GPCOM_VCPU_DATA1, 0));
 	amdgpu_ring_write(ring, 0);
 	amdgpu_ring_write(ring, PACKET0(mmUVD_GP_SCRATCH8, 0));
-	amdgpu_ring_write(ring, 1 << vmid); /* mask */
+	amdgpu_ring_write(ring, 1 << vm_id); /* mask */
 	amdgpu_ring_write(ring, PACKET0(mmUVD_GPCOM_VCPU_CMD, 0));
 	amdgpu_ring_write(ring, 0xC);
 }
@@ -1071,18 +1110,6 @@ static void uvd_v6_0_ring_emit_pipeline_sync(struct amdgpu_ring *ring)
 	amdgpu_ring_write(ring, 0xE);
 }
 
-static void uvd_v6_0_ring_insert_nop(struct amdgpu_ring *ring, uint32_t count)
-{
-	int i;
-
-	WARN_ON(ring->wptr % 2 || count % 2);
-
-	for (i = 0; i < count / 2; i++) {
-		amdgpu_ring_write(ring, PACKET0(mmUVD_NO_OP, 0));
-		amdgpu_ring_write(ring, 0);
-	}
-}
-
 static void uvd_v6_0_enc_ring_emit_pipeline_sync(struct amdgpu_ring *ring)
 {
 	uint32_t seq = ring->fence_drv.sync_seq;
@@ -1100,14 +1127,14 @@ static void uvd_v6_0_enc_ring_insert_end(struct amdgpu_ring *ring)
 }
 
 static void uvd_v6_0_enc_ring_emit_vm_flush(struct amdgpu_ring *ring,
-					    unsigned int vmid, uint64_t pd_addr)
+        unsigned int vm_id, uint64_t pd_addr)
 {
 	amdgpu_ring_write(ring, HEVC_ENC_CMD_UPDATE_PTB);
-	amdgpu_ring_write(ring, vmid);
+	amdgpu_ring_write(ring, vm_id);
 	amdgpu_ring_write(ring, pd_addr >> 12);
 
 	amdgpu_ring_write(ring, HEVC_ENC_CMD_FLUSH_TLB);
-	amdgpu_ring_write(ring, vmid);
+	amdgpu_ring_write(ring, vm_id);
 }
 
 static bool uvd_v6_0_is_idle(void *handle)
@@ -1142,10 +1169,10 @@ static bool uvd_v6_0_check_soft_reset(void *handle)
 		srbm_soft_reset = REG_SET_FIELD(srbm_soft_reset, SRBM_SOFT_RESET, SOFT_RESET_UVD, 1);
 
 	if (srbm_soft_reset) {
-		adev->uvd.inst->srbm_soft_reset = srbm_soft_reset;
+		adev->uvd.srbm_soft_reset = srbm_soft_reset;
 		return true;
 	} else {
-		adev->uvd.inst->srbm_soft_reset = 0;
+		adev->uvd.srbm_soft_reset = 0;
 		return false;
 	}
 }
@@ -1154,7 +1181,7 @@ static int uvd_v6_0_pre_soft_reset(void *handle)
 {
 	struct amdgpu_device *adev = (struct amdgpu_device *)handle;
 
-	if (!adev->uvd.inst->srbm_soft_reset)
+	if (!adev->uvd.srbm_soft_reset)
 		return 0;
 
 	uvd_v6_0_stop(adev);
@@ -1166,9 +1193,9 @@ static int uvd_v6_0_soft_reset(void *handle)
 	struct amdgpu_device *adev = (struct amdgpu_device *)handle;
 	u32 srbm_soft_reset;
 
-	if (!adev->uvd.inst->srbm_soft_reset)
+	if (!adev->uvd.srbm_soft_reset)
 		return 0;
-	srbm_soft_reset = adev->uvd.inst->srbm_soft_reset;
+	srbm_soft_reset = adev->uvd.srbm_soft_reset;
 
 	if (srbm_soft_reset) {
 		u32 tmp;
@@ -1196,7 +1223,7 @@ static int uvd_v6_0_post_soft_reset(void *handle)
 {
 	struct amdgpu_device *adev = (struct amdgpu_device *)handle;
 
-	if (!adev->uvd.inst->srbm_soft_reset)
+	if (!adev->uvd.srbm_soft_reset)
 		return 0;
 
 	mdelay(5);
@@ -1222,17 +1249,17 @@ static int uvd_v6_0_process_interrupt(struct amdgpu_device *adev,
 
 	switch (entry->src_id) {
 	case 124:
-		amdgpu_fence_process(&adev->uvd.inst->ring);
+		amdgpu_fence_process(&adev->uvd.ring);
 		break;
 	case 119:
 		if (likely(uvd_v6_0_enc_support(adev)))
-			amdgpu_fence_process(&adev->uvd.inst->ring_enc[0]);
+			amdgpu_fence_process(&adev->uvd.ring_enc[0]);
 		else
 			int_handled = false;
 		break;
 	case 120:
 		if (likely(uvd_v6_0_enc_support(adev)))
-			amdgpu_fence_process(&adev->uvd.inst->ring_enc[1]);
+			amdgpu_fence_process(&adev->uvd.ring_enc[1]);
 		else
 			int_handled = false;
 		break;
@@ -1515,41 +1542,43 @@ static const struct amd_ip_funcs uvd_v6_0_ip_funcs = {
 static const struct amdgpu_ring_funcs uvd_v6_0_ring_phys_funcs = {
 	.type = AMDGPU_RING_TYPE_UVD,
 	.align_mask = 0xf,
+	.nop = PACKET0(mmUVD_NO_OP, 0),
 	.support_64bit_ptrs = false,
-	.no_user_fence = true,
 	.get_rptr = uvd_v6_0_ring_get_rptr,
 	.get_wptr = uvd_v6_0_ring_get_wptr,
 	.set_wptr = uvd_v6_0_ring_set_wptr,
 	.parse_cs = amdgpu_uvd_ring_parse_cs,
 	.emit_frame_size =
-		6 + /* hdp invalidate */
+		2 + /* uvd_v6_0_ring_emit_hdp_flush */
+		2 + /* uvd_v6_0_ring_emit_hdp_invalidate */
 		10 + /* uvd_v6_0_ring_emit_pipeline_sync */
 		14, /* uvd_v6_0_ring_emit_fence x1 no user fence */
 	.emit_ib_size = 8, /* uvd_v6_0_ring_emit_ib */
 	.emit_ib = uvd_v6_0_ring_emit_ib,
 	.emit_fence = uvd_v6_0_ring_emit_fence,
 	.emit_hdp_flush = uvd_v6_0_ring_emit_hdp_flush,
+	.emit_hdp_invalidate = uvd_v6_0_ring_emit_hdp_invalidate,
 	.test_ring = uvd_v6_0_ring_test_ring,
 	.test_ib = amdgpu_uvd_ring_test_ib,
-	.insert_nop = uvd_v6_0_ring_insert_nop,
+	.insert_nop = amdgpu_ring_insert_nop,
 	.pad_ib = amdgpu_ring_generic_pad_ib,
 	.begin_use = amdgpu_uvd_ring_begin_use,
 	.end_use = amdgpu_uvd_ring_end_use,
-	.emit_wreg = uvd_v6_0_ring_emit_wreg,
 };
 
 static const struct amdgpu_ring_funcs uvd_v6_0_ring_vm_funcs = {
 	.type = AMDGPU_RING_TYPE_UVD,
 	.align_mask = 0xf,
+	.nop = PACKET0(mmUVD_NO_OP, 0),
 	.support_64bit_ptrs = false,
-	.no_user_fence = true,
 	.get_rptr = uvd_v6_0_ring_get_rptr,
 	.get_wptr = uvd_v6_0_ring_get_wptr,
 	.set_wptr = uvd_v6_0_ring_set_wptr,
 	.emit_frame_size =
-		6 + /* hdp invalidate */
+		2 + /* uvd_v6_0_ring_emit_hdp_flush */
+		2 + /* uvd_v6_0_ring_emit_hdp_invalidate */
 		10 + /* uvd_v6_0_ring_emit_pipeline_sync */
-		VI_FLUSH_GPU_TLB_NUM_WREG * 6 + 8 + /* uvd_v6_0_ring_emit_vm_flush */
+		20 + /* uvd_v6_0_ring_emit_vm_flush */
 		14 + 14, /* uvd_v6_0_ring_emit_fence x2 vm fence */
 	.emit_ib_size = 8, /* uvd_v6_0_ring_emit_ib */
 	.emit_ib = uvd_v6_0_ring_emit_ib,
@@ -1557,13 +1586,13 @@ static const struct amdgpu_ring_funcs uvd_v6_0_ring_vm_funcs = {
 	.emit_vm_flush = uvd_v6_0_ring_emit_vm_flush,
 	.emit_pipeline_sync = uvd_v6_0_ring_emit_pipeline_sync,
 	.emit_hdp_flush = uvd_v6_0_ring_emit_hdp_flush,
+	.emit_hdp_invalidate = uvd_v6_0_ring_emit_hdp_invalidate,
 	.test_ring = uvd_v6_0_ring_test_ring,
 	.test_ib = amdgpu_uvd_ring_test_ib,
-	.insert_nop = uvd_v6_0_ring_insert_nop,
+	.insert_nop = amdgpu_ring_insert_nop,
 	.pad_ib = amdgpu_ring_generic_pad_ib,
 	.begin_use = amdgpu_uvd_ring_begin_use,
 	.end_use = amdgpu_uvd_ring_end_use,
-	.emit_wreg = uvd_v6_0_ring_emit_wreg,
 };
 
 static const struct amdgpu_ring_funcs uvd_v6_0_enc_ring_vm_funcs = {
@@ -1571,13 +1600,12 @@ static const struct amdgpu_ring_funcs uvd_v6_0_enc_ring_vm_funcs = {
 	.align_mask = 0x3f,
 	.nop = HEVC_ENC_CMD_NO_OP,
 	.support_64bit_ptrs = false,
-	.no_user_fence = true,
 	.get_rptr = uvd_v6_0_enc_ring_get_rptr,
 	.get_wptr = uvd_v6_0_enc_ring_get_wptr,
 	.set_wptr = uvd_v6_0_enc_ring_set_wptr,
 	.emit_frame_size =
 		4 + /* uvd_v6_0_enc_ring_emit_pipeline_sync */
-		5 + /* uvd_v6_0_enc_ring_emit_vm_flush */
+		6 + /* uvd_v6_0_enc_ring_emit_vm_flush */
 		5 + 5 + /* uvd_v6_0_enc_ring_emit_fence x2 vm fence */
 		1, /* uvd_v6_0_enc_ring_insert_end */
 	.emit_ib_size = 5, /* uvd_v6_0_enc_ring_emit_ib */
@@ -1597,10 +1625,10 @@ static const struct amdgpu_ring_funcs uvd_v6_0_enc_ring_vm_funcs = {
 static void uvd_v6_0_set_ring_funcs(struct amdgpu_device *adev)
 {
 	if (adev->asic_type >= CHIP_POLARIS10) {
-		adev->uvd.inst->ring.funcs = &uvd_v6_0_ring_vm_funcs;
+		adev->uvd.ring.funcs = &uvd_v6_0_ring_vm_funcs;
 		DRM_INFO("UVD is enabled in VM mode\n");
 	} else {
-		adev->uvd.inst->ring.funcs = &uvd_v6_0_ring_phys_funcs;
+		adev->uvd.ring.funcs = &uvd_v6_0_ring_phys_funcs;
 		DRM_INFO("UVD is enabled in physical mode\n");
 	}
 }
@@ -1610,7 +1638,7 @@ static void uvd_v6_0_set_enc_ring_funcs(struct amdgpu_device *adev)
 	int i;
 
 	for (i = 0; i < adev->uvd.num_enc_rings; ++i)
-		adev->uvd.inst->ring_enc[i].funcs = &uvd_v6_0_enc_ring_vm_funcs;
+		adev->uvd.ring_enc[i].funcs = &uvd_v6_0_enc_ring_vm_funcs;
 
 	DRM_INFO("UVD ENC is enabled in VM mode\n");
 }
@@ -1623,11 +1651,11 @@ static const struct amdgpu_irq_src_funcs uvd_v6_0_irq_funcs = {
 static void uvd_v6_0_set_irq_funcs(struct amdgpu_device *adev)
 {
 	if (uvd_v6_0_enc_support(adev))
-		adev->uvd.inst->irq.num_types = adev->uvd.num_enc_rings + 1;
+		adev->uvd.irq.num_types = adev->uvd.num_enc_rings + 1;
 	else
-		adev->uvd.inst->irq.num_types = 1;
+		adev->uvd.irq.num_types = 1;
 
-	adev->uvd.inst->irq.funcs = &uvd_v6_0_irq_funcs;
+	adev->uvd.irq.funcs = &uvd_v6_0_irq_funcs;
 }
 
 const struct amdgpu_ip_block_version uvd_v6_0_ip_block =

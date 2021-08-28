@@ -1,6 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Machine check exception handling CPU-side for power7 and power8
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  *
  * Copyright 2013 IBM Corporation
  * Author: Mahesh Salgaonkar <mahesh@linux.vnet.ibm.com>
@@ -11,7 +24,6 @@
 
 #include <linux/types.h>
 #include <linux/ptrace.h>
-#include <linux/extable.h>
 #include <asm/mmu.h>
 #include <asm/mce.h>
 #include <asm/machdep.h>
@@ -19,17 +31,15 @@
 #include <asm/pte-walk.h>
 #include <asm/sstep.h>
 #include <asm/exception-64s.h>
-#include <asm/extable.h>
 
 /*
  * Convert an address related to an mm to a PFN. NOTE: we are in real
  * mode, we could potentially race with page table updates.
  */
-unsigned long addr_to_pfn(struct pt_regs *regs, unsigned long addr)
+static unsigned long addr_to_pfn(struct pt_regs *regs, unsigned long addr)
 {
 	pte_t *ptep;
-	unsigned int shift;
-	unsigned long pfn, flags;
+	unsigned long flags;
 	struct mm_struct *mm;
 
 	if (user_mode(regs))
@@ -38,31 +48,134 @@ unsigned long addr_to_pfn(struct pt_regs *regs, unsigned long addr)
 		mm = &init_mm;
 
 	local_irq_save(flags);
-	ptep = __find_linux_pte(mm->pgd, addr, NULL, &shift);
-
-	if (!ptep || pte_special(*ptep)) {
-		pfn = ULONG_MAX;
-		goto out;
-	}
-
-	if (shift <= PAGE_SHIFT)
-		pfn = pte_pfn(*ptep);
-	else {
-		unsigned long rpnmask = (1ul << shift) - PAGE_SIZE;
-		pfn = pte_pfn(__pte(pte_val(*ptep) | (addr & rpnmask)));
-	}
-
-out:
+	if (mm == current->mm)
+		ptep = find_current_mm_pte(mm->pgd, addr, NULL, NULL);
+	else
+		ptep = find_init_mm_pte(addr, NULL);
 	local_irq_restore(flags);
-	return pfn;
+	if (!ptep || pte_special(*ptep))
+		return ULONG_MAX;
+	return pte_pfn(*ptep);
 }
+
+static void flush_tlb_206(unsigned int num_sets, unsigned int action)
+{
+	unsigned long rb;
+	unsigned int i;
+
+	switch (action) {
+	case TLB_INVAL_SCOPE_GLOBAL:
+		rb = TLBIEL_INVAL_SET;
+		break;
+	case TLB_INVAL_SCOPE_LPID:
+		rb = TLBIEL_INVAL_SET_LPID;
+		break;
+	default:
+		BUG();
+		break;
+	}
+
+	asm volatile("ptesync" : : : "memory");
+	for (i = 0; i < num_sets; i++) {
+		asm volatile("tlbiel %0" : : "r" (rb));
+		rb += 1 << TLBIEL_INVAL_SET_SHIFT;
+	}
+	asm volatile("ptesync" : : : "memory");
+}
+
+static void flush_tlb_300(unsigned int num_sets, unsigned int action)
+{
+	unsigned long rb;
+	unsigned int i;
+	unsigned int r;
+
+	switch (action) {
+	case TLB_INVAL_SCOPE_GLOBAL:
+		rb = TLBIEL_INVAL_SET;
+		break;
+	case TLB_INVAL_SCOPE_LPID:
+		rb = TLBIEL_INVAL_SET_LPID;
+		break;
+	default:
+		BUG();
+		break;
+	}
+
+	asm volatile("ptesync" : : : "memory");
+
+	if (early_radix_enabled())
+		r = 1;
+	else
+		r = 0;
+
+	/*
+	 * First flush table/PWC caches with set 0, then flush the
+	 * rest of the sets, partition scope. Radix must then do it
+	 * all again with process scope. Hash just has to flush
+	 * process table.
+	 */
+	asm volatile(PPC_TLBIEL(%0, %1, %2, %3, %4) : :
+			"r"(rb), "r"(0), "i"(2), "i"(0), "r"(r));
+	for (i = 1; i < num_sets; i++) {
+		unsigned long set = i * (1<<TLBIEL_INVAL_SET_SHIFT);
+
+		asm volatile(PPC_TLBIEL(%0, %1, %2, %3, %4) : :
+				"r"(rb+set), "r"(0), "i"(2), "i"(0), "r"(r));
+	}
+
+	asm volatile(PPC_TLBIEL(%0, %1, %2, %3, %4) : :
+			"r"(rb), "r"(0), "i"(2), "i"(1), "r"(r));
+	if (early_radix_enabled()) {
+		for (i = 1; i < num_sets; i++) {
+			unsigned long set = i * (1<<TLBIEL_INVAL_SET_SHIFT);
+
+			asm volatile(PPC_TLBIEL(%0, %1, %2, %3, %4) : :
+				"r"(rb+set), "r"(0), "i"(2), "i"(1), "r"(r));
+		}
+	}
+
+	asm volatile("ptesync" : : : "memory");
+}
+
+/*
+ * Generic routines to flush TLB on POWER processors. These routines
+ * are used as flush_tlb hook in the cpu_spec.
+ *
+ * action => TLB_INVAL_SCOPE_GLOBAL:  Invalidate all TLBs.
+ *	     TLB_INVAL_SCOPE_LPID: Invalidate TLB for current LPID.
+ */
+void __flush_tlb_power7(unsigned int action)
+{
+	flush_tlb_206(POWER7_TLB_SETS, action);
+}
+
+void __flush_tlb_power8(unsigned int action)
+{
+	flush_tlb_206(POWER8_TLB_SETS, action);
+}
+
+void __flush_tlb_power9(unsigned int action)
+{
+	unsigned int num_sets;
+
+	if (early_radix_enabled())
+		num_sets = POWER9_TLB_SETS_RADIX;
+	else
+		num_sets = POWER9_TLB_SETS_HASH;
+
+	flush_tlb_300(num_sets, action);
+}
+
 
 /* flush SLBs and reload */
 #ifdef CONFIG_PPC_BOOK3S_64
-void flush_and_reload_slb(void)
+static void flush_and_reload_slb(void)
 {
+	struct slb_shadow *slb;
+	unsigned long i, n;
+
 	/* Invalidate all SLBs */
-	slb_flush_all_realmode();
+	asm volatile("slbmte %0,%0; slbia" : : "r" (0));
 
 #ifdef CONFIG_KVM_BOOK3S_HANDLER
 	/*
@@ -72,29 +185,28 @@ void flush_and_reload_slb(void)
 	if (get_paca()->kvm_hstate.in_guest)
 		return;
 #endif
-	if (early_radix_enabled())
+
+	/* For host kernel, reload the SLBs from shadow SLB buffer. */
+	slb = get_slb_shadow();
+	if (!slb)
 		return;
 
-	/*
-	 * This probably shouldn't happen, but it may be possible it's
-	 * called in early boot before SLB shadows are allocated.
-	 */
-	if (!get_slb_shadow())
-		return;
+	n = min_t(u32, be32_to_cpu(slb->persistent), SLB_MIN_SIZE);
 
-	slb_restore_bolted_realmode();
+	/* Load up the SLB entries from shadow SLB */
+	for (i = 0; i < n; i++) {
+		unsigned long rb = be64_to_cpu(slb->save_area[i].esid);
+		unsigned long rs = be64_to_cpu(slb->save_area[i].vsid);
+
+		rb = (rb & ~0xFFFul) | i;
+		asm volatile("slbmte %0,%1" : : "r" (rs), "r" (rb));
+	}
 }
 #endif
 
 static void flush_erat(void)
 {
-#ifdef CONFIG_PPC_BOOK3S_64
-	if (!early_cpu_has_feature(CPU_FTR_ARCH_300)) {
-		flush_and_reload_slb();
-		return;
-	}
-#endif
-	asm volatile(PPC_ISA_3_0_INVALIDATE_ERAT : : :"memory");
+	asm volatile(PPC_INVALIDATE_ERAT : : :"memory");
 }
 
 #define MCE_FLUSH_SLB 1
@@ -114,8 +226,10 @@ static int mce_flush(int what)
 		return 1;
 	}
 	if (what == MCE_FLUSH_TLB) {
-		tlbiel_all();
-		return 1;
+		if (cur_cpu_spec && cur_cpu_spec->flush_tlb) {
+			cur_cpu_spec->flush_tlb(TLB_INVAL_SCOPE_GLOBAL);
+			return 1;
+		}
 	}
 
 	return 0;
@@ -129,234 +243,215 @@ struct mce_ierror_table {
 	bool nip_valid; /* nip is a valid indicator of faulting address */
 	unsigned int error_type;
 	unsigned int error_subtype;
-	unsigned int error_class;
 	unsigned int initiator;
 	unsigned int severity;
-	bool sync_error;
 };
 
 static const struct mce_ierror_table mce_p7_ierror_table[] = {
 { 0x00000000001c0000, 0x0000000000040000, true,
-  MCE_ERROR_TYPE_UE,  MCE_UE_ERROR_IFETCH, MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,  MCE_SEV_SEVERE, true },
+  MCE_ERROR_TYPE_UE,  MCE_UE_ERROR_IFETCH,
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000001c0000, 0x0000000000080000, true,
-  MCE_ERROR_TYPE_SLB, MCE_SLB_ERROR_PARITY, MCE_ECLASS_HARD_INDETERMINATE,
-  MCE_INITIATOR_CPU,  MCE_SEV_SEVERE, true },
+  MCE_ERROR_TYPE_SLB, MCE_SLB_ERROR_PARITY,
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000001c0000, 0x00000000000c0000, true,
-  MCE_ERROR_TYPE_SLB, MCE_SLB_ERROR_MULTIHIT, MCE_ECLASS_SOFT_INDETERMINATE,
-  MCE_INITIATOR_CPU,  MCE_SEV_WARNING, true },
+  MCE_ERROR_TYPE_SLB, MCE_SLB_ERROR_MULTIHIT,
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000001c0000, 0x0000000000100000, true,
   MCE_ERROR_TYPE_SLB, MCE_SLB_ERROR_INDETERMINATE, /* BOTH */
-  MCE_ECLASS_SOFT_INDETERMINATE,
-  MCE_INITIATOR_CPU,  MCE_SEV_WARNING, true },
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000001c0000, 0x0000000000140000, true,
-  MCE_ERROR_TYPE_TLB, MCE_TLB_ERROR_MULTIHIT, MCE_ECLASS_SOFT_INDETERMINATE,
-  MCE_INITIATOR_CPU,  MCE_SEV_WARNING, true },
+  MCE_ERROR_TYPE_TLB, MCE_TLB_ERROR_MULTIHIT,
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000001c0000, 0x0000000000180000, true,
-  MCE_ERROR_TYPE_UE,  MCE_UE_ERROR_PAGE_TABLE_WALK_IFETCH, MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,  MCE_SEV_SEVERE, true },
+  MCE_ERROR_TYPE_UE,  MCE_UE_ERROR_PAGE_TABLE_WALK_IFETCH,
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000001c0000, 0x00000000001c0000, true,
-  MCE_ERROR_TYPE_UE,  MCE_UE_ERROR_IFETCH, MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,  MCE_SEV_SEVERE, true },
-{ 0, 0, 0, 0, 0, 0, 0 } };
+  MCE_ERROR_TYPE_UE,  MCE_UE_ERROR_IFETCH,
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
+{ 0, 0, 0, 0, 0, 0 } };
 
 static const struct mce_ierror_table mce_p8_ierror_table[] = {
 { 0x00000000081c0000, 0x0000000000040000, true,
-  MCE_ERROR_TYPE_UE,  MCE_UE_ERROR_IFETCH, MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,  MCE_SEV_SEVERE, true },
+  MCE_ERROR_TYPE_UE,  MCE_UE_ERROR_IFETCH,
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000081c0000, 0x0000000000080000, true,
-  MCE_ERROR_TYPE_SLB, MCE_SLB_ERROR_PARITY, MCE_ECLASS_HARD_INDETERMINATE,
-  MCE_INITIATOR_CPU,  MCE_SEV_SEVERE, true },
+  MCE_ERROR_TYPE_SLB, MCE_SLB_ERROR_PARITY,
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000081c0000, 0x00000000000c0000, true,
-  MCE_ERROR_TYPE_SLB, MCE_SLB_ERROR_MULTIHIT, MCE_ECLASS_SOFT_INDETERMINATE,
-  MCE_INITIATOR_CPU,  MCE_SEV_WARNING, true },
+  MCE_ERROR_TYPE_SLB, MCE_SLB_ERROR_MULTIHIT,
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000081c0000, 0x0000000000100000, true,
-  MCE_ERROR_TYPE_ERAT, MCE_ERAT_ERROR_MULTIHIT, MCE_ECLASS_SOFT_INDETERMINATE,
-  MCE_INITIATOR_CPU,  MCE_SEV_WARNING, true },
+  MCE_ERROR_TYPE_ERAT,MCE_ERAT_ERROR_MULTIHIT,
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000081c0000, 0x0000000000140000, true,
-  MCE_ERROR_TYPE_TLB, MCE_TLB_ERROR_MULTIHIT, MCE_ECLASS_SOFT_INDETERMINATE,
-  MCE_INITIATOR_CPU,  MCE_SEV_WARNING, true },
+  MCE_ERROR_TYPE_TLB, MCE_TLB_ERROR_MULTIHIT,
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000081c0000, 0x0000000000180000, true,
   MCE_ERROR_TYPE_UE,  MCE_UE_ERROR_PAGE_TABLE_WALK_IFETCH,
-  MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,  MCE_SEV_SEVERE, true },
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000081c0000, 0x00000000001c0000, true,
-  MCE_ERROR_TYPE_UE,  MCE_UE_ERROR_IFETCH, MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,  MCE_SEV_SEVERE, true },
+  MCE_ERROR_TYPE_UE,  MCE_UE_ERROR_IFETCH,
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000081c0000, 0x0000000008000000, true,
-  MCE_ERROR_TYPE_LINK, MCE_LINK_ERROR_IFETCH_TIMEOUT, MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,  MCE_SEV_SEVERE, true },
+  MCE_ERROR_TYPE_LINK,MCE_LINK_ERROR_IFETCH_TIMEOUT,
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000081c0000, 0x0000000008040000, true,
   MCE_ERROR_TYPE_LINK,MCE_LINK_ERROR_PAGE_TABLE_WALK_IFETCH_TIMEOUT,
-  MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,  MCE_SEV_SEVERE, true },
-{ 0, 0, 0, 0, 0, 0, 0 } };
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
+{ 0, 0, 0, 0, 0, 0 } };
 
 static const struct mce_ierror_table mce_p9_ierror_table[] = {
 { 0x00000000081c0000, 0x0000000000040000, true,
-  MCE_ERROR_TYPE_UE,  MCE_UE_ERROR_IFETCH, MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,  MCE_SEV_SEVERE, true },
+  MCE_ERROR_TYPE_UE,  MCE_UE_ERROR_IFETCH,
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000081c0000, 0x0000000000080000, true,
-  MCE_ERROR_TYPE_SLB, MCE_SLB_ERROR_PARITY, MCE_ECLASS_HARD_INDETERMINATE,
-  MCE_INITIATOR_CPU,  MCE_SEV_SEVERE, true },
+  MCE_ERROR_TYPE_SLB, MCE_SLB_ERROR_PARITY,
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000081c0000, 0x00000000000c0000, true,
-  MCE_ERROR_TYPE_SLB, MCE_SLB_ERROR_MULTIHIT, MCE_ECLASS_SOFT_INDETERMINATE,
-  MCE_INITIATOR_CPU,  MCE_SEV_WARNING, true },
+  MCE_ERROR_TYPE_SLB, MCE_SLB_ERROR_MULTIHIT,
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000081c0000, 0x0000000000100000, true,
-  MCE_ERROR_TYPE_ERAT, MCE_ERAT_ERROR_MULTIHIT, MCE_ECLASS_SOFT_INDETERMINATE,
-  MCE_INITIATOR_CPU,  MCE_SEV_WARNING, true },
+  MCE_ERROR_TYPE_ERAT,MCE_ERAT_ERROR_MULTIHIT,
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000081c0000, 0x0000000000140000, true,
-  MCE_ERROR_TYPE_TLB, MCE_TLB_ERROR_MULTIHIT, MCE_ECLASS_SOFT_INDETERMINATE,
-  MCE_INITIATOR_CPU,  MCE_SEV_WARNING, true },
+  MCE_ERROR_TYPE_TLB, MCE_TLB_ERROR_MULTIHIT,
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000081c0000, 0x0000000000180000, true,
-  MCE_ERROR_TYPE_UE,  MCE_UE_ERROR_PAGE_TABLE_WALK_IFETCH, MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,  MCE_SEV_SEVERE, true },
+  MCE_ERROR_TYPE_UE,  MCE_UE_ERROR_PAGE_TABLE_WALK_IFETCH,
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000081c0000, 0x00000000001c0000, true,
-  MCE_ERROR_TYPE_RA,  MCE_RA_ERROR_IFETCH_FOREIGN, MCE_ECLASS_SOFTWARE,
-  MCE_INITIATOR_CPU,  MCE_SEV_SEVERE, true },
+  MCE_ERROR_TYPE_RA,  MCE_RA_ERROR_IFETCH_FOREIGN,
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000081c0000, 0x0000000008000000, true,
-  MCE_ERROR_TYPE_LINK, MCE_LINK_ERROR_IFETCH_TIMEOUT, MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,  MCE_SEV_SEVERE, true },
+  MCE_ERROR_TYPE_LINK,MCE_LINK_ERROR_IFETCH_TIMEOUT,
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000081c0000, 0x0000000008040000, true,
   MCE_ERROR_TYPE_LINK,MCE_LINK_ERROR_PAGE_TABLE_WALK_IFETCH_TIMEOUT,
-  MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,  MCE_SEV_SEVERE, true },
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000081c0000, 0x00000000080c0000, true,
-  MCE_ERROR_TYPE_RA,  MCE_RA_ERROR_IFETCH, MCE_ECLASS_SOFTWARE,
-  MCE_INITIATOR_CPU,  MCE_SEV_SEVERE, true },
+  MCE_ERROR_TYPE_RA,  MCE_RA_ERROR_IFETCH,
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000081c0000, 0x0000000008100000, true,
-  MCE_ERROR_TYPE_RA,  MCE_RA_ERROR_PAGE_TABLE_WALK_IFETCH, MCE_ECLASS_SOFTWARE,
-  MCE_INITIATOR_CPU,  MCE_SEV_SEVERE, true },
+  MCE_ERROR_TYPE_RA,  MCE_RA_ERROR_PAGE_TABLE_WALK_IFETCH,
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
 { 0x00000000081c0000, 0x0000000008140000, false,
-  MCE_ERROR_TYPE_RA,  MCE_RA_ERROR_STORE, MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,  MCE_SEV_FATAL, false }, /* ASYNC is fatal */
+  MCE_ERROR_TYPE_RA,  MCE_RA_ERROR_STORE,
+  MCE_INITIATOR_CPU,  MCE_SEV_FATAL, }, /* ASYNC is fatal */
 { 0x00000000081c0000, 0x0000000008180000, false,
   MCE_ERROR_TYPE_LINK,MCE_LINK_ERROR_STORE_TIMEOUT,
-  MCE_INITIATOR_CPU,  MCE_SEV_FATAL, false }, /* ASYNC is fatal */
-{ 0x00000000081c0000, 0x00000000081c0000, true, MCE_ECLASS_HARDWARE,
+  MCE_INITIATOR_CPU,  MCE_SEV_FATAL, }, /* ASYNC is fatal */
+{ 0x00000000081c0000, 0x00000000081c0000, true,
   MCE_ERROR_TYPE_RA,  MCE_RA_ERROR_PAGE_TABLE_WALK_IFETCH_FOREIGN,
-  MCE_INITIATOR_CPU,  MCE_SEV_SEVERE, true },
-{ 0, 0, 0, 0, 0, 0, 0 } };
+  MCE_INITIATOR_CPU,  MCE_SEV_ERROR_SYNC, },
+{ 0, 0, 0, 0, 0, 0 } };
 
 struct mce_derror_table {
 	unsigned long dsisr_value;
 	bool dar_valid; /* dar is a valid indicator of faulting address */
 	unsigned int error_type;
 	unsigned int error_subtype;
-	unsigned int error_class;
 	unsigned int initiator;
 	unsigned int severity;
-	bool sync_error;
 };
 
 static const struct mce_derror_table mce_p7_derror_table[] = {
 { 0x00008000, false,
-  MCE_ERROR_TYPE_UE,   MCE_UE_ERROR_LOAD_STORE, MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,   MCE_SEV_SEVERE, true },
+  MCE_ERROR_TYPE_UE,   MCE_UE_ERROR_LOAD_STORE,
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0x00004000, true,
   MCE_ERROR_TYPE_UE,   MCE_UE_ERROR_PAGE_TABLE_WALK_LOAD_STORE,
-  MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,   MCE_SEV_SEVERE, true },
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0x00000800, true,
-  MCE_ERROR_TYPE_ERAT, MCE_ERAT_ERROR_MULTIHIT, MCE_ECLASS_SOFT_INDETERMINATE,
-  MCE_INITIATOR_CPU,   MCE_SEV_WARNING, true },
+  MCE_ERROR_TYPE_ERAT, MCE_ERAT_ERROR_MULTIHIT,
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0x00000400, true,
-  MCE_ERROR_TYPE_TLB,  MCE_TLB_ERROR_MULTIHIT, MCE_ECLASS_SOFT_INDETERMINATE,
-  MCE_INITIATOR_CPU,   MCE_SEV_WARNING, true },
-{ 0x00000080, true,
-  MCE_ERROR_TYPE_SLB,  MCE_SLB_ERROR_MULTIHIT, MCE_ECLASS_SOFT_INDETERMINATE,
-  MCE_INITIATOR_CPU,   MCE_SEV_WARNING, true },
+  MCE_ERROR_TYPE_TLB,  MCE_TLB_ERROR_MULTIHIT,
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0x00000100, true,
-  MCE_ERROR_TYPE_SLB,  MCE_SLB_ERROR_PARITY, MCE_ECLASS_HARD_INDETERMINATE,
-  MCE_INITIATOR_CPU,   MCE_SEV_SEVERE, true },
+  MCE_ERROR_TYPE_SLB,  MCE_SLB_ERROR_PARITY,
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
+{ 0x00000080, true,
+  MCE_ERROR_TYPE_SLB,  MCE_SLB_ERROR_MULTIHIT,
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0x00000040, true,
   MCE_ERROR_TYPE_SLB,  MCE_SLB_ERROR_INDETERMINATE, /* BOTH */
-  MCE_ECLASS_HARD_INDETERMINATE,
-  MCE_INITIATOR_CPU,   MCE_SEV_WARNING, true },
-{ 0, false, 0, 0, 0, 0, 0 } };
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
+{ 0, false, 0, 0, 0, 0 } };
 
 static const struct mce_derror_table mce_p8_derror_table[] = {
 { 0x00008000, false,
-  MCE_ERROR_TYPE_UE,   MCE_UE_ERROR_LOAD_STORE, MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,   MCE_SEV_SEVERE, true },
+  MCE_ERROR_TYPE_UE,   MCE_UE_ERROR_LOAD_STORE,
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0x00004000, true,
   MCE_ERROR_TYPE_UE,   MCE_UE_ERROR_PAGE_TABLE_WALK_LOAD_STORE,
-  MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,   MCE_SEV_SEVERE, true },
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0x00002000, true,
-  MCE_ERROR_TYPE_LINK, MCE_LINK_ERROR_LOAD_TIMEOUT, MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,   MCE_SEV_SEVERE, true },
+  MCE_ERROR_TYPE_LINK, MCE_LINK_ERROR_LOAD_TIMEOUT,
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0x00001000, true,
   MCE_ERROR_TYPE_LINK, MCE_LINK_ERROR_PAGE_TABLE_WALK_LOAD_STORE_TIMEOUT,
-  MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,   MCE_SEV_SEVERE, true },
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0x00000800, true,
-  MCE_ERROR_TYPE_ERAT, MCE_ERAT_ERROR_MULTIHIT, MCE_ECLASS_SOFT_INDETERMINATE,
-  MCE_INITIATOR_CPU,   MCE_SEV_WARNING, true },
+  MCE_ERROR_TYPE_ERAT, MCE_ERAT_ERROR_MULTIHIT,
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0x00000400, true,
-  MCE_ERROR_TYPE_TLB,  MCE_TLB_ERROR_MULTIHIT, MCE_ECLASS_SOFT_INDETERMINATE,
-  MCE_INITIATOR_CPU,   MCE_SEV_WARNING, true },
+  MCE_ERROR_TYPE_TLB,  MCE_TLB_ERROR_MULTIHIT,
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0x00000200, true,
   MCE_ERROR_TYPE_ERAT, MCE_ERAT_ERROR_MULTIHIT, /* SECONDARY ERAT */
-  MCE_ECLASS_SOFT_INDETERMINATE,
-  MCE_INITIATOR_CPU,   MCE_SEV_WARNING, true },
-{ 0x00000080, true,
-  MCE_ERROR_TYPE_SLB,  MCE_SLB_ERROR_MULTIHIT,	/* Before PARITY */
-  MCE_ECLASS_SOFT_INDETERMINATE,
-  MCE_INITIATOR_CPU,   MCE_SEV_WARNING, true },
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0x00000100, true,
-  MCE_ERROR_TYPE_SLB,  MCE_SLB_ERROR_PARITY, MCE_ECLASS_HARD_INDETERMINATE,
-  MCE_INITIATOR_CPU,   MCE_SEV_SEVERE, true },
-{ 0, false, 0, 0, 0, 0, 0 } };
+  MCE_ERROR_TYPE_SLB,  MCE_SLB_ERROR_PARITY,
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
+{ 0x00000080, true,
+  MCE_ERROR_TYPE_SLB,  MCE_SLB_ERROR_MULTIHIT,
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
+{ 0, false, 0, 0, 0, 0 } };
 
 static const struct mce_derror_table mce_p9_derror_table[] = {
 { 0x00008000, false,
-  MCE_ERROR_TYPE_UE,   MCE_UE_ERROR_LOAD_STORE, MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,   MCE_SEV_SEVERE, true },
+  MCE_ERROR_TYPE_UE,   MCE_UE_ERROR_LOAD_STORE,
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0x00004000, true,
   MCE_ERROR_TYPE_UE,   MCE_UE_ERROR_PAGE_TABLE_WALK_LOAD_STORE,
-  MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,   MCE_SEV_SEVERE, true },
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0x00002000, true,
-  MCE_ERROR_TYPE_LINK, MCE_LINK_ERROR_LOAD_TIMEOUT, MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,   MCE_SEV_SEVERE, true },
+  MCE_ERROR_TYPE_LINK, MCE_LINK_ERROR_LOAD_TIMEOUT,
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0x00001000, true,
   MCE_ERROR_TYPE_LINK, MCE_LINK_ERROR_PAGE_TABLE_WALK_LOAD_STORE_TIMEOUT,
-  MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,   MCE_SEV_SEVERE, true },
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0x00000800, true,
-  MCE_ERROR_TYPE_ERAT, MCE_ERAT_ERROR_MULTIHIT, MCE_ECLASS_SOFT_INDETERMINATE,
-  MCE_INITIATOR_CPU,   MCE_SEV_WARNING, true },
+  MCE_ERROR_TYPE_ERAT, MCE_ERAT_ERROR_MULTIHIT,
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0x00000400, true,
-  MCE_ERROR_TYPE_TLB,  MCE_TLB_ERROR_MULTIHIT, MCE_ECLASS_SOFT_INDETERMINATE,
-  MCE_INITIATOR_CPU,   MCE_SEV_WARNING, true },
+  MCE_ERROR_TYPE_TLB,  MCE_TLB_ERROR_MULTIHIT,
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0x00000200, false,
-  MCE_ERROR_TYPE_USER, MCE_USER_ERROR_TLBIE, MCE_ECLASS_SOFTWARE,
-  MCE_INITIATOR_CPU,   MCE_SEV_WARNING, true },
-{ 0x00000080, true,
-  MCE_ERROR_TYPE_SLB,  MCE_SLB_ERROR_MULTIHIT,	/* Before PARITY */
-  MCE_ECLASS_SOFT_INDETERMINATE,
-  MCE_INITIATOR_CPU,   MCE_SEV_WARNING, true },
+  MCE_ERROR_TYPE_USER, MCE_USER_ERROR_TLBIE,
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0x00000100, true,
-  MCE_ERROR_TYPE_SLB,  MCE_SLB_ERROR_PARITY, MCE_ECLASS_HARD_INDETERMINATE,
-  MCE_INITIATOR_CPU,   MCE_SEV_SEVERE, true },
+  MCE_ERROR_TYPE_SLB,  MCE_SLB_ERROR_PARITY,
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
+{ 0x00000080, true,
+  MCE_ERROR_TYPE_SLB,  MCE_SLB_ERROR_MULTIHIT,
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0x00000040, true,
-  MCE_ERROR_TYPE_RA,   MCE_RA_ERROR_LOAD, MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,   MCE_SEV_SEVERE, true },
+  MCE_ERROR_TYPE_RA,   MCE_RA_ERROR_LOAD,
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0x00000020, false,
   MCE_ERROR_TYPE_RA,   MCE_RA_ERROR_PAGE_TABLE_WALK_LOAD_STORE,
-  MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,   MCE_SEV_SEVERE, true },
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0x00000010, false,
   MCE_ERROR_TYPE_RA,   MCE_RA_ERROR_PAGE_TABLE_WALK_LOAD_STORE_FOREIGN,
-  MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,   MCE_SEV_SEVERE, true },
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
 { 0x00000008, false,
-  MCE_ERROR_TYPE_RA,   MCE_RA_ERROR_LOAD_STORE_FOREIGN, MCE_ECLASS_HARDWARE,
-  MCE_INITIATOR_CPU,   MCE_SEV_SEVERE, true },
-{ 0, false, 0, 0, 0, 0, 0 } };
+  MCE_ERROR_TYPE_RA,   MCE_RA_ERROR_LOAD_STORE_FOREIGN,
+  MCE_INITIATOR_CPU,   MCE_SEV_ERROR_SYNC, },
+{ 0, false, 0, 0, 0, 0 } };
 
-static int mce_find_instr_ea_and_phys(struct pt_regs *regs, uint64_t *addr,
+static int mce_find_instr_ea_and_pfn(struct pt_regs *regs, uint64_t *addr,
 					uint64_t *phys_addr)
 {
 	/*
@@ -409,8 +504,6 @@ static int mce_handle_ierror(struct pt_regs *regs,
 		/* attempt to correct the error */
 		switch (table[i].error_type) {
 		case MCE_ERROR_TYPE_SLB:
-			if (local_paca->in_mce == 1)
-				slb_save_contents(local_paca->mce_faulty_slbs);
 			handled = mce_flush(MCE_FLUSH_SLB);
 			break;
 		case MCE_ERROR_TYPE_ERAT:
@@ -423,7 +516,6 @@ static int mce_handle_ierror(struct pt_regs *regs,
 
 		/* now fill in mce_error_info */
 		mce_err->error_type = table[i].error_type;
-		mce_err->error_class = table[i].error_class;
 		switch (table[i].error_type) {
 		case MCE_ERROR_TYPE_UE:
 			mce_err->u.ue_error_type = table[i].error_subtype;
@@ -447,12 +539,11 @@ static int mce_handle_ierror(struct pt_regs *regs,
 			mce_err->u.link_error_type = table[i].error_subtype;
 			break;
 		}
-		mce_err->sync_error = table[i].sync_error;
 		mce_err->severity = table[i].severity;
 		mce_err->initiator = table[i].initiator;
 		if (table[i].nip_valid) {
 			*addr = regs->nip;
-			if (mce_err->sync_error &&
+			if (mce_err->severity == MCE_SEV_ERROR_SYNC &&
 				table[i].error_type == MCE_ERROR_TYPE_UE) {
 				unsigned long pfn;
 
@@ -461,6 +552,7 @@ static int mce_handle_ierror(struct pt_regs *regs,
 					if (pfn != ULONG_MAX) {
 						*phys_addr =
 							(pfn << PAGE_SHIFT);
+						handled = 1;
 					}
 				}
 			}
@@ -469,10 +561,8 @@ static int mce_handle_ierror(struct pt_regs *regs,
 	}
 
 	mce_err->error_type = MCE_ERROR_TYPE_UNKNOWN;
-	mce_err->error_class = MCE_ECLASS_UNKNOWN;
-	mce_err->severity = MCE_SEV_SEVERE;
+	mce_err->severity = MCE_SEV_ERROR_SYNC;
 	mce_err->initiator = MCE_INITIATOR_CPU;
-	mce_err->sync_error = true;
 
 	return 0;
 }
@@ -496,8 +586,6 @@ static int mce_handle_derror(struct pt_regs *regs,
 		/* attempt to correct the error */
 		switch (table[i].error_type) {
 		case MCE_ERROR_TYPE_SLB:
-			if (local_paca->in_mce == 1)
-				slb_save_contents(local_paca->mce_faulty_slbs);
 			if (mce_flush(MCE_FLUSH_SLB))
 				handled = 1;
 			break;
@@ -521,7 +609,6 @@ static int mce_handle_derror(struct pt_regs *regs,
 
 		/* now fill in mce_error_info */
 		mce_err->error_type = table[i].error_type;
-		mce_err->error_class = table[i].error_class;
 		switch (table[i].error_type) {
 		case MCE_ERROR_TYPE_UE:
 			mce_err->u.ue_error_type = table[i].error_subtype;
@@ -545,20 +632,20 @@ static int mce_handle_derror(struct pt_regs *regs,
 			mce_err->u.link_error_type = table[i].error_subtype;
 			break;
 		}
-		mce_err->sync_error = table[i].sync_error;
 		mce_err->severity = table[i].severity;
 		mce_err->initiator = table[i].initiator;
 		if (table[i].dar_valid)
 			*addr = regs->dar;
-		else if (mce_err->sync_error &&
+		else if (mce_err->severity == MCE_SEV_ERROR_SYNC &&
 				table[i].error_type == MCE_ERROR_TYPE_UE) {
 			/*
 			 * We do a maximum of 4 nested MCE calls, see
 			 * kernel/exception-64s.h
 			 */
 			if (get_paca()->in_mce < MAX_MCE_DEPTH)
-				mce_find_instr_ea_and_phys(regs, addr,
-							   phys_addr);
+				if (!mce_find_instr_ea_and_pfn(regs, addr,
+								phys_addr))
+					handled = 1;
 		}
 		found = 1;
 	}
@@ -567,26 +654,15 @@ static int mce_handle_derror(struct pt_regs *regs,
 		return handled;
 
 	mce_err->error_type = MCE_ERROR_TYPE_UNKNOWN;
-	mce_err->error_class = MCE_ECLASS_UNKNOWN;
-	mce_err->severity = MCE_SEV_SEVERE;
+	mce_err->severity = MCE_SEV_ERROR_SYNC;
 	mce_err->initiator = MCE_INITIATOR_CPU;
-	mce_err->sync_error = true;
 
 	return 0;
 }
 
-static long mce_handle_ue_error(struct pt_regs *regs,
-				struct mce_error_info *mce_err)
+static long mce_handle_ue_error(struct pt_regs *regs)
 {
 	long handled = 0;
-	const struct exception_table_entry *entry;
-
-	entry = search_kernel_exception_table(regs->nip);
-	if (entry) {
-		mce_err->ignore_event = true;
-		regs->nip = extable_fixup(entry);
-		return 1;
-	}
 
 	/*
 	 * On specific SCOM read via MMIO we may get a machine check
@@ -607,7 +683,7 @@ static long mce_handle_error(struct pt_regs *regs,
 		const struct mce_ierror_table itable[])
 {
 	struct mce_error_info mce_err = { 0 };
-	uint64_t addr, phys_addr = ULONG_MAX;
+	uint64_t addr, phys_addr;
 	uint64_t srr1 = regs->msr;
 	long handled;
 
@@ -619,7 +695,7 @@ static long mce_handle_error(struct pt_regs *regs,
 				&phys_addr);
 
 	if (!handled && mce_err.error_type == MCE_ERROR_TYPE_UE)
-		handled = mce_handle_ue_error(regs, &mce_err);
+		handled = mce_handle_ue_error(regs);
 
 	save_mce_event(regs, handled, &mce_err, regs->nip, addr, phys_addr);
 

@@ -128,6 +128,8 @@ bgmac_dma_tx_add_buf(struct bgmac *bgmac, struct bgmac_dma_ring *ring,
 	dma_desc->ctl1 = cpu_to_le32(ctl1);
 }
 
+#define ENET_BRCM_TAG_LEN	4
+
 static netdev_tx_t bgmac_dma_tx_add(struct bgmac *bgmac,
 				    struct bgmac_dma_ring *ring,
 				    struct sk_buff *skb)
@@ -139,6 +141,18 @@ static netdev_tx_t bgmac_dma_tx_add(struct bgmac *bgmac,
 	int nr_frags;
 	u32 flags;
 	int i;
+
+	/* The Ethernet switch we are interfaced with needs packets to be at
+	 * least 64 bytes (including FCS) otherwise they will be discarded when
+	 * they enter the switch port logic. When Broadcom tags are enabled, we
+	 * need to make sure that packets are at least 68 bytes
+	 * (including FCS and tag) because the length verification is done after
+	 * the Broadcom tag is stripped off the ingress packet.
+	 */
+	if (netdev_uses_dsa(net_dev)) {
+		if (skb_put_padto(skb, ETH_ZLEN + ENET_BRCM_TAG_LEN))
+			goto err_stats;
+	}
 
 	if (skb->len > BGMAC_DESC_CTL1_LEN) {
 		netdev_err(bgmac->net_dev, "Too long skb (%d)\n", skb->len);
@@ -172,7 +186,7 @@ static netdev_tx_t bgmac_dma_tx_add(struct bgmac *bgmac,
 	flags = 0;
 
 	for (i = 0; i < nr_frags; i++) {
-		skb_frag_t *frag = &skb_shinfo(skb)->frags[i];
+		struct skb_frag_struct *frag = &skb_shinfo(skb)->frags[i];
 		int len = skb_frag_size(frag);
 
 		index = (index + 1) % BGMAC_TX_RING_SLOTS;
@@ -226,6 +240,7 @@ err_dma_head:
 
 err_drop:
 	dev_kfree_skb(skb);
+err_stats:
 	net_dev->stats.tx_dropped++;
 	net_dev->stats.tx_errors++;
 	return NETDEV_TX_OK;
@@ -236,6 +251,7 @@ static void bgmac_dma_tx_free(struct bgmac *bgmac, struct bgmac_dma_ring *ring)
 {
 	struct device *dma_dev = bgmac->dma_dev;
 	int empty_slot;
+	bool freed = false;
 	unsigned bytes_compl = 0, pkts_compl = 0;
 
 	/* The last slot that hardware didn't consume yet */
@@ -278,6 +294,7 @@ static void bgmac_dma_tx_free(struct bgmac *bgmac, struct bgmac_dma_ring *ring)
 
 		slot->dma_addr = 0;
 		ring->start++;
+		freed = true;
 	}
 
 	if (!pkts_compl)
@@ -531,8 +548,7 @@ static void bgmac_dma_tx_ring_free(struct bgmac *bgmac,
 	int i;
 
 	for (i = 0; i < BGMAC_TX_RING_SLOTS; i++) {
-		u32 ctl1 = le32_to_cpu(dma_desc[i].ctl1);
-		unsigned int len = ctl1 & BGMAC_DESC_CTL1_LEN;
+		int len = dma_desc[i].ctl1 & BGMAC_DESC_CTL1_LEN;
 
 		slot = &ring->slots[i];
 		dev_kfree_skb(slot->skb);
@@ -616,6 +632,7 @@ static int bgmac_dma_alloc(struct bgmac *bgmac)
 	static const u16 ring_base[] = { BGMAC_DMA_BASE0, BGMAC_DMA_BASE1,
 					 BGMAC_DMA_BASE2, BGMAC_DMA_BASE3, };
 	int size; /* ring size: different for Tx and Rx */
+	int err;
 	int i;
 
 	BUILD_BUG_ON(BGMAC_MAX_TX_RINGS > ARRAY_SIZE(ring_base));
@@ -634,9 +651,9 @@ static int bgmac_dma_alloc(struct bgmac *bgmac)
 
 		/* Alloc ring of descriptors */
 		size = BGMAC_TX_RING_SLOTS * sizeof(struct bgmac_dma_desc);
-		ring->cpu_base = dma_alloc_coherent(dma_dev, size,
-						    &ring->dma_base,
-						    GFP_KERNEL);
+		ring->cpu_base = dma_zalloc_coherent(dma_dev, size,
+						     &ring->dma_base,
+						     GFP_KERNEL);
 		if (!ring->cpu_base) {
 			dev_err(bgmac->dev, "Allocation of TX ring 0x%X failed\n",
 				ring->mmio_base);
@@ -659,12 +676,13 @@ static int bgmac_dma_alloc(struct bgmac *bgmac)
 
 		/* Alloc ring of descriptors */
 		size = BGMAC_RX_RING_SLOTS * sizeof(struct bgmac_dma_desc);
-		ring->cpu_base = dma_alloc_coherent(dma_dev, size,
-						    &ring->dma_base,
-						    GFP_KERNEL);
+		ring->cpu_base = dma_zalloc_coherent(dma_dev, size,
+						     &ring->dma_base,
+						     GFP_KERNEL);
 		if (!ring->cpu_base) {
 			dev_err(bgmac->dev, "Allocation of RX ring 0x%X failed\n",
 				ring->mmio_base);
+			err = -ENOMEM;
 			goto err_dma_free;
 		}
 
@@ -1187,7 +1205,7 @@ static int bgmac_open(struct net_device *net_dev)
 	bgmac_chip_init(bgmac);
 
 	err = request_irq(bgmac->irq, bgmac_interrupt, IRQF_SHARED,
-			  net_dev->name, net_dev);
+			  KBUILD_MODNAME, net_dev);
 	if (err < 0) {
 		dev_err(bgmac->dev, "IRQ request error: %d!\n", err);
 		bgmac_dma_cleanup(bgmac);
@@ -1446,7 +1464,7 @@ int bgmac_phy_connect_direct(struct bgmac *bgmac)
 	struct phy_device *phy_dev;
 	int err;
 
-	phy_dev = fixed_phy_register(PHY_POLL, &fphy_status, NULL);
+	phy_dev = fixed_phy_register(PHY_POLL, &fphy_status, -1, NULL);
 	if (!phy_dev || IS_ERR(phy_dev)) {
 		dev_err(bgmac->dev, "Failed to register fixed PHY device\n");
 		return -ENODEV;
@@ -1488,8 +1506,6 @@ int bgmac_enet_probe(struct bgmac *bgmac)
 {
 	struct net_device *net_dev = bgmac->net_dev;
 	int err;
-
-	bgmac_chip_intrs_off(bgmac);
 
 	net_dev->irq = bgmac->irq;
 	SET_NETDEV_DEV(net_dev, bgmac->dev);

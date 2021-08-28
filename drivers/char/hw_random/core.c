@@ -4,7 +4,7 @@
  * Copyright 2006 Michael Buesch <m@bues.ch>
  * Copyright 2005 (c) MontaVista Software, Inc.
  *
- * Please read Documentation/admin-guide/hw_random.rst for details on use.
+ * Please read Documentation/hw_random.txt for details on use.
  *
  * This software may be used and distributed according to the terms
  * of the GNU General Public License, incorporated herein by reference.
@@ -44,10 +44,10 @@ static unsigned short default_quality; /* = 0; default to "off" */
 
 module_param(current_quality, ushort, 0644);
 MODULE_PARM_DESC(current_quality,
-		 "current hwrng entropy estimation per 1024 bits of input");
+		 "current hwrng entropy estimation per mill");
 module_param(default_quality, ushort, 0644);
 MODULE_PARM_DESC(default_quality,
-		 "default entropy content of hwrng per 1024 bits of input");
+		 "default entropy content of hwrng per mill");
 
 static void drop_current_rng(void);
 static int hwrng_init(struct hwrng *rng);
@@ -67,7 +67,7 @@ static void add_early_randomness(struct hwrng *rng)
 	size_t size = min_t(size_t, 16, rng_buffer_size());
 
 	mutex_lock(&reading_mutex);
-	bytes_read = rng_get_data(rng, rng_buffer, size, 0);
+	bytes_read = rng_get_data(rng, rng_buffer, size, 1);
 	mutex_unlock(&reading_mutex);
 	if (bytes_read > 0)
 		add_device_randomness(rng_buffer, bytes_read);
@@ -306,10 +306,6 @@ static int enable_best_rng(void)
 		ret = ((new_rng == current_rng) ? 0 : set_current_rng(new_rng));
 		if (!ret)
 			cur_rng_set_by_user = 0;
-	} else {
-		drop_current_rng();
-		cur_rng_set_by_user = 0;
-		ret = 0;
 	}
 
 	return ret;
@@ -516,18 +512,11 @@ EXPORT_SYMBOL_GPL(hwrng_register);
 
 void hwrng_unregister(struct hwrng *rng)
 {
-	int err;
-
 	mutex_lock(&rng_mutex);
 
 	list_del(&rng->list);
-	if (current_rng == rng) {
-		err = enable_best_rng();
-		if (err) {
-			drop_current_rng();
-			cur_rng_set_by_user = 0;
-		}
-	}
+	if (current_rng == rng)
+		enable_best_rng();
 
 	if (list_empty(&rng_list)) {
 		mutex_unlock(&rng_mutex);

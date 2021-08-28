@@ -1,37 +1,58 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Freescale i.MX drm driver
  *
  * Copyright (C) 2011 Sascha Hauer, Pengutronix
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
-
 #include <linux/component.h>
 #include <linux/device.h>
 #include <linux/dma-buf.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
-
-#include <video/imx-ipu-v3.h>
-
+#include <drm/drmP.h>
 #include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
-#include <drm/drm_drv.h>
-#include <drm/drm_fb_cma_helper.h>
 #include <drm/drm_fb_helper.h>
+#include <drm/drm_crtc_helper.h>
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
-#include <drm/drm_of.h>
+#include <drm/drm_fb_cma_helper.h>
 #include <drm/drm_plane_helper.h>
-#include <drm/drm_probe_helper.h>
-#include <drm/drm_vblank.h>
+#include <drm/drm_of.h>
+#include <video/imx-ipu-v3.h>
 
 #include "imx-drm.h"
 #include "ipuv3-plane.h"
 
 #define MAX_CRTC	4
 
+struct imx_drm_device {
+	struct drm_device			*drm;
+	unsigned int				pipes;
+	struct drm_fbdev_cma			*fbhelper;
+	struct drm_atomic_state			*state;
+};
+
+#if IS_ENABLED(CONFIG_DRM_FBDEV_EMULATION)
 static int legacyfb_depth = 16;
 module_param(legacyfb_depth, int, 0444);
+#endif
+
+static void imx_drm_driver_lastclose(struct drm_device *drm)
+{
+	struct imx_drm_device *imxdrm = drm->dev_private;
+
+	drm_fbdev_cma_restore_mode(imxdrm->fbhelper);
+}
 
 DEFINE_DRM_GEM_CMA_FOPS(imx_drm_driver_fops);
 
@@ -48,12 +69,23 @@ void imx_drm_encoder_destroy(struct drm_encoder *encoder)
 }
 EXPORT_SYMBOL_GPL(imx_drm_encoder_destroy);
 
+static void imx_drm_output_poll_changed(struct drm_device *drm)
+{
+	struct imx_drm_device *imxdrm = drm->dev_private;
+
+	drm_fbdev_cma_hotplug_event(imxdrm->fbhelper);
+}
+
 static int imx_drm_atomic_check(struct drm_device *dev,
 				struct drm_atomic_state *state)
 {
 	int ret;
 
-	ret = drm_atomic_helper_check(dev, state);
+	ret = drm_atomic_helper_check_modeset(dev, state);
+	if (ret)
+		return ret;
+
+	ret = drm_atomic_helper_check_planes(dev, state);
 	if (ret)
 		return ret;
 
@@ -75,6 +107,7 @@ static int imx_drm_atomic_check(struct drm_device *dev,
 
 static const struct drm_mode_config_funcs imx_drm_mode_config_funcs = {
 	.fb_create = drm_gem_fb_create,
+	.output_poll_changed = imx_drm_output_poll_changed,
 	.atomic_check = imx_drm_atomic_check,
 	.atomic_commit = drm_atomic_helper_commit,
 };
@@ -151,13 +184,17 @@ static const struct drm_ioctl_desc imx_drm_ioctls[] = {
 };
 
 static struct drm_driver imx_drm_driver = {
-	.driver_features	= DRIVER_MODESET | DRIVER_GEM | DRIVER_ATOMIC,
+	.driver_features	= DRIVER_MODESET | DRIVER_GEM | DRIVER_PRIME |
+				  DRIVER_ATOMIC,
+	.lastclose		= imx_drm_driver_lastclose,
 	.gem_free_object_unlocked = drm_gem_cma_free_object,
 	.gem_vm_ops		= &drm_gem_cma_vm_ops,
 	.dumb_create		= drm_gem_cma_dumb_create,
 
 	.prime_handle_to_fd	= drm_gem_prime_handle_to_fd,
 	.prime_fd_to_handle	= drm_gem_prime_fd_to_handle,
+	.gem_prime_import	= drm_gem_prime_import,
+	.gem_prime_export	= drm_gem_prime_export,
 	.gem_prime_get_sg_table	= drm_gem_cma_prime_get_sg_table,
 	.gem_prime_import_sg_table = drm_gem_cma_prime_import_sg_table,
 	.gem_prime_vmap		= drm_gem_cma_prime_vmap,
@@ -186,7 +223,7 @@ static int compare_of(struct device *dev, void *data)
 	}
 
 	/* Special case for LDB, one device for two channels */
-	if (of_node_name_eq(np, "lvds-channel")) {
+	if (of_node_cmp(np->name, "lvds-channel") == 0) {
 		np = of_get_parent(np);
 		of_node_put(np);
 	}
@@ -197,11 +234,21 @@ static int compare_of(struct device *dev, void *data)
 static int imx_drm_bind(struct device *dev)
 {
 	struct drm_device *drm;
+	struct imx_drm_device *imxdrm;
 	int ret;
 
 	drm = drm_dev_alloc(&imx_drm_driver, dev);
 	if (IS_ERR(drm))
 		return PTR_ERR(drm);
+
+	imxdrm = devm_kzalloc(dev, sizeof(*imxdrm), GFP_KERNEL);
+	if (!imxdrm) {
+		ret = -ENOMEM;
+		goto err_unref;
+	}
+
+	imxdrm->drm = drm;
+	drm->dev_private = imxdrm;
 
 	/*
 	 * enable drm irq mode.
@@ -225,8 +272,6 @@ static int imx_drm_bind(struct device *dev)
 	drm->mode_config.max_height = 4096;
 	drm->mode_config.funcs = &imx_drm_mode_config_funcs;
 	drm->mode_config.helper_private = &imx_drm_mode_config_helpers;
-	drm->mode_config.allow_fb_modifiers = true;
-	drm->mode_config.normalize_zpos = true;
 
 	drm_mode_config_init(drm);
 
@@ -248,27 +293,39 @@ static int imx_drm_bind(struct device *dev)
 	 * The fb helper takes copies of key hardware information, so the
 	 * crtcs/connectors/encoders must not change after this point.
 	 */
+#if IS_ENABLED(CONFIG_DRM_FBDEV_EMULATION)
 	if (legacyfb_depth != 16 && legacyfb_depth != 32) {
 		dev_warn(dev, "Invalid legacyfb_depth.  Defaulting to 16bpp\n");
 		legacyfb_depth = 16;
 	}
+	imxdrm->fbhelper = drm_fbdev_cma_init(drm, legacyfb_depth, MAX_CRTC);
+	if (IS_ERR(imxdrm->fbhelper)) {
+		ret = PTR_ERR(imxdrm->fbhelper);
+		imxdrm->fbhelper = NULL;
+		goto err_unbind;
+	}
+#endif
 
 	drm_kms_helper_poll_init(drm);
 
 	ret = drm_dev_register(drm, 0);
 	if (ret)
-		goto err_poll_fini;
-
-	drm_fbdev_generic_setup(drm, legacyfb_depth);
+		goto err_fbhelper;
 
 	return 0;
 
-err_poll_fini:
+err_fbhelper:
 	drm_kms_helper_poll_fini(drm);
+#if IS_ENABLED(CONFIG_DRM_FBDEV_EMULATION)
+	if (imxdrm->fbhelper)
+		drm_fbdev_cma_fini(imxdrm->fbhelper);
+err_unbind:
+#endif
 	component_unbind_all(drm->dev, drm);
 err_kms:
 	drm_mode_config_cleanup(drm);
-	drm_dev_put(drm);
+err_unref:
+	drm_dev_unref(drm);
 
 	return ret;
 }
@@ -276,17 +333,21 @@ err_kms:
 static void imx_drm_unbind(struct device *dev)
 {
 	struct drm_device *drm = dev_get_drvdata(dev);
+	struct imx_drm_device *imxdrm = drm->dev_private;
 
 	drm_dev_unregister(drm);
 
 	drm_kms_helper_poll_fini(drm);
+
+	if (imxdrm->fbhelper)
+		drm_fbdev_cma_fini(imxdrm->fbhelper);
 
 	drm_mode_config_cleanup(drm);
 
 	component_unbind_all(drm->dev, drm);
 	dev_set_drvdata(dev, NULL);
 
-	drm_dev_put(drm);
+	drm_dev_unref(drm);
 }
 
 static const struct component_master_ops imx_drm_ops = {
@@ -314,15 +375,37 @@ static int imx_drm_platform_remove(struct platform_device *pdev)
 static int imx_drm_suspend(struct device *dev)
 {
 	struct drm_device *drm_dev = dev_get_drvdata(dev);
+	struct imx_drm_device *imxdrm;
 
-	return drm_mode_config_helper_suspend(drm_dev);
+	/* The drm_dev is NULL before .load hook is called */
+	if (drm_dev == NULL)
+		return 0;
+
+	drm_kms_helper_poll_disable(drm_dev);
+
+	imxdrm = drm_dev->dev_private;
+	imxdrm->state = drm_atomic_helper_suspend(drm_dev);
+	if (IS_ERR(imxdrm->state)) {
+		drm_kms_helper_poll_enable(drm_dev);
+		return PTR_ERR(imxdrm->state);
+	}
+
+	return 0;
 }
 
 static int imx_drm_resume(struct device *dev)
 {
 	struct drm_device *drm_dev = dev_get_drvdata(dev);
+	struct imx_drm_device *imx_drm;
 
-	return drm_mode_config_helper_resume(drm_dev);
+	if (drm_dev == NULL)
+		return 0;
+
+	imx_drm = drm_dev->dev_private;
+	drm_atomic_helper_resume(drm_dev, imx_drm->state);
+	drm_kms_helper_poll_enable(drm_dev);
+
+	return 0;
 }
 #endif
 

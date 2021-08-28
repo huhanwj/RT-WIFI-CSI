@@ -1,13 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Interrupt descriptor table related code
+ *
+ * This file is licensed under the GPL V2
  */
 #include <linux/interrupt.h>
 
 #include <asm/traps.h>
 #include <asm/proto.h>
 #include <asm/desc.h>
-#include <asm/hw_irq.h>
 
 struct idt_data {
 	unsigned int	vector;
@@ -40,12 +40,13 @@ struct idt_data {
 #define SYSG(_vector, _addr)				\
 	G(_vector, _addr, DEFAULT_STACK, GATE_INTERRUPT, DPL3, __KERNEL_CS)
 
-/*
- * Interrupt gate with interrupt stack. The _ist index is the index in
- * the tss.ist[] array, but for the descriptor it needs to start at 1.
- */
+/* Interrupt gate with interrupt stack */
 #define ISTG(_vector, _addr, _ist)			\
-	G(_vector, _addr, _ist + 1, GATE_INTERRUPT, DPL0, __KERNEL_CS)
+	G(_vector, _addr, _ist, GATE_INTERRUPT, DPL0, __KERNEL_CS)
+
+/* System interrupt gate with interrupt stack */
+#define SISTG(_vector, _addr, _ist)			\
+	G(_vector, _addr, _ist, GATE_INTERRUPT, DPL3, __KERNEL_CS)
 
 /* Task gate */
 #define TSKG(_vector, _gdt)				\
@@ -139,9 +140,6 @@ static const __initconst struct idt_data apic_idts[] = {
 # ifdef CONFIG_IRQ_WORK
 	INTG(IRQ_WORK_VECTOR,		irq_work_interrupt),
 # endif
-#ifdef CONFIG_X86_UV
-	INTG(UV_BAU_MESSAGE,		uv_bau_message_intr1),
-#endif
 	INTG(SPURIOUS_APIC_VECTOR,	spurious_interrupt),
 	INTG(ERROR_APIC_VECTOR,		error_interrupt),
 #endif
@@ -162,6 +160,7 @@ static const __initconst struct idt_data early_pf_idts[] = {
  */
 static const __initconst struct idt_data dbg_idts[] = {
 	INTG(X86_TRAP_DB,	debug),
+	INTG(X86_TRAP_BP,	int3),
 };
 #endif
 
@@ -182,11 +181,12 @@ gate_desc debug_idt_table[IDT_ENTRIES] __page_aligned_bss;
  * cpu_init() when the TSS has been initialized.
  */
 static const __initconst struct idt_data ist_idts[] = {
-	ISTG(X86_TRAP_DB,	debug,		IST_INDEX_DB),
-	ISTG(X86_TRAP_NMI,	nmi,		IST_INDEX_NMI),
-	ISTG(X86_TRAP_DF,	double_fault,	IST_INDEX_DF),
+	ISTG(X86_TRAP_DB,	debug,		DEBUG_STACK),
+	ISTG(X86_TRAP_NMI,	nmi,		NMI_STACK),
+	SISTG(X86_TRAP_BP,	int3,		DEBUG_STACK),
+	ISTG(X86_TRAP_DF,	double_fault,	DOUBLEFAULT_STACK),
 #ifdef CONFIG_X86_MCE
-	ISTG(X86_TRAP_MC,	&machine_check,	IST_INDEX_MCE),
+	ISTG(X86_TRAP_MC,	&machine_check,	MCE_STACK),
 #endif
 };
 
@@ -316,13 +316,15 @@ void __init idt_setup_apic_and_irq_gates(void)
 		set_intr_gate(i, entry);
 	}
 
-#ifdef CONFIG_X86_LOCAL_APIC
 	for_each_clear_bit_from(i, system_vectors, NR_VECTORS) {
+#ifdef CONFIG_X86_LOCAL_APIC
 		set_bit(i, system_vectors);
-		entry = spurious_entries_start + 8 * (i - FIRST_SYSTEM_VECTOR);
+		set_intr_gate(i, spurious_interrupt);
+#else
+		entry = irq_entries_start + 8 * (i - FIRST_EXTERNAL_VECTOR);
 		set_intr_gate(i, entry);
-	}
 #endif
+	}
 }
 
 /**

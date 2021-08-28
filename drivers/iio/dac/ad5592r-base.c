@@ -1,9 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * AD5592R Digital <-> Analog converters driver
  *
  * Copyright 2014-2016 Analog Devices Inc.
  * Author: Paul Cercueil <paul.cercueil@analog.com>
+ *
+ * Licensed under the GPL-2.
  */
 
 #include <linux/bitops.h>
@@ -535,9 +536,8 @@ static int ad5592r_alloc_channels(struct ad5592r_state *st)
 			st->channel_offstate[reg] = tmp;
 	}
 
-	channels = devm_kcalloc(st->dev,
-			1 + 2 * num_channels, sizeof(*channels),
-			GFP_KERNEL);
+	channels = devm_kzalloc(st->dev,
+			(1 + 2 * num_channels) * sizeof(*channels), GFP_KERNEL);
 	if (!channels)
 		return -ENOMEM;
 

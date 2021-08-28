@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * digi00x-hwdep.c - a part of driver for Digidesign Digi 002/003 family
  *
  * Copyright (c) 2014-2015 Takashi Sakamoto
+ *
+ * Licensed under the terms of the GNU General Public License, version 2.
  */
 
 /*
@@ -59,17 +60,17 @@ static long hwdep_read(struct snd_hwdep *hwdep, char __user *buf,  long count,
 	return count;
 }
 
-static __poll_t hwdep_poll(struct snd_hwdep *hwdep, struct file *file,
+static unsigned int hwdep_poll(struct snd_hwdep *hwdep, struct file *file,
 			       poll_table *wait)
 {
 	struct snd_dg00x *dg00x = hwdep->private_data;
-	__poll_t events;
+	unsigned int events;
 
 	poll_wait(file, &dg00x->hwdep_wait, wait);
 
 	spin_lock_irq(&dg00x->lock);
 	if (dg00x->dev_lock_changed || dg00x->msg)
-		events = EPOLLIN | EPOLLRDNORM;
+		events = POLLIN | POLLRDNORM;
 	else
 		events = 0;
 	spin_unlock_irq(&dg00x->lock);

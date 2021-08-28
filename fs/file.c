@@ -11,13 +11,18 @@
 #include <linux/export.h>
 #include <linux/fs.h>
 #include <linux/mm.h>
+#include <linux/mmzone.h>
+#include <linux/time.h>
 #include <linux/sched/signal.h>
 #include <linux/slab.h>
+#include <linux/vmalloc.h>
 #include <linux/file.h>
 #include <linux/fdtable.h>
 #include <linux/bitops.h>
+#include <linux/interrupt.h>
 #include <linux/spinlock.h>
 #include <linux/rcupdate.h>
+#include <linux/workqueue.h>
 
 unsigned int sysctl_nr_open __read_mostly = 1024*1024;
 unsigned int sysctl_nr_open_min = BITS_PER_LONG;
@@ -158,7 +163,7 @@ static int expand_fdtable(struct files_struct *files, unsigned int nr)
 	 * or have finished their rcu_read_lock_sched() section.
 	 */
 	if (atomic_read(&files->count) > 1)
-		synchronize_rcu();
+		synchronize_sched();
 
 	spin_lock(&files->file_lock);
 	if (!new_fdt)
@@ -386,7 +391,7 @@ static struct fdtable *close_files(struct files_struct * files)
 				struct file * file = xchg(&fdt->fd[i], NULL);
 				if (file) {
 					filp_close(file, files);
-					cond_resched();
+					cond_resched_rcu_qs();
 				}
 			}
 			i++;
@@ -457,7 +462,6 @@ struct files_struct init_files = {
 		.full_fds_bits	= init_files.full_fds_bits_init,
 	},
 	.file_lock	= __SPIN_LOCK_UNLOCKED(init_files.file_lock),
-	.resize_wait	= __WAIT_QUEUE_HEAD_INITIALIZER(init_files.resize_wait),
 };
 
 static unsigned int find_next_fd(struct fdtable *fdt, unsigned int start)
@@ -639,36 +643,6 @@ out_unlock:
 	spin_unlock(&files->file_lock);
 	return -EBADF;
 }
-EXPORT_SYMBOL(__close_fd); /* for ksys_close() */
-
-/*
- * variant of __close_fd that gets a ref on the file for later fput
- */
-int __close_fd_get_file(unsigned int fd, struct file **res)
-{
-	struct files_struct *files = current->files;
-	struct file *file;
-	struct fdtable *fdt;
-
-	spin_lock(&files->file_lock);
-	fdt = files_fdtable(files);
-	if (fd >= fdt->max_fds)
-		goto out_unlock;
-	file = fdt->fd[fd];
-	if (!file)
-		goto out_unlock;
-	rcu_assign_pointer(fdt->fd[fd], NULL);
-	__put_unused_fd(files, fd);
-	spin_unlock(&files->file_lock);
-	get_file(file);
-	*res = file;
-	return filp_close(file, files);
-
-out_unlock:
-	spin_unlock(&files->file_lock);
-	*res = NULL;
-	return -ENOENT;
-}
 
 void do_close_on_exec(struct files_struct *files)
 {
@@ -706,7 +680,7 @@ void do_close_on_exec(struct files_struct *files)
 	spin_unlock(&files->file_lock);
 }
 
-static struct file *__fget(unsigned int fd, fmode_t mask, unsigned int refs)
+static struct file *__fget(unsigned int fd, fmode_t mask)
 {
 	struct files_struct *files = current->files;
 	struct file *file;
@@ -721,7 +695,7 @@ loop:
 		 */
 		if (file->f_mode & mask)
 			file = NULL;
-		else if (!get_file_rcu_many(file, refs))
+		else if (!get_file_rcu(file))
 			goto loop;
 	}
 	rcu_read_unlock();
@@ -729,20 +703,15 @@ loop:
 	return file;
 }
 
-struct file *fget_many(unsigned int fd, unsigned int refs)
-{
-	return __fget(fd, FMODE_PATH, refs);
-}
-
 struct file *fget(unsigned int fd)
 {
-	return __fget(fd, FMODE_PATH, 1);
+	return __fget(fd, FMODE_PATH);
 }
 EXPORT_SYMBOL(fget);
 
 struct file *fget_raw(unsigned int fd)
 {
-	return __fget(fd, 0, 1);
+	return __fget(fd, 0);
 }
 EXPORT_SYMBOL(fget_raw);
 
@@ -773,7 +742,7 @@ static unsigned long __fget_light(unsigned int fd, fmode_t mask)
 			return 0;
 		return (unsigned long)file;
 	} else {
-		file = __fget(fd, mask, 1);
+		file = __fget(fd, mask);
 		if (!file)
 			return 0;
 		return FDPUT_FPUT | (unsigned long)file;
@@ -906,7 +875,7 @@ out_unlock:
 	return err;
 }
 
-static int ksys_dup3(unsigned int oldfd, unsigned int newfd, int flags)
+SYSCALL_DEFINE3(dup3, unsigned int, oldfd, unsigned int, newfd, int, flags)
 {
 	int err = -EBADF;
 	struct file *file;
@@ -940,11 +909,6 @@ out_unlock:
 	return err;
 }
 
-SYSCALL_DEFINE3(dup3, unsigned int, oldfd, unsigned int, newfd, int, flags)
-{
-	return ksys_dup3(oldfd, newfd, flags);
-}
-
 SYSCALL_DEFINE2(dup2, unsigned int, oldfd, unsigned int, newfd)
 {
 	if (unlikely(newfd == oldfd)) { /* corner case */
@@ -957,10 +921,10 @@ SYSCALL_DEFINE2(dup2, unsigned int, oldfd, unsigned int, newfd)
 		rcu_read_unlock();
 		return retval;
 	}
-	return ksys_dup3(oldfd, newfd, 0);
+	return sys_dup3(oldfd, newfd, 0);
 }
 
-int ksys_dup(unsigned int fildes)
+SYSCALL_DEFINE1(dup, unsigned int, fildes)
 {
 	int ret = -EBADF;
 	struct file *file = fget_raw(fildes);
@@ -973,11 +937,6 @@ int ksys_dup(unsigned int fildes)
 			fput(file);
 	}
 	return ret;
-}
-
-SYSCALL_DEFINE1(dup, unsigned int, fildes)
-{
-	return ksys_dup(fildes);
 }
 
 int f_dupfd(unsigned int from, struct file *file, unsigned flags)

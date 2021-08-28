@@ -5,13 +5,6 @@
 #include <linux/compiler.h>
 #include <linux/types.h>
 
-/* Built-in __init functions needn't be compiled with retpoline */
-#if defined(__noretpoline) && !defined(MODULE)
-#define __noinitretpoline __noretpoline
-#else
-#define __noinitretpoline
-#endif
-
 /* These macros are used to mark some functions or 
  * initialized data (doesn't apply to uninitialized data)
  * as `initialization' functions. The kernel can take this
@@ -47,7 +40,7 @@
 
 /* These are for everybody (although not all archs will actually
    discard it in modules) */
-#define __init		__section(.init.text) __cold  __latent_entropy __noinitretpoline
+#define __init		__section(.init.text) __cold  __latent_entropy
 #define __initdata	__section(.init.data)
 #define __initconst	__section(.init.rodata)
 #define __exitdata	__section(.exit.data)
@@ -116,28 +109,11 @@
 typedef int (*initcall_t)(void);
 typedef void (*exitcall_t)(void);
 
-#ifdef CONFIG_HAVE_ARCH_PREL32_RELOCATIONS
-typedef int initcall_entry_t;
-
-static inline initcall_t initcall_from_entry(initcall_entry_t *entry)
-{
-	return offset_to_ptr(entry);
-}
-#else
-typedef initcall_t initcall_entry_t;
-
-static inline initcall_t initcall_from_entry(initcall_entry_t *entry)
-{
-	return *entry;
-}
-#endif
-
-extern initcall_entry_t __con_initcall_start[], __con_initcall_end[];
+extern initcall_t __con_initcall_start[], __con_initcall_end[];
+extern initcall_t __security_initcall_start[], __security_initcall_end[];
 
 /* Used for contructor calls. */
 typedef void (*ctor_fn_t)(void);
-
-struct file_system_type;
 
 /* Defined in init/main.c */
 extern int do_one_initcall(initcall_t fn);
@@ -148,8 +124,8 @@ extern unsigned int reset_devices;
 /* used by init/main.c */
 void setup_arch(char **);
 void prepare_namespace(void);
-void __init init_rootfs(void);
-extern struct file_system_type rootfs_fs_type;
+void __init load_default_modules(void);
+int __init init_rootfs(void);
 
 #if defined(CONFIG_STRICT_KERNEL_RWX) || defined(CONFIG_STRICT_MODULE_RWX)
 extern bool rodata_enabled;
@@ -184,20 +160,9 @@ extern bool initcall_debug;
  * as KEEP() in the linker script.
  */
 
-#ifdef CONFIG_HAVE_ARCH_PREL32_RELOCATIONS
-#define ___define_initcall(fn, id, __sec)			\
-	__ADDRESSABLE(fn)					\
-	asm(".section	\"" #__sec ".init\", \"a\"	\n"	\
-	"__initcall_" #fn #id ":			\n"	\
-	    ".long	" #fn " - .			\n"	\
-	    ".previous					\n");
-#else
-#define ___define_initcall(fn, id, __sec) \
+#define __define_initcall(fn, id) \
 	static initcall_t __initcall_##fn##id __used \
-		__attribute__((__section__(#__sec ".init"))) = fn;
-#endif
-
-#define __define_initcall(fn, id) ___define_initcall(fn, id, .initcall##id)
+	__attribute__((__section__(".initcall" #id ".init"))) = fn;
 
 /*
  * Early initcalls run before initializing SMP.
@@ -236,7 +201,13 @@ extern bool initcall_debug;
 #define __exitcall(fn)						\
 	static exitcall_t __exitcall_##fn __exit_call = fn
 
-#define console_initcall(fn)	___define_initcall(fn,, .con_initcall)
+#define console_initcall(fn)					\
+	static initcall_t __initcall_##fn			\
+	__used __section(.con_initcall.init) = fn
+
+#define security_initcall(fn)					\
+	static initcall_t __initcall_##fn			\
+	__used __section(.security_initcall.init) = fn
 
 struct obs_kernel_param {
 	const char *str;

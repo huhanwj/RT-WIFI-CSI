@@ -1,11 +1,4 @@
-.. Permission is granted to copy, distribute and/or modify this
-.. document under the terms of the GNU Free Documentation License,
-.. Version 1.1 or any later version published by the Free Software
-.. Foundation, with no Invariant Sections, no Front-Cover Texts
-.. and no Back-Cover Texts. A copy of the license is included at
-.. Documentation/media/uapi/fdl-appendix.rst.
-..
-.. TODO: replace it to GFDL-1.1-or-later WITH no-invariant-sections
+.. -*- coding: utf-8; mode: rst -*-
 
 ******************************
 Single-planar format structure
@@ -39,23 +32,17 @@ Single-planar format structure
 	to a multiple of the scale factor of any smaller planes. For
 	example when the image format is YUV 4:2:0, ``width`` and
 	``height`` must be multiples of two.
-
-	For compressed formats that contain the resolution information encoded
-	inside the stream, when fed to a stateful mem2mem decoder, the fields
-	may be zero to rely on the decoder to detect the right values. For more
-	details see :ref:`decoder` and format descriptions.
     * - __u32
       - ``pixelformat``
       - The pixel format or type of compression, set by the application.
 	This is a little endian
 	:ref:`four character code <v4l2-fourcc>`. V4L2 defines standard
-	RGB formats in :ref:`pixfmt-rgb`, YUV formats in
+	RGB formats in :ref:`rgb-formats`, YUV formats in
 	:ref:`yuv-formats`, and reserved codes in
 	:ref:`reserved-formats`
-    * - __u32
+    * - enum :c:type::`v4l2_field`
       - ``field``
-      - Field order, from enum :c:type:`v4l2_field`.
-        Video images are typically interlaced. Applications can request to
+      - Video images are typically interlaced. Applications can request to
 	capture or output only the top or bottom field, or both fields
 	interlaced or sequentially stored in one buffer or alternating in
 	separate buffers. Drivers return the actual field order selected.
@@ -94,22 +81,10 @@ Single-planar format structure
       - Size in bytes of the buffer to hold a complete image, set by the
 	driver. Usually this is ``bytesperline`` times ``height``. When
 	the image consists of variable length compressed data this is the
-	number of bytes required by the codec to support the worst-case
-	compression scenario.
-
-	The driver will set the value for uncompressed images.
-
-	Clients are allowed to set the sizeimage field for variable length
-	compressed data flagged with ``V4L2_FMT_FLAG_COMPRESSED`` at
-	:ref:`VIDIOC_ENUM_FMT`, but the driver may ignore it and set the
-	value itself, or it may modify the provided value based on
-	alignment requirements or minimum/maximum size requirements.
-	If the client wants to leave this to the driver, then it should
-	set sizeimage to 0.
-    * - __u32
+	maximum number of bytes required to hold an image.
+    * - enum :c:type:`v4l2_colorspace`
       - ``colorspace``
-      - Image colorspace, from enum :c:type:`v4l2_colorspace`.
-        This information supplements the ``pixelformat`` and must be set
+      - This information supplements the ``pixelformat`` and must be set
 	by the driver for capture streams and by the application for
 	output streams, see :ref:`colorspaces`.
     * - __u32
@@ -141,33 +116,23 @@ Single-planar format structure
     * - __u32
       - ``flags``
       - Flags set by the application or driver, see :ref:`format-flags`.
-    * - union {
-      - (anonymous)
-      -
-    * - __u32
+    * - enum :c:type:`v4l2_ycbcr_encoding`
       - ``ycbcr_enc``
-      - Y'CbCr encoding, from enum :c:type:`v4l2_ycbcr_encoding`.
-        This information supplements the ``colorspace`` and must be set by
+      - This information supplements the ``colorspace`` and must be set by
 	the driver for capture streams and by the application for output
 	streams, see :ref:`colorspaces`.
-    * - __u32
+    * - enum :c:type:`v4l2_hsv_encoding`
       - ``hsv_enc``
-      - HSV encoding, from enum :c:type:`v4l2_hsv_encoding`.
-        This information supplements the ``colorspace`` and must be set by
+      - This information supplements the ``colorspace`` and must be set by
 	the driver for capture streams and by the application for output
 	streams, see :ref:`colorspaces`.
-    * - }
-      -
-      -
-    * - __u32
+    * - enum :c:type:`v4l2_quantization`
       - ``quantization``
-      - Quantization range, from enum :c:type:`v4l2_quantization`.
-        This information supplements the ``colorspace`` and must be set by
+      - This information supplements the ``colorspace`` and must be set by
 	the driver for capture streams and by the application for output
 	streams, see :ref:`colorspaces`.
-    * - __u32
+    * - enum :c:type:`v4l2_xfer_func`
       - ``xfer_func``
-      - Transfer function, from enum :c:type:`v4l2_xfer_func`.
-        This information supplements the ``colorspace`` and must be set by
+      - This information supplements the ``colorspace`` and must be set by
 	the driver for capture streams and by the application for output
 	streams, see :ref:`colorspaces`.

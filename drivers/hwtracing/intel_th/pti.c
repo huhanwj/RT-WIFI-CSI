@@ -1,8 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Intel(R) Trace Hub PTI output driver
  *
  * Copyright (C) 2014-2016 Intel Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
  */
 
 #define pr_fmt(fmt)	KBUILD_MODNAME ": " fmt
@@ -272,17 +280,19 @@ static ssize_t lpp_dest_store(struct device *dev, struct device_attribute *attr,
 			      const char *buf, size_t size)
 {
 	struct pti_device *pti = dev_get_drvdata(dev);
+	ssize_t ret = -EINVAL;
 	int i;
 
-	i = sysfs_match_string(lpp_dest_str, buf);
-	if (i < 0)
-		return i;
+	for (i = 0; i < ARRAY_SIZE(lpp_dest_str); i++)
+		if (sysfs_streq(buf, lpp_dest_str[i]))
+			break;
 
-	if (!(pti->lpp_dest_mask & BIT(i)))
-		return -EINVAL;
+	if (i < ARRAY_SIZE(lpp_dest_str) && pti->lpp_dest_mask & BIT(i)) {
+		pti->lpp_dest = i;
+		ret = size;
+	}
 
-	pti->lpp_dest = i;
-	return size;
+	return ret;
 }
 
 static DEVICE_ATTR_RW(lpp_dest);

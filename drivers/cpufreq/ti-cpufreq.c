@@ -1,15 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * TI CPUFreq/OPP hw-supported driver
  *
  * Copyright (C) 2016-2017 Texas Instruments, Inc.
  *	 Dave Gerlach <d-gerlach@ti.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/cpu.h>
 #include <linux/io.h>
 #include <linux/mfd/syscon.h>
-#include <linux/module.h>
 #include <linux/init.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
@@ -43,7 +50,6 @@ struct ti_cpufreq_soc_data {
 	unsigned long efuse_mask;
 	unsigned long efuse_shift;
 	unsigned long rev_offset;
-	bool multi_regulator;
 };
 
 struct ti_cpufreq_data {
@@ -51,7 +57,6 @@ struct ti_cpufreq_data {
 	struct device_node *opp_node;
 	struct regmap *syscon;
 	const struct ti_cpufreq_soc_data *soc_data;
-	struct opp_table *opp_table;
 };
 
 static unsigned long amx3_efuse_xlate(struct ti_cpufreq_data *opp_data,
@@ -77,7 +82,6 @@ static unsigned long dra7_efuse_xlate(struct ti_cpufreq_data *opp_data,
 	case DRA7_EFUSE_HAS_ALL_MPU_OPP:
 	case DRA7_EFUSE_HAS_HIGH_MPU_OPP:
 		calculated_efuse |= DRA7_EFUSE_HIGH_MPU_OPP;
-		/* Fall through */
 	case DRA7_EFUSE_HAS_OD_MPU_OPP:
 		calculated_efuse |= DRA7_EFUSE_OD_MPU_OPP;
 	}
@@ -91,7 +95,6 @@ static struct ti_cpufreq_soc_data am3x_soc_data = {
 	.efuse_offset = 0x07fc,
 	.efuse_mask = 0x1fff,
 	.rev_offset = 0x600,
-	.multi_regulator = false,
 };
 
 static struct ti_cpufreq_soc_data am4x_soc_data = {
@@ -100,7 +103,6 @@ static struct ti_cpufreq_soc_data am4x_soc_data = {
 	.efuse_offset = 0x0610,
 	.efuse_mask = 0x3f,
 	.rev_offset = 0x600,
-	.multi_regulator = false,
 };
 
 static struct ti_cpufreq_soc_data dra7_soc_data = {
@@ -109,7 +111,6 @@ static struct ti_cpufreq_soc_data dra7_soc_data = {
 	.efuse_mask = 0xf80000,
 	.efuse_shift = 19,
 	.rev_offset = 0x204,
-	.multi_regulator = true,
 };
 
 /**
@@ -194,32 +195,21 @@ static const struct of_device_id ti_cpufreq_of_match[] = {
 	{},
 };
 
-static const struct of_device_id *ti_cpufreq_match_node(void)
+static int ti_cpufreq_init(void)
 {
+	u32 version[VERSION_COUNT];
 	struct device_node *np;
 	const struct of_device_id *match;
+	struct ti_cpufreq_data *opp_data;
+	int ret;
 
 	np = of_find_node_by_path("/");
 	match = of_match_node(ti_cpufreq_of_match, np);
 	of_node_put(np);
-
-	return match;
-}
-
-static int ti_cpufreq_probe(struct platform_device *pdev)
-{
-	u32 version[VERSION_COUNT];
-	const struct of_device_id *match;
-	struct opp_table *ti_opp_table;
-	struct ti_cpufreq_data *opp_data;
-	const char * const reg_names[] = {"vdd", "vbb"};
-	int ret;
-
-	match = dev_get_platdata(&pdev->dev);
 	if (!match)
 		return -ENODEV;
 
-	opp_data = devm_kzalloc(&pdev->dev, sizeof(*opp_data), GFP_KERNEL);
+	opp_data = kzalloc(sizeof(*opp_data), GFP_KERNEL);
 	if (!opp_data)
 		return -ENOMEM;
 
@@ -228,7 +218,8 @@ static int ti_cpufreq_probe(struct platform_device *pdev)
 	opp_data->cpu_dev = get_cpu_device(0);
 	if (!opp_data->cpu_dev) {
 		pr_err("%s: Failed to get device for CPU0\n", __func__);
-		return -ENODEV;
+		ret = ENODEV;
+		goto free_opp_data;
 	}
 
 	opp_data->opp_node = dev_pm_opp_of_get_opp_desc_node(opp_data->cpu_dev);
@@ -256,29 +247,16 @@ static int ti_cpufreq_probe(struct platform_device *pdev)
 	if (ret)
 		goto fail_put_node;
 
-	ti_opp_table = dev_pm_opp_set_supported_hw(opp_data->cpu_dev,
-						   version, VERSION_COUNT);
-	if (IS_ERR(ti_opp_table)) {
+	ret = PTR_ERR_OR_ZERO(dev_pm_opp_set_supported_hw(opp_data->cpu_dev,
+							  version, VERSION_COUNT));
+	if (ret) {
 		dev_err(opp_data->cpu_dev,
 			"Failed to set supported hardware\n");
-		ret = PTR_ERR(ti_opp_table);
 		goto fail_put_node;
 	}
 
-	opp_data->opp_table = ti_opp_table;
-
-	if (opp_data->soc_data->multi_regulator) {
-		ti_opp_table = dev_pm_opp_set_regulators(opp_data->cpu_dev,
-							 reg_names,
-							 ARRAY_SIZE(reg_names));
-		if (IS_ERR(ti_opp_table)) {
-			dev_pm_opp_put_supported_hw(opp_data->opp_table);
-			ret =  PTR_ERR(ti_opp_table);
-			goto fail_put_node;
-		}
-	}
-
 	of_node_put(opp_data->opp_node);
+
 register_cpufreq_dt:
 	platform_device_register_simple("cpufreq-dt", -1, NULL, 0);
 
@@ -286,32 +264,9 @@ register_cpufreq_dt:
 
 fail_put_node:
 	of_node_put(opp_data->opp_node);
+free_opp_data:
+	kfree(opp_data);
 
 	return ret;
 }
-
-static int ti_cpufreq_init(void)
-{
-	const struct of_device_id *match;
-
-	/* Check to ensure we are on a compatible platform */
-	match = ti_cpufreq_match_node();
-	if (match)
-		platform_device_register_data(NULL, "ti-cpufreq", -1, match,
-					      sizeof(*match));
-
-	return 0;
-}
-module_init(ti_cpufreq_init);
-
-static struct platform_driver ti_cpufreq_driver = {
-	.probe = ti_cpufreq_probe,
-	.driver = {
-		.name = "ti-cpufreq",
-	},
-};
-builtin_platform_driver(ti_cpufreq_driver);
-
-MODULE_DESCRIPTION("TI CPUFreq/OPP hw-supported driver");
-MODULE_AUTHOR("Dave Gerlach <d-gerlach@ti.com>");
-MODULE_LICENSE("GPL v2");
+device_initcall(ti_cpufreq_init);

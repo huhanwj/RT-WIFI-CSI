@@ -37,22 +37,25 @@
 
 #include "resource.h"
 
-#define DC_LOGGER_INIT(logger)
-
-
 #define SURFACE_TRACE(...) do {\
 		if (dc->debug.surface_trace) \
-			DC_LOG_IF_TRACE(__VA_ARGS__); \
+			dm_logger_write(logger, \
+					LOG_IF_TRACE, \
+					##__VA_ARGS__); \
 } while (0)
 
 #define TIMING_TRACE(...) do {\
 	if (dc->debug.timing_trace) \
-		DC_LOG_SYNC(__VA_ARGS__); \
+		dm_logger_write(logger, \
+				LOG_SYNC, \
+				##__VA_ARGS__); \
 } while (0)
 
 #define CLOCK_TRACE(...) do {\
 	if (dc->debug.clock_trace) \
-		DC_LOG_BANDWIDTH_CALCS(__VA_ARGS__); \
+		dm_logger_write(logger, \
+				LOG_BANDWIDTH_CALCS, \
+				##__VA_ARGS__); \
 } while (0)
 
 void pre_surface_trace(
@@ -61,7 +64,8 @@ void pre_surface_trace(
 		int surface_count)
 {
 	int i;
-	DC_LOGGER_INIT(dc->ctx->logger);
+	struct dc  *core_dc = dc;
+	struct dal_logger *logger =  core_dc->ctx->logger;
 
 	for (i = 0; i < surface_count; i++) {
 		const struct dc_plane_state *plane_state = plane_states[i];
@@ -72,8 +76,8 @@ void pre_surface_trace(
 				"plane_state->visible = %d;\n"
 				"plane_state->flip_immediate = %d;\n"
 				"plane_state->address.type = %d;\n"
-				"plane_state->address.grph.addr.quad_part = 0x%llX;\n"
-				"plane_state->address.grph.meta_addr.quad_part = 0x%llX;\n"
+				"plane_state->address.grph.addr.quad_part = 0x%X;\n"
+				"plane_state->address.grph.meta_addr.quad_part = 0x%X;\n"
 				"plane_state->scaling_quality.h_taps = %d;\n"
 				"plane_state->scaling_quality.v_taps = %d;\n"
 				"plane_state->scaling_quality.h_taps_c = %d;\n"
@@ -115,16 +119,16 @@ void pre_surface_trace(
 				plane_state->clip_rect.height);
 
 		SURFACE_TRACE(
-				"plane_state->plane_size.surface_size.x = %d;\n"
-				"plane_state->plane_size.surface_size.y = %d;\n"
-				"plane_state->plane_size.surface_size.width = %d;\n"
-				"plane_state->plane_size.surface_size.height = %d;\n"
-				"plane_state->plane_size.surface_pitch = %d;\n",
-				plane_state->plane_size.surface_size.x,
-				plane_state->plane_size.surface_size.y,
-				plane_state->plane_size.surface_size.width,
-				plane_state->plane_size.surface_size.height,
-				plane_state->plane_size.surface_pitch);
+				"plane_state->plane_size.grph.surface_size.x = %d;\n"
+				"plane_state->plane_size.grph.surface_size.y = %d;\n"
+				"plane_state->plane_size.grph.surface_size.width = %d;\n"
+				"plane_state->plane_size.grph.surface_size.height = %d;\n"
+				"plane_state->plane_size.grph.surface_pitch = %d;\n",
+				plane_state->plane_size.grph.surface_size.x,
+				plane_state->plane_size.grph.surface_size.y,
+				plane_state->plane_size.grph.surface_size.width,
+				plane_state->plane_size.grph.surface_size.height,
+				plane_state->plane_size.grph.surface_pitch);
 
 
 		SURFACE_TRACE(
@@ -181,7 +185,8 @@ void update_surface_trace(
 		int surface_count)
 {
 	int i;
-	DC_LOGGER_INIT(dc->ctx->logger);
+	struct dc  *core_dc = dc;
+	struct dal_logger *logger =  core_dc->ctx->logger;
 
 	for (i = 0; i < surface_count; i++) {
 		const struct dc_surface_update *update = &updates[i];
@@ -189,8 +194,8 @@ void update_surface_trace(
 		SURFACE_TRACE("Update %d\n", i);
 		if (update->flip_addr) {
 			SURFACE_TRACE("flip_addr->address.type = %d;\n"
-					"flip_addr->address.grph.addr.quad_part = 0x%llX;\n"
-					"flip_addr->address.grph.meta_addr.quad_part = 0x%llX;\n"
+					"flip_addr->address.grph.addr.quad_part = 0x%X;\n"
+					"flip_addr->address.grph.meta_addr.quad_part = 0x%X;\n"
 					"flip_addr->flip_immediate = %d;\n",
 					update->flip_addr->address.type,
 					update->flip_addr->address.grph.addr.quad_part,
@@ -202,20 +207,19 @@ void update_surface_trace(
 			SURFACE_TRACE(
 					"plane_info->color_space = %d;\n"
 					"plane_info->format = %d;\n"
-					"plane_info->plane_size.surface_pitch = %d;\n"
-					"plane_info->plane_size.surface_size.height = %d;\n"
-					"plane_info->plane_size.surface_size.width = %d;\n"
-					"plane_info->plane_size.surface_size.x = %d;\n"
-					"plane_info->plane_size.surface_size.y = %d;\n"
-					"plane_info->rotation = %d;\n"
-					"plane_info->stereo_format = %d;\n",
+					"plane_info->plane_size.grph.surface_pitch = %d;\n"
+					"plane_info->plane_size.grph.surface_size.height = %d;\n"
+					"plane_info->plane_size.grph.surface_size.width = %d;\n"
+					"plane_info->plane_size.grph.surface_size.x = %d;\n"
+					"plane_info->plane_size.grph.surface_size.y = %d;\n"
+					"plane_info->rotation = %d;\n",
 					update->plane_info->color_space,
 					update->plane_info->format,
-					update->plane_info->plane_size.surface_pitch,
-					update->plane_info->plane_size.surface_size.height,
-					update->plane_info->plane_size.surface_size.width,
-					update->plane_info->plane_size.surface_size.x,
-					update->plane_info->plane_size.surface_size.y,
+					update->plane_info->plane_size.grph.surface_pitch,
+					update->plane_info->plane_size.grph.surface_size.height,
+					update->plane_info->plane_size.grph.surface_size.width,
+					update->plane_info->plane_size.grph.surface_size.x,
+					update->plane_info->plane_size.grph.surface_size.y,
 					update->plane_info->rotation,
 					update->plane_info->stereo_format);
 
@@ -299,7 +303,8 @@ void update_surface_trace(
 
 void post_surface_trace(struct dc *dc)
 {
-	DC_LOGGER_INIT(dc->ctx->logger);
+	struct dc  *core_dc = dc;
+	struct dal_logger *logger =  core_dc->ctx->logger;
 
 	SURFACE_TRACE("post surface process.\n");
 
@@ -311,10 +316,10 @@ void context_timing_trace(
 {
 	int i;
 	struct dc  *core_dc = dc;
-	int h_pos[MAX_PIPES] = {0}, v_pos[MAX_PIPES] = {0};
+	struct dal_logger *logger =  core_dc->ctx->logger;
+	int h_pos[MAX_PIPES], v_pos[MAX_PIPES];
 	struct crtc_position position;
 	unsigned int underlay_idx = core_dc->res_pool->underlay_pipe_index;
-	DC_LOGGER_INIT(dc->ctx->logger);
 
 
 	for (i = 0; i < core_dc->res_pool->pipe_count; i++) {
@@ -322,7 +327,8 @@ void context_timing_trace(
 		/* get_position() returns CRTC vertical/horizontal counter
 		 * hence not applicable for underlay pipe
 		 */
-		if (pipe_ctx->stream == NULL || pipe_ctx->pipe_idx == underlay_idx)
+		if (pipe_ctx->stream == NULL
+				 || pipe_ctx->pipe_idx == underlay_idx)
 			continue;
 
 		pipe_ctx->stream_res.tg->funcs->get_position(pipe_ctx->stream_res.tg, &position);
@@ -332,7 +338,7 @@ void context_timing_trace(
 	for (i = 0; i < core_dc->res_pool->pipe_count; i++) {
 		struct pipe_ctx *pipe_ctx = &res_ctx->pipe_ctx[i];
 
-		if (pipe_ctx->stream == NULL || pipe_ctx->pipe_idx == underlay_idx)
+		if (pipe_ctx->stream == NULL)
 			continue;
 
 		TIMING_TRACE("OTG_%d   H_tot:%d  V_tot:%d   H_pos:%d  V_pos:%d\n",
@@ -348,22 +354,28 @@ void context_clock_trace(
 		struct dc_state *context)
 {
 #if defined(CONFIG_DRM_AMD_DC_DCN1_0)
-	DC_LOGGER_INIT(dc->ctx->logger);
-	CLOCK_TRACE("Current: dispclk_khz:%d  max_dppclk_khz:%d  dcfclk_khz:%d\n"
-			"dcfclk_deep_sleep_khz:%d  fclk_khz:%d  socclk_khz:%d\n",
-			context->bw_ctx.bw.dcn.clk.dispclk_khz,
-			context->bw_ctx.bw.dcn.clk.dppclk_khz,
-			context->bw_ctx.bw.dcn.clk.dcfclk_khz,
-			context->bw_ctx.bw.dcn.clk.dcfclk_deep_sleep_khz,
-			context->bw_ctx.bw.dcn.clk.fclk_khz,
-			context->bw_ctx.bw.dcn.clk.socclk_khz);
-	CLOCK_TRACE("Calculated: dispclk_khz:%d  max_dppclk_khz:%d  dcfclk_khz:%d\n"
-			"dcfclk_deep_sleep_khz:%d  fclk_khz:%d  socclk_khz:%d\n",
-			context->bw_ctx.bw.dcn.clk.dispclk_khz,
-			context->bw_ctx.bw.dcn.clk.dppclk_khz,
-			context->bw_ctx.bw.dcn.clk.dcfclk_khz,
-			context->bw_ctx.bw.dcn.clk.dcfclk_deep_sleep_khz,
-			context->bw_ctx.bw.dcn.clk.fclk_khz,
-			context->bw_ctx.bw.dcn.clk.socclk_khz);
+	struct dc  *core_dc = dc;
+	struct dal_logger *logger =  core_dc->ctx->logger;
+
+	CLOCK_TRACE("Current: dispclk_khz:%d  dppclk_div:%d  dcfclk_khz:%d\n"
+			"dcfclk_deep_sleep_khz:%d  fclk_khz:%d\n"
+			"dram_ccm_us:%d  min_active_dram_ccm_us:%d\n",
+			context->bw.dcn.calc_clk.dispclk_khz,
+			context->bw.dcn.calc_clk.dppclk_div,
+			context->bw.dcn.calc_clk.dcfclk_khz,
+			context->bw.dcn.calc_clk.dcfclk_deep_sleep_khz,
+			context->bw.dcn.calc_clk.fclk_khz,
+			context->bw.dcn.calc_clk.dram_ccm_us,
+			context->bw.dcn.calc_clk.min_active_dram_ccm_us);
+	CLOCK_TRACE("Calculated: dispclk_khz:%d  dppclk_div:%d  dcfclk_khz:%d\n"
+			"dcfclk_deep_sleep_khz:%d  fclk_khz:%d\n"
+			"dram_ccm_us:%d  min_active_dram_ccm_us:%d\n",
+			context->bw.dcn.calc_clk.dispclk_khz,
+			context->bw.dcn.calc_clk.dppclk_div,
+			context->bw.dcn.calc_clk.dcfclk_khz,
+			context->bw.dcn.calc_clk.dcfclk_deep_sleep_khz,
+			context->bw.dcn.calc_clk.fclk_khz,
+			context->bw.dcn.calc_clk.dram_ccm_us,
+			context->bw.dcn.calc_clk.min_active_dram_ccm_us);
 #endif
 }

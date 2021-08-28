@@ -1,7 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *
  * Copyright (C) 2011 Novell Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
  */
 
 #include <linux/fs.h>
@@ -116,10 +119,6 @@ static bool ovl_calc_d_ino(struct ovl_readdir_data *rdd,
 	/* Don't care if not doing ovl_iter() */
 	if (!rdd->dentry)
 		return false;
-
-	/* Always recalc d_ino when remapping lower inode numbers */
-	if (ovl_xino_bits(rdd->dentry->d_sb))
-		return true;
 
 	/* Always recalc d_ino for parent */
 	if (strcmp(p->name, "..") == 0)
@@ -436,19 +435,6 @@ static struct ovl_dir_cache *ovl_cache_get(struct dentry *dentry)
 	return cache;
 }
 
-/* Map inode number to lower fs unique range */
-static u64 ovl_remap_lower_ino(u64 ino, int xinobits, int fsid,
-			       const char *name, int namelen)
-{
-	if (ino >> (64 - xinobits)) {
-		pr_warn_ratelimited("overlayfs: d_ino too big (%.*s, ino=%llu, xinobits=%d)\n",
-				    namelen, name, ino, xinobits);
-		return ino;
-	}
-
-	return ino | ((u64)fsid) << (64 - xinobits);
-}
-
 /*
  * Set d_ino for upper entries. Non-upper entries should always report
  * the uppermost real inode ino and should not call this function.
@@ -466,10 +452,9 @@ static int ovl_cache_update_ino(struct path *path, struct ovl_cache_entry *p)
 	struct dentry *this = NULL;
 	enum ovl_path_type type;
 	u64 ino = p->real_ino;
-	int xinobits = ovl_xino_bits(dir->d_sb);
 	int err = 0;
 
-	if (!ovl_same_sb(dir->d_sb) && !xinobits)
+	if (!ovl_same_sb(dir->d_sb))
 		goto out;
 
 	if (p->name[0] == '.') {
@@ -506,10 +491,6 @@ get:
 
 		WARN_ON_ONCE(dir->d_sb->s_dev != stat.dev);
 		ino = stat.ino;
-	} else if (xinobits && !OVL_TYPE_UPPER(type)) {
-		ino = ovl_remap_lower_ino(ino, xinobits,
-					  ovl_layer_lower(this)->fsid,
-					  p->name, p->len);
 	}
 
 out:
@@ -612,15 +593,8 @@ static struct ovl_dir_cache *ovl_cache_get_impure(struct path *path)
 		return ERR_PTR(res);
 	}
 	if (list_empty(&cache->entries)) {
-		/*
-		 * A good opportunity to get rid of an unneeded "impure" flag.
-		 * Removing the "impure" xattr is best effort.
-		 */
-		if (!ovl_want_write(dentry)) {
-			ovl_do_removexattr(ovl_dentry_upper(dentry),
-					   OVL_XATTR_IMPURE);
-			ovl_drop_write(dentry);
-		}
+		/* Good oportunity to get rid of an unnecessary "impure" flag */
+		ovl_do_removexattr(ovl_dentry_upper(dentry), OVL_XATTR_IMPURE);
 		ovl_clear_flag(OVL_IMPURE, d_inode(dentry));
 		kfree(cache);
 		return NULL;
@@ -637,8 +611,6 @@ struct ovl_readdir_translate {
 	struct ovl_dir_cache *cache;
 	struct dir_context ctx;
 	u64 parent_ino;
-	int fsid;
-	int xinobits;
 };
 
 static int ovl_fill_real(struct dir_context *ctx, const char *name,
@@ -649,35 +621,17 @@ static int ovl_fill_real(struct dir_context *ctx, const char *name,
 		container_of(ctx, struct ovl_readdir_translate, ctx);
 	struct dir_context *orig_ctx = rdt->orig_ctx;
 
-	if (rdt->parent_ino && strcmp(name, "..") == 0) {
+	if (rdt->parent_ino && strcmp(name, "..") == 0)
 		ino = rdt->parent_ino;
-	} else if (rdt->cache) {
+	else if (rdt->cache) {
 		struct ovl_cache_entry *p;
 
 		p = ovl_cache_entry_find(&rdt->cache->root, name, namelen);
 		if (p)
 			ino = p->ino;
-	} else if (rdt->xinobits) {
-		ino = ovl_remap_lower_ino(ino, rdt->xinobits, rdt->fsid,
-					  name, namelen);
 	}
 
 	return orig_ctx->actor(orig_ctx, name, namelen, offset, ino, d_type);
-}
-
-static bool ovl_is_impure_dir(struct file *file)
-{
-	struct ovl_dir_file *od = file->private_data;
-	struct inode *dir = d_inode(file->f_path.dentry);
-
-	/*
-	 * Only upper dir can be impure, but if we are in the middle of
-	 * iterating a lower real dir, dir could be copied up and marked
-	 * impure. We only want the impure cache if we started iterating
-	 * a real upper dir to begin with.
-	 */
-	return od->is_upper && ovl_test_flag(OVL_IMPURE, dir);
-
 }
 
 static int ovl_iterate_real(struct file *file, struct dir_context *ctx)
@@ -685,15 +639,10 @@ static int ovl_iterate_real(struct file *file, struct dir_context *ctx)
 	int err;
 	struct ovl_dir_file *od = file->private_data;
 	struct dentry *dir = file->f_path.dentry;
-	struct ovl_layer *lower_layer = ovl_layer_lower(dir);
 	struct ovl_readdir_translate rdt = {
 		.ctx.actor = ovl_fill_real,
 		.orig_ctx = ctx,
-		.xinobits = ovl_xino_bits(dir->d_sb),
 	};
-
-	if (rdt.xinobits && lower_layer)
-		rdt.fsid = lower_layer->fsid;
 
 	if (OVL_TYPE_MERGE(ovl_path_type(dir->d_parent))) {
 		struct kstat stat;
@@ -708,7 +657,7 @@ static int ovl_iterate_real(struct file *file, struct dir_context *ctx)
 		rdt.parent_ino = stat.ino;
 	}
 
-	if (ovl_is_impure_dir(file)) {
+	if (ovl_test_flag(OVL_IMPURE, d_inode(dir))) {
 		rdt.cache = ovl_cache_get_impure(&file->f_path);
 		if (IS_ERR(rdt.cache))
 			return PTR_ERR(rdt.cache);
@@ -737,10 +686,9 @@ static int ovl_iterate(struct file *file, struct dir_context *ctx)
 		 * dir is impure then need to adjust d_ino for copied up
 		 * entries.
 		 */
-		if (ovl_xino_bits(dentry->d_sb) ||
-		    (ovl_same_sb(dentry->d_sb) &&
-		     (ovl_is_impure_dir(file) ||
-		      OVL_TYPE_MERGE(ovl_path_type(dentry->d_parent))))) {
+		if (ovl_same_sb(dentry->d_sb) &&
+		    (ovl_test_flag(OVL_IMPURE, d_inode(dentry)) ||
+		     OVL_TYPE_MERGE(ovl_path_type(dentry->d_parent)))) {
 			return ovl_iterate_real(file, ctx);
 		}
 		return iterate_dir(od->realfile, ctx);
@@ -821,14 +769,10 @@ static int ovl_dir_fsync(struct file *file, loff_t start, loff_t end,
 	struct dentry *dentry = file->f_path.dentry;
 	struct file *realfile = od->realfile;
 
-	/* Nothing to sync for lower */
-	if (!OVL_TYPE_UPPER(ovl_path_type(dentry)))
-		return 0;
-
 	/*
 	 * Need to check if we started out being a lower dir, but got copied up
 	 */
-	if (!od->is_upper) {
+	if (!od->is_upper && OVL_TYPE_UPPER(ovl_path_type(dentry))) {
 		struct inode *inode = file_inode(file);
 
 		realfile = READ_ONCE(od->upperfile);
@@ -914,11 +858,8 @@ int ovl_check_empty_dir(struct dentry *dentry, struct list_head *list)
 	int err;
 	struct ovl_cache_entry *p, *n;
 	struct rb_root root = RB_ROOT;
-	const struct cred *old_cred;
 
-	old_cred = ovl_override_creds(dentry->d_sb);
 	err = ovl_dir_read_merged(dentry, list, &root);
-	revert_creds(old_cred);
 	if (err)
 		return err;
 
@@ -1075,13 +1016,13 @@ void ovl_workdir_cleanup(struct inode *dir, struct vfsmount *mnt,
 	}
 }
 
-int ovl_indexdir_cleanup(struct ovl_fs *ofs)
+int ovl_indexdir_cleanup(struct dentry *dentry, struct vfsmount *mnt,
+			 struct ovl_path *lower, unsigned int numlower)
 {
 	int err;
-	struct dentry *indexdir = ofs->indexdir;
 	struct dentry *index = NULL;
-	struct inode *dir = indexdir->d_inode;
-	struct path path = { .mnt = ofs->upper_mnt, .dentry = indexdir };
+	struct inode *dir = dentry->d_inode;
+	struct path path = { .mnt = mnt, .dentry = dentry };
 	LIST_HEAD(list);
 	struct rb_root root = RB_ROOT;
 	struct ovl_cache_entry *p;
@@ -1105,40 +1046,19 @@ int ovl_indexdir_cleanup(struct ovl_fs *ofs)
 			if (p->len == 2 && p->name[1] == '.')
 				continue;
 		}
-		index = lookup_one_len(p->name, indexdir, p->len);
+		index = lookup_one_len(p->name, dentry, p->len);
 		if (IS_ERR(index)) {
 			err = PTR_ERR(index);
 			index = NULL;
 			break;
 		}
-		err = ovl_verify_index(ofs, index);
-		if (!err) {
-			goto next;
-		} else if (err == -ESTALE) {
-			/* Cleanup stale index entries */
+		err = ovl_verify_index(index, lower, numlower);
+		/* Cleanup stale and orphan index entries */
+		if (err && (err == -ESTALE || err == -ENOENT))
 			err = ovl_cleanup(dir, index);
-		} else if (err != -ENOENT) {
-			/*
-			 * Abort mount to avoid corrupting the index if
-			 * an incompatible index entry was found or on out
-			 * of memory.
-			 */
-			break;
-		} else if (ofs->config.nfs_export) {
-			/*
-			 * Whiteout orphan index to block future open by
-			 * handle after overlay nlink dropped to zero.
-			 */
-			err = ovl_cleanup_and_whiteout(indexdir, dir, index);
-		} else {
-			/* Cleanup orphan index entries */
-			err = ovl_cleanup(dir, index);
-		}
-
 		if (err)
 			break;
 
-next:
 		dput(index);
 		index = NULL;
 	}

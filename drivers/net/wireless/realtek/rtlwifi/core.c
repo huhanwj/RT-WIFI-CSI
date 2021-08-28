@@ -1,5 +1,27 @@
-// SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2009-2012  Realtek Corporation.*/
+/******************************************************************************
+ *
+ * Copyright(c) 2009-2012  Realtek Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * The full GNU General Public License is included in this distribution in the
+ * file called LICENSE.
+ *
+ * Contact Information:
+ * wlanfae <wlanfae@realtek.com>
+ * Realtek Corporation, No. 2, Innovation Road II, Hsinchu Science Park,
+ * Hsinchu 300, Taiwan.
+ *
+ * Larry Finger <Larry.Finger@lwfinger.net>
+ *
+ *****************************************************************************/
 
 #include "wifi.h"
 #include "core.h"
@@ -108,6 +130,7 @@ found_alt:
 		       firmware->size);
 		rtlpriv->rtlhal.wowlan_fwsize = firmware->size;
 	}
+	rtlpriv->rtlhal.fwsize = firmware->size;
 	release_firmware(firmware);
 }
 
@@ -173,7 +196,7 @@ static void rtl_op_stop(struct ieee80211_hw *hw)
 		/* reset sec info */
 		rtl_cam_reset_sec_info(hw);
 
-		rtl_deinit_deferred_work(hw, false);
+		rtl_deinit_deferred_work(hw);
 	}
 	rtlpriv->intf_ops->adapter_stop(hw);
 
@@ -188,7 +211,6 @@ static void rtl_op_tx(struct ieee80211_hw *hw,
 	struct rtl_hal *rtlhal = rtl_hal(rtl_priv(hw));
 	struct rtl_ps_ctl *ppsc = rtl_psc(rtl_priv(hw));
 	struct rtl_tcb_desc tcb_desc;
-
 	memset(&tcb_desc, 0, sizeof(struct rtl_tcb_desc));
 
 	if (unlikely(is_hal_stop(rtlhal) || ppsc->rfpwr_state != ERFON))
@@ -323,9 +345,9 @@ static void rtl_op_remove_interface(struct ieee80211_hw *hw,
 	mutex_lock(&rtlpriv->locks.conf_mutex);
 
 	/* Free beacon resources */
-	if (vif->type == NL80211_IFTYPE_AP ||
-	    vif->type == NL80211_IFTYPE_ADHOC ||
-	    vif->type == NL80211_IFTYPE_MESH_POINT) {
+	if ((vif->type == NL80211_IFTYPE_AP) ||
+	    (vif->type == NL80211_IFTYPE_ADHOC) ||
+	    (vif->type == NL80211_IFTYPE_MESH_POINT)) {
 		if (mac->beacon_enabled == 1) {
 			mac->beacon_enabled = 0;
 			rtlpriv->cfg->ops->update_interrupt_mask(hw, 0,
@@ -347,14 +369,12 @@ static void rtl_op_remove_interface(struct ieee80211_hw *hw,
 
 	mutex_unlock(&rtlpriv->locks.conf_mutex);
 }
-
 static int rtl_op_change_interface(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif,
 				   enum nl80211_iftype new_type, bool p2p)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	int ret;
-
 	rtl_op_remove_interface(hw, vif);
 
 	vif->type = new_type;
@@ -838,8 +858,8 @@ static void rtl_op_configure_filter(struct ieee80211_hw *hw,
 	 * here just used for linked scanning, & linked
 	 * and nolink check bssid is set in set network_type
 	 */
-	if (changed_flags & FIF_BCN_PRBRESP_PROMISC &&
-	    mac->link_state >= MAC80211_LINKED) {
+	if ((changed_flags & FIF_BCN_PRBRESP_PROMISC) &&
+	    (mac->link_state >= MAC80211_LINKED)) {
 		if (mac->opmode != NL80211_IFTYPE_AP &&
 		    mac->opmode != NL80211_IFTYPE_MESH_POINT) {
 			if (*new_flags & FIF_BCN_PRBRESP_PROMISC)
@@ -884,7 +904,6 @@ static void rtl_op_configure_filter(struct ieee80211_hw *hw,
 		rtlpriv->cfg->ops->set_hw_reg(hw, HW_VAR_RCR,
 					      (u8 *)(&mac->rx_conf));
 }
-
 static int rtl_op_sta_add(struct ieee80211_hw *hw,
 			 struct ieee80211_vif *vif,
 			 struct ieee80211_sta *sta)
@@ -937,7 +956,6 @@ static int rtl_op_sta_remove(struct ieee80211_hw *hw,
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 	struct rtl_sta_info *sta_entry;
-
 	if (sta) {
 		RT_TRACE(rtlpriv, COMP_MAC80211, DBG_DMESG,
 			 "Remove sta addr is %pM\n", sta->addr);
@@ -950,7 +968,6 @@ static int rtl_op_sta_remove(struct ieee80211_hw *hw,
 	}
 	return 0;
 }
-
 static int _rtl_get_hal_qnum(u16 queue)
 {
 	int qnum;
@@ -1027,10 +1044,10 @@ static void rtl_op_bss_info_changed(struct ieee80211_hw *hw,
 	struct rtl_ps_ctl *ppsc = rtl_psc(rtl_priv(hw));
 
 	mutex_lock(&rtlpriv->locks.conf_mutex);
-	if (vif->type == NL80211_IFTYPE_ADHOC ||
-	    vif->type == NL80211_IFTYPE_AP ||
-	    vif->type == NL80211_IFTYPE_MESH_POINT) {
-		if (changed & BSS_CHANGED_BEACON ||
+	if ((vif->type == NL80211_IFTYPE_ADHOC) ||
+	    (vif->type == NL80211_IFTYPE_AP) ||
+	    (vif->type == NL80211_IFTYPE_MESH_POINT)) {
+		if ((changed & BSS_CHANGED_BEACON) ||
 		    (changed & BSS_CHANGED_BEACON_ENABLED &&
 		     bss_conf->enable_beacon)) {
 			if (mac->beacon_enabled == 0) {
@@ -1072,7 +1089,6 @@ static void rtl_op_bss_info_changed(struct ieee80211_hw *hw,
 	/*TODO: reference to enum ieee80211_bss_change */
 	if (changed & BSS_CHANGED_ASSOC) {
 		u8 mstatus;
-
 		if (bss_conf->assoc) {
 			struct ieee80211_sta *sta = NULL;
 			u8 keep_alive = 10;
@@ -1146,8 +1162,6 @@ static void rtl_op_bss_info_changed(struct ieee80211_hw *hw,
 			RT_TRACE(rtlpriv, COMP_MAC80211, DBG_DMESG,
 				 "BSS_CHANGED_ASSOC\n");
 		} else {
-			struct cfg80211_bss *bss = NULL;
-
 			mstatus = RT_MEDIA_DISCONNECT;
 
 			if (mac->link_state == MAC80211_LINKED)
@@ -1155,22 +1169,6 @@ static void rtl_op_bss_info_changed(struct ieee80211_hw *hw,
 			if (ppsc->p2p_ps_info.p2p_ps_mode > P2P_PS_NONE)
 				rtl_p2p_ps_cmd(hw, P2P_PS_DISABLE);
 			mac->link_state = MAC80211_NOLINK;
-
-			bss = cfg80211_get_bss(hw->wiphy, NULL,
-					       (u8 *)mac->bssid, NULL, 0,
-					       IEEE80211_BSS_TYPE_ESS,
-					       IEEE80211_PRIVACY_OFF);
-
-			RT_TRACE(rtlpriv, COMP_MAC80211, DBG_DMESG,
-				 "bssid = %pMF\n", mac->bssid);
-
-			if (bss) {
-				cfg80211_unlink_bss(hw->wiphy, bss);
-				cfg80211_put_bss(hw->wiphy, bss);
-				RT_TRACE(rtlpriv, COMP_MAC80211, DBG_DMESG,
-					 "cfg80211_unlink !!\n");
-			}
-
 			eth_zero_addr(mac->bssid);
 			mac->vendor = PEER_UNKNOWN;
 			mac->mode = 0;
@@ -1301,7 +1299,6 @@ static void rtl_op_bss_info_changed(struct ieee80211_hw *hw,
 		 * set in sta_add, and will be NULL here */
 		if (vif->type == NL80211_IFTYPE_STATION) {
 			struct rtl_sta_info *sta_entry;
-
 			sta_entry = (struct rtl_sta_info *)sta->drv_priv;
 			sta_entry->wireless_mode = mac->mode;
 		}
@@ -1438,9 +1435,6 @@ static void rtl_op_sw_scan_start(struct ieee80211_hw *hw,
 
 	if (rtlpriv->cfg->ops->get_btc_status())
 		rtlpriv->btcoexist.btc_ops->btc_scan_notify(rtlpriv, 1);
-	else if (rtlpriv->btcoexist.btc_ops)
-		rtlpriv->btcoexist.btc_ops->btc_scan_notify_wifi_only(rtlpriv,
-								      1);
 
 	if (rtlpriv->dm.supp_phymode_switch) {
 		if (rtlpriv->cfg->ops->chk_switch_dmdp)
@@ -1496,9 +1490,6 @@ static void rtl_op_sw_scan_complete(struct ieee80211_hw *hw,
 	rtlpriv->cfg->ops->scan_operation_backup(hw, SCAN_OPT_RESTORE);
 	if (rtlpriv->cfg->ops->get_btc_status())
 		rtlpriv->btcoexist.btc_ops->btc_scan_notify(rtlpriv, 0);
-	else if (rtlpriv->btcoexist.btc_ops)
-		rtlpriv->btcoexist.btc_ops->btc_scan_notify_wifi_only(rtlpriv,
-								      0);
 }
 
 static int rtl_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
@@ -1522,9 +1513,9 @@ static int rtl_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		return -ENOSPC;	/*User disabled HW-crypto */
 	}
 	/* To support IBSS, use sw-crypto for GTK */
-	if ((vif->type == NL80211_IFTYPE_ADHOC ||
-	     vif->type == NL80211_IFTYPE_MESH_POINT) &&
-	    !(key->flags & IEEE80211_KEY_FLAG_PAIRWISE))
+	if (((vif->type == NL80211_IFTYPE_ADHOC) ||
+	    (vif->type == NL80211_IFTYPE_MESH_POINT)) &&
+	   !(key->flags & IEEE80211_KEY_FLAG_PAIRWISE))
 		return -ENOSPC;
 	RT_TRACE(rtlpriv, COMP_SEC, DBG_DMESG,
 		 "%s hardware based encryption for keyidx: %d, mac: %pM\n",
@@ -1597,7 +1588,7 @@ static int rtl_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 			rtlpriv->cfg->ops->enable_hw_sec(hw);
 		}
 	} else {
-		if (!group_key || vif->type == NL80211_IFTYPE_ADHOC ||
+		if ((!group_key) || (vif->type == NL80211_IFTYPE_ADHOC) ||
 		    rtlpriv->sec.pairwise_enc_algorithm == NO_ENCRYPTION) {
 			if (rtlpriv->sec.pairwise_enc_algorithm ==
 			    NO_ENCRYPTION &&
@@ -1784,7 +1775,7 @@ bool rtl_hal_pwrseqcmdparsing(struct rtl_priv *rtlpriv, u8 cut_version,
 				break;
 			case PWR_CMD_WRITE:
 				RT_TRACE(rtlpriv, COMP_INIT, DBG_TRACE,
-					 "%s(): PWR_CMD_WRITE\n", __func__);
+					"rtl_hal_pwrseqcmdparsing(): PWR_CMD_WRITE\n");
 				offset = GET_PWR_CFG_OFFSET(cfg_cmd);
 
 				/*Read the value from system register*/
@@ -1943,7 +1934,5 @@ void rtl_dm_diginit(struct ieee80211_hw *hw, u32 cur_igvalue)
 	dm_digtable->bt30_cur_igi = 0x32;
 	dm_digtable->pre_cck_pd_state = CCK_PD_STAGE_MAX;
 	dm_digtable->cur_cck_pd_state = CCK_PD_STAGE_LOWRSSI;
-	dm_digtable->pre_cck_fa_state = 0;
-	dm_digtable->cur_cck_fa_state = 0;
 }
 EXPORT_SYMBOL(rtl_dm_diginit);

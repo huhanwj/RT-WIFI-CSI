@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * R-Car Gen3 Digital Radio Interface (DRIF) driver
  *
  * Copyright (C) 2017 Renesas Electronics Corporation
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -270,7 +274,7 @@ static int rcar_drif_alloc_dmachannels(struct rcar_drif_sdr *sdr)
 {
 	struct dma_slave_config dma_cfg;
 	unsigned int i;
-	int ret;
+	int ret = -ENODEV;
 
 	for_each_rcar_drif_channel(i, &sdr->cur_ch_mask) {
 		struct rcar_drif *ch = sdr->ch[i];
@@ -278,7 +282,6 @@ static int rcar_drif_alloc_dmachannels(struct rcar_drif_sdr *sdr)
 		ch->dmach = dma_request_slave_channel(&ch->pdev->dev, "rx");
 		if (!ch->dmach) {
 			rdrif_err(sdr, "ch%u: dma channel req failed\n", i);
-			ret = -ENODEV;
 			goto dmach_error;
 		}
 
@@ -870,8 +873,8 @@ static int rcar_drif_querycap(struct file *file, void *fh,
 {
 	struct rcar_drif_sdr *sdr = video_drvdata(file);
 
-	strscpy(cap->driver, KBUILD_MODNAME, sizeof(cap->driver));
-	strscpy(cap->card, sdr->vdev->name, sizeof(cap->card));
+	strlcpy(cap->driver, KBUILD_MODNAME, sizeof(cap->driver));
+	strlcpy(cap->card, sdr->vdev->name, sizeof(cap->card));
 	snprintf(cap->bus_info, sizeof(cap->bus_info), "platform:%s",
 		 sdr->vdev->name);
 
@@ -1104,7 +1107,7 @@ static int rcar_drif_notify_bound(struct v4l2_async_notifier *notifier,
 	struct rcar_drif_sdr *sdr =
 		container_of(notifier, struct rcar_drif_sdr, notifier);
 
-	if (sdr->ep.asd.match.fwnode !=
+	if (sdr->ep.asd.match.fwnode.fwnode !=
 	    of_fwnode_handle(subdev->dev->of_node)) {
 		rdrif_err(sdr, "subdev %s cannot bind\n", subdev->name);
 		return -EINVAL;
@@ -1164,7 +1167,7 @@ static int rcar_drif_notify_complete(struct v4l2_async_notifier *notifier)
 	}
 
 	ret = v4l2_ctrl_add_handler(&sdr->ctrl_hdl,
-				    sdr->ep.subdev->ctrl_handler, NULL, true);
+				    sdr->ep.subdev->ctrl_handler, NULL);
 	if (ret) {
 		rdrif_err(sdr, "failed: ctrl add hdlr ret %d\n", ret);
 		goto error;
@@ -1213,15 +1216,18 @@ static int rcar_drif_parse_subdevs(struct rcar_drif_sdr *sdr)
 {
 	struct v4l2_async_notifier *notifier = &sdr->notifier;
 	struct fwnode_handle *fwnode, *ep;
-	int ret;
 
-	v4l2_async_notifier_init(notifier);
+	notifier->subdevs = devm_kzalloc(sdr->dev, sizeof(*notifier->subdevs),
+					 GFP_KERNEL);
+	if (!notifier->subdevs)
+		return -ENOMEM;
 
 	ep = fwnode_graph_get_next_endpoint(of_fwnode_handle(sdr->dev->of_node),
 					    NULL);
 	if (!ep)
 		return 0;
 
+	notifier->subdevs[notifier->num_subdevs] = &sdr->ep.asd;
 	fwnode = fwnode_graph_get_remote_port_parent(ep);
 	if (!fwnode) {
 		dev_warn(sdr->dev, "bad remote port parent\n");
@@ -1229,13 +1235,9 @@ static int rcar_drif_parse_subdevs(struct rcar_drif_sdr *sdr)
 		return -EINVAL;
 	}
 
-	sdr->ep.asd.match.fwnode = fwnode;
+	sdr->ep.asd.match.fwnode.fwnode = fwnode;
 	sdr->ep.asd.match_type = V4L2_ASYNC_MATCH_FWNODE;
-	ret = v4l2_async_notifier_add_subdev(notifier, &sdr->ep.asd);
-	if (ret) {
-		fwnode_handle_put(fwnode);
-		return ret;
-	}
+	notifier->num_subdevs++;
 
 	/* Get the endpoint properties */
 	rcar_drif_get_ep_properties(sdr, ep);
@@ -1357,13 +1359,11 @@ static int rcar_drif_sdr_probe(struct rcar_drif_sdr *sdr)
 	ret = v4l2_async_notifier_register(&sdr->v4l2_dev, &sdr->notifier);
 	if (ret < 0) {
 		dev_err(sdr->dev, "failed: notifier register ret %d\n", ret);
-		goto cleanup;
+		goto error;
 	}
 
 	return ret;
 
-cleanup:
-	v4l2_async_notifier_cleanup(&sdr->notifier);
 error:
 	v4l2_device_unregister(&sdr->v4l2_dev);
 
@@ -1374,7 +1374,6 @@ error:
 static void rcar_drif_sdr_remove(struct rcar_drif_sdr *sdr)
 {
 	v4l2_async_notifier_unregister(&sdr->notifier);
-	v4l2_async_notifier_cleanup(&sdr->notifier);
 	v4l2_device_unregister(&sdr->v4l2_dev);
 }
 
@@ -1405,9 +1404,11 @@ static int rcar_drif_probe(struct platform_device *pdev)
 	/* Register map */
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	ch->base = devm_ioremap_resource(&pdev->dev, res);
-	if (IS_ERR(ch->base))
-		return PTR_ERR(ch->base);
-
+	if (IS_ERR(ch->base)) {
+		ret = PTR_ERR(ch->base);
+		dev_err(&pdev->dev, "ioremap failed (%d)\n", ret);
+		return ret;
+	}
 	ch->start = res->start;
 	platform_set_drvdata(pdev, ch);
 
@@ -1497,5 +1498,5 @@ module_platform_driver(rcar_drif_driver);
 
 MODULE_DESCRIPTION("Renesas R-Car Gen3 DRIF driver");
 MODULE_ALIAS("platform:" RCAR_DRIF_DRV_NAME);
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Ramesh Shanmugasundaram <ramesh.shanmugasundaram@bp.renesas.com>");

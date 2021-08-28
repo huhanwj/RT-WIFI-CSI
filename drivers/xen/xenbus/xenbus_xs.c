@@ -105,7 +105,6 @@ static void xs_suspend_enter(void)
 
 static void xs_suspend_exit(void)
 {
-	xb_dev_generation_id++;
 	spin_lock(&xs_state_lock);
 	xs_suspend_active--;
 	spin_unlock(&xs_state_lock);
@@ -126,7 +125,7 @@ static uint32_t xs_request_enter(struct xb_req_data *req)
 		spin_lock(&xs_state_lock);
 	}
 
-	if (req->type == XS_TRANSACTION_START && !req->user_req)
+	if (req->type == XS_TRANSACTION_START)
 		xs_state_users++;
 	xs_state_users++;
 	rq_id = xs_request_id++;
@@ -141,9 +140,7 @@ void xs_request_exit(struct xb_req_data *req)
 	spin_lock(&xs_state_lock);
 	xs_state_users--;
 	if ((req->type == XS_TRANSACTION_START && req->msg.type == XS_ERROR) ||
-	    (req->type == XS_TRANSACTION_END && !req->user_req &&
-	     !WARN_ON_ONCE(req->msg.type == XS_ERROR &&
-			   !strcmp(req->body, "ENOENT"))))
+	    req->type == XS_TRANSACTION_END)
 		xs_state_users--;
 	spin_unlock(&xs_state_lock);
 
@@ -230,8 +227,6 @@ static void xs_send(struct xb_req_data *req, struct xsd_sockmsg *msg)
 	req->state = xb_req_state_queued;
 	init_waitqueue_head(&req->wq);
 
-	/* Save the caller req_id and restore it later in the reply */
-	req->caller_req_id = req->msg.req_id;
 	req->msg.req_id = xs_request_enter(req);
 
 	mutex_lock(&xb_write_mutex);
@@ -287,7 +282,6 @@ int xenbus_dev_request_and_reply(struct xsd_sockmsg *msg, void *par)
 	req->num_vecs = 1;
 	req->cb = xenbus_dev_queue_reply;
 	req->par = par;
-	req->user_req = true;
 
 	xs_send(req, msg);
 
@@ -315,9 +309,7 @@ static void *xs_talkv(struct xenbus_transaction t,
 	req->vec = iovec;
 	req->num_vecs = num_vecs;
 	req->cb = xs_wake_up;
-	req->user_req = false;
 
-	msg.req_id = 0;
 	msg.tx_id = t.id;
 	msg.type = type;
 	msg.len = 0;

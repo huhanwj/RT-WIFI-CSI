@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2005-2014 Brocade Communications Systems, Inc.
  * Copyright (c) 2014- QLogic Corporation.
@@ -6,6 +5,15 @@
  * www.qlogic.com
  *
  * Linux driver for QLogic BR-series Fibre Channel Host Bus Adapter.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License (GPL) Version 2 as
+ * published by the Free Software Foundation
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
  */
 
 #include <linux/uaccess.h>
@@ -119,7 +127,7 @@ bfad_iocmd_ioc_get_attr(struct bfad_s *bfad, void *cmd)
 
 	/* fill in driver attr info */
 	strcpy(iocmd->ioc_attr.driver_attr.driver, BFAD_DRIVER_NAME);
-	strlcpy(iocmd->ioc_attr.driver_attr.driver_ver,
+	strncpy(iocmd->ioc_attr.driver_attr.driver_ver,
 		BFAD_DRIVER_VERSION, BFA_VERSION_LEN);
 	strcpy(iocmd->ioc_attr.driver_attr.fw_ver,
 		iocmd->ioc_attr.adapter_attr.fw_ver);
@@ -307,9 +315,9 @@ bfad_iocmd_port_get_attr(struct bfad_s *bfad, void *cmd)
 	iocmd->attr.port_type = port_attr.port_type;
 	iocmd->attr.loopback = port_attr.loopback;
 	iocmd->attr.authfail = port_attr.authfail;
-	strlcpy(iocmd->attr.port_symname.symname,
+	strncpy(iocmd->attr.port_symname.symname,
 		port_attr.port_cfg.sym_name.symname,
-		sizeof(iocmd->attr.port_symname.symname));
+		sizeof(port_attr.port_cfg.sym_name.symname));
 
 	iocmd->status = BFA_STATUS_OK;
 	return 0;
@@ -883,7 +891,7 @@ bfad_iocmd_fabric_get_lports(struct bfad_s *bfad, void *cmd,
 
 	if (bfad_chk_iocmd_sz(payload_len,
 		sizeof(struct bfa_bsg_fabric_get_lports_s),
-		sizeof(wwn_t) * iocmd->nports) != BFA_STATUS_OK) {
+		sizeof(wwn_t[iocmd->nports])) != BFA_STATUS_OK) {
 		iocmd->status = BFA_STATUS_VERSION_FAIL;
 		goto out;
 	}
@@ -2086,11 +2094,13 @@ bfad_iocmd_fcpim_cfg_profile(struct bfad_s *bfad, void *cmd, unsigned int v_cmd)
 {
 	struct bfa_bsg_fcpim_profile_s *iocmd =
 				(struct bfa_bsg_fcpim_profile_s *)cmd;
+	struct timeval  tv;
 	unsigned long	flags;
 
+	do_gettimeofday(&tv);
 	spin_lock_irqsave(&bfad->bfad_lock, flags);
 	if (v_cmd == IOCMD_FCPIM_PROFILE_ON)
-		iocmd->status = bfa_fcpim_profile_on(&bfad->bfa, ktime_get_real_seconds());
+		iocmd->status = bfa_fcpim_profile_on(&bfad->bfa, tv.tv_sec);
 	else if (v_cmd == IOCMD_FCPIM_PROFILE_OFF)
 		iocmd->status = bfa_fcpim_profile_off(&bfad->bfa);
 	spin_unlock_irqrestore(&bfad->bfad_lock, flags);
@@ -3244,9 +3254,8 @@ bfad_fcxp_map_sg(struct bfad_s *bfad, void *payload_kbuf,
 	struct bfa_sge_s	*sg_table;
 	int sge_num = 1;
 
-	buf_base = kcalloc(sizeof(struct bfad_buf_info) +
-				sizeof(struct bfa_sge_s),
-			   sge_num, GFP_KERNEL);
+	buf_base = kzalloc((sizeof(struct bfad_buf_info) +
+			   sizeof(struct bfa_sge_s)) * sge_num, GFP_KERNEL);
 	if (!buf_base)
 		return NULL;
 
@@ -3256,9 +3265,9 @@ bfad_fcxp_map_sg(struct bfad_s *bfad, void *payload_kbuf,
 	/* Allocate dma coherent memory */
 	buf_info = buf_base;
 	buf_info->size = payload_len;
-	buf_info->virt = dma_alloc_coherent(&bfad->pcidev->dev,
-					    buf_info->size, &buf_info->phys,
-					    GFP_KERNEL);
+	buf_info->virt = dma_zalloc_coherent(&bfad->pcidev->dev,
+					     buf_info->size, &buf_info->phys,
+					     GFP_KERNEL);
 	if (!buf_info->virt)
 		goto out_free_mem;
 

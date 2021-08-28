@@ -17,8 +17,7 @@
 		stdout-path = &uart1;
 	};
 
-	memory@90000000 {
-		device_type = "memory";
+	memory {
 		reg = <0x90000000 0x10000000>;
 	};
 
@@ -150,18 +149,18 @@
 		#size-cells = <1>;
 		ranges = <0 0 0 0x1d000>;
 
-		syscon: syscon@10000 {
+		syscon: syscon@b0010000 {
 			compatible = "syscon", "simple-mfd";
 			reg = <0x10000 0x3d>;
 			reg-io-width = <2>;
 
-			wdt {
+			wdt@e {
 				compatible = "technologic,ts4800-wdt";
 				syscon = <&syscon 0xe>;
 			};
 		};
 
-		touchscreen@12000 {
+		touchscreen {
 			compatible = "technologic,ts4800-ts";
 			reg = <0x12000 0x1000>;
 			syscon = <&syscon 0x10 6>;

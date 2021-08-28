@@ -1,13 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Character LCD driver for Linux
  *
  * Copyright (C) 2000-2008, Willy Tarreau <w@1wt.eu>
  * Copyright (C) 2016-2017 Glider bvba
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
  */
 
 #include <linux/atomic.h>
-#include <linux/ctype.h>
 #include <linux/delay.h>
 #include <linux/fs.h>
 #include <linux/miscdevice.h>
@@ -20,7 +23,7 @@
 
 #include <generated/utsrelease.h>
 
-#include "charlcd.h"
+#include <misc/charlcd.h>
 
 #define LCD_MINOR		156
 
@@ -91,7 +94,7 @@ struct charlcd_priv {
 	unsigned long long drvdata[0];
 };
 
-#define charlcd_to_priv(p)	container_of(p, struct charlcd_priv, lcd)
+#define to_priv(p)	container_of(p, struct charlcd_priv, lcd)
 
 /* Device single-open policy control */
 static atomic_t charlcd_available = ATOMIC_INIT(1);
@@ -99,13 +102,16 @@ static atomic_t charlcd_available = ATOMIC_INIT(1);
 /* sleeps that many milliseconds with a reschedule */
 static void long_sleep(int ms)
 {
-	schedule_timeout_interruptible(msecs_to_jiffies(ms));
+	if (in_interrupt())
+		mdelay(ms);
+	else
+		schedule_timeout_interruptible(msecs_to_jiffies(ms));
 }
 
 /* turn the backlight on or off */
 static void charlcd_backlight(struct charlcd *lcd, int on)
 {
-	struct charlcd_priv *priv = charlcd_to_priv(lcd);
+	struct charlcd_priv *priv = to_priv(lcd);
 
 	if (!lcd->ops->backlight)
 		return;
@@ -134,7 +140,7 @@ static void charlcd_bl_off(struct work_struct *work)
 /* turn the backlight on for a little while */
 void charlcd_poke(struct charlcd *lcd)
 {
-	struct charlcd_priv *priv = charlcd_to_priv(lcd);
+	struct charlcd_priv *priv = to_priv(lcd);
 
 	if (!lcd->ops->backlight)
 		return;
@@ -152,7 +158,7 @@ EXPORT_SYMBOL_GPL(charlcd_poke);
 
 static void charlcd_gotoxy(struct charlcd *lcd)
 {
-	struct charlcd_priv *priv = charlcd_to_priv(lcd);
+	struct charlcd_priv *priv = to_priv(lcd);
 	unsigned int addr;
 
 	/*
@@ -170,7 +176,7 @@ static void charlcd_gotoxy(struct charlcd *lcd)
 
 static void charlcd_home(struct charlcd *lcd)
 {
-	struct charlcd_priv *priv = charlcd_to_priv(lcd);
+	struct charlcd_priv *priv = to_priv(lcd);
 
 	priv->addr.x = 0;
 	priv->addr.y = 0;
@@ -179,18 +185,17 @@ static void charlcd_home(struct charlcd *lcd)
 
 static void charlcd_print(struct charlcd *lcd, char c)
 {
-	struct charlcd_priv *priv = charlcd_to_priv(lcd);
+	struct charlcd_priv *priv = to_priv(lcd);
 
 	if (priv->addr.x < lcd->bwidth) {
 		if (lcd->char_conv)
 			c = lcd->char_conv[(unsigned char)c];
 		lcd->ops->write_data(lcd, c);
 		priv->addr.x++;
-
-		/* prevents the cursor from wrapping onto the next line */
-		if (priv->addr.x == lcd->bwidth)
-			charlcd_gotoxy(lcd);
 	}
+	/* prevents the cursor from wrapping onto the next line */
+	if (priv->addr.x == lcd->bwidth)
+		charlcd_gotoxy(lcd);
 }
 
 static void charlcd_clear_fast(struct charlcd *lcd)
@@ -211,7 +216,7 @@ static void charlcd_clear_fast(struct charlcd *lcd)
 /* clears the display and resets X/Y */
 static void charlcd_clear_display(struct charlcd *lcd)
 {
-	struct charlcd_priv *priv = charlcd_to_priv(lcd);
+	struct charlcd_priv *priv = to_priv(lcd);
 
 	lcd->ops->write_cmd(lcd, LCD_CMD_DISPLAY_CLEAR);
 	priv->addr.x = 0;
@@ -223,7 +228,7 @@ static void charlcd_clear_display(struct charlcd *lcd)
 static int charlcd_init_display(struct charlcd *lcd)
 {
 	void (*write_cmd_raw)(struct charlcd *lcd, int cmd);
-	struct charlcd_priv *priv = charlcd_to_priv(lcd);
+	struct charlcd_priv *priv = to_priv(lcd);
 	u8 init;
 
 	if (lcd->ifwidth != 4 && lcd->ifwidth != 8)
@@ -288,79 +293,6 @@ static int charlcd_init_display(struct charlcd *lcd)
 }
 
 /*
- * Parses an unsigned integer from a string, until a non-digit character
- * is found. The empty string is not accepted. No overflow checks are done.
- *
- * Returns whether the parsing was successful. Only in that case
- * the output parameters are written to.
- *
- * TODO: If the kernel adds an inplace version of kstrtoul(), this function
- * could be easily replaced by that.
- */
-static bool parse_n(const char *s, unsigned long *res, const char **next_s)
-{
-	if (!isdigit(*s))
-		return false;
-
-	*res = 0;
-	while (isdigit(*s)) {
-		*res = *res * 10 + (*s - '0');
-		++s;
-	}
-
-	*next_s = s;
-	return true;
-}
-
-/*
- * Parses a movement command of the form "(.*);", where the group can be
- * any number of subcommands of the form "(x|y)[0-9]+".
- *
- * Returns whether the command is valid. The position arguments are
- * only written if the parsing was successful.
- *
- * For instance:
- *   - ";"          returns (<original x>, <original y>).
- *   - "x1;"        returns (1, <original y>).
- *   - "y2x1;"      returns (1, 2).
- *   - "x12y34x56;" returns (56, 34).
- *   - ""           fails.
- *   - "x"          fails.
- *   - "x;"         fails.
- *   - "x1"         fails.
- *   - "xy12;"      fails.
- *   - "x12yy12;"   fails.
- *   - "xx"         fails.
- */
-static bool parse_xy(const char *s, unsigned long *x, unsigned long *y)
-{
-	unsigned long new_x = *x;
-	unsigned long new_y = *y;
-
-	for (;;) {
-		if (!*s)
-			return false;
-
-		if (*s == ';')
-			break;
-
-		if (*s == 'x') {
-			if (!parse_n(s + 1, &new_x, &s))
-				return false;
-		} else if (*s == 'y') {
-			if (!parse_n(s + 1, &new_y, &s))
-				return false;
-		} else {
-			return false;
-		}
-	}
-
-	*x = new_x;
-	*y = new_y;
-	return true;
-}
-
-/*
  * These are the file operation function for user access to /dev/lcd
  * This function can also be called from inside the kernel, by
  * setting file and ppos to NULL.
@@ -369,7 +301,7 @@ static bool parse_xy(const char *s, unsigned long *x, unsigned long *y)
 
 static inline int handle_lcd_special_code(struct charlcd *lcd)
 {
-	struct charlcd_priv *priv = charlcd_to_priv(lcd);
+	struct charlcd_priv *priv = to_priv(lcd);
 
 	/* LCD special codes */
 
@@ -430,7 +362,6 @@ static inline int handle_lcd_special_code(struct charlcd *lcd)
 		break;
 	case 'N':	/* Two Lines */
 		priv->flags |= LCD_FLAG_N;
-		processed = 1;
 		break;
 	case 'l':	/* Shift Cursor Left */
 		if (priv->addr.x > 0) {
@@ -510,9 +441,9 @@ static inline int handle_lcd_special_code(struct charlcd *lcd)
 			shift ^= 4;
 			if (*esc >= '0' && *esc <= '9') {
 				value |= (*esc - '0') << shift;
-			} else if (*esc >= 'A' && *esc <= 'F') {
+			} else if (*esc >= 'A' && *esc <= 'Z') {
 				value |= (*esc - 'A' + 10) << shift;
-			} else if (*esc >= 'a' && *esc <= 'f') {
+			} else if (*esc >= 'a' && *esc <= 'z') {
 				value |= (*esc - 'a' + 10) << shift;
 			} else {
 				esc++;
@@ -538,14 +469,24 @@ static inline int handle_lcd_special_code(struct charlcd *lcd)
 	}
 	case 'x':	/* gotoxy : LxXXX[yYYY]; */
 	case 'y':	/* gotoxy : LyYYY[xXXX]; */
-		if (priv->esc_seq.buf[priv->esc_seq.len - 1] != ';')
+		if (!strchr(esc, ';'))
 			break;
 
-		/* If the command is valid, move to the new address */
-		if (parse_xy(esc, &priv->addr.x, &priv->addr.y))
-			charlcd_gotoxy(lcd);
+		while (*esc) {
+			if (*esc == 'x') {
+				esc++;
+				if (kstrtoul(esc, 10, &priv->addr.x) < 0)
+					break;
+			} else if (*esc == 'y') {
+				esc++;
+				if (kstrtoul(esc, 10, &priv->addr.y) < 0)
+					break;
+			} else {
+				break;
+			}
+		}
 
-		/* Regardless of its validity, mark as processed */
+		charlcd_gotoxy(lcd);
 		processed = 1;
 		break;
 	}
@@ -580,13 +521,13 @@ static inline int handle_lcd_special_code(struct charlcd *lcd)
 
 static void charlcd_write_char(struct charlcd *lcd, char c)
 {
-	struct charlcd_priv *priv = charlcd_to_priv(lcd);
+	struct charlcd_priv *priv = to_priv(lcd);
 
 	/* first, we'll test if we're in escape mode */
 	if ((c != '\n') && priv->esc_seq.len >= 0) {
 		/* yes, let's add this char to the buffer */
 		priv->esc_seq.buf[priv->esc_seq.len++] = c;
-		priv->esc_seq.buf[priv->esc_seq.len] = '\0';
+		priv->esc_seq.buf[priv->esc_seq.len] = 0;
 	} else {
 		/* aborts any previous escape sequence */
 		priv->esc_seq.len = -1;
@@ -595,7 +536,7 @@ static void charlcd_write_char(struct charlcd *lcd, char c)
 		case LCD_ESCAPE_CHAR:
 			/* start of an escape sequence */
 			priv->esc_seq.len = 0;
-			priv->esc_seq.buf[priv->esc_seq.len] = '\0';
+			priv->esc_seq.buf[priv->esc_seq.len] = 0;
 			break;
 		case '\b':
 			/* go back one char and clear it */
@@ -614,7 +555,7 @@ static void charlcd_write_char(struct charlcd *lcd, char c)
 			/* back one char again */
 			lcd->ops->write_cmd(lcd, LCD_CMD_SHIFT);
 			break;
-		case '\f':
+		case '\014':
 			/* quickly clear the display */
 			charlcd_clear_fast(lcd);
 			break;
@@ -705,7 +646,7 @@ static ssize_t charlcd_write(struct file *file, const char __user *buf,
 
 static int charlcd_open(struct inode *inode, struct file *file)
 {
-	struct charlcd_priv *priv = charlcd_to_priv(the_charlcd);
+	struct charlcd_priv *priv = to_priv(the_charlcd);
 	int ret;
 
 	ret = -EBUSY;
@@ -763,24 +704,10 @@ static void charlcd_puts(struct charlcd *lcd, const char *s)
 	}
 }
 
-#ifdef CONFIG_PANEL_BOOT_MESSAGE
-#define LCD_INIT_TEXT CONFIG_PANEL_BOOT_MESSAGE
-#else
-#define LCD_INIT_TEXT "Linux-" UTS_RELEASE "\n"
-#endif
-
-#ifdef CONFIG_CHARLCD_BL_ON
-#define LCD_INIT_BL "\x1b[L+"
-#elif defined(CONFIG_CHARLCD_BL_FLASH)
-#define LCD_INIT_BL "\x1b[L*"
-#else
-#define LCD_INIT_BL "\x1b[L-"
-#endif
-
 /* initialize the LCD driver */
 static int charlcd_init(struct charlcd *lcd)
 {
-	struct charlcd_priv *priv = charlcd_to_priv(lcd);
+	struct charlcd_priv *priv = to_priv(lcd);
 	int ret;
 
 	if (lcd->ops->backlight) {
@@ -798,8 +725,13 @@ static int charlcd_init(struct charlcd *lcd)
 		return ret;
 
 	/* display a short message */
-	charlcd_puts(lcd, "\x1b[Lc\x1b[Lb" LCD_INIT_BL LCD_INIT_TEXT);
-
+#ifdef CONFIG_PANEL_CHANGE_MESSAGE
+#ifdef CONFIG_PANEL_BOOT_MESSAGE
+	charlcd_puts(lcd, "\x1b[Lc\x1b[Lb\x1b[L*" CONFIG_PANEL_BOOT_MESSAGE);
+#endif
+#else
+	charlcd_puts(lcd, "\x1b[Lc\x1b[Lb\x1b[L*Linux-" UTS_RELEASE "\n");
+#endif
 	/* clear the display on the next device opening */
 	priv->must_clear = true;
 	charlcd_home(lcd);
@@ -826,12 +758,6 @@ struct charlcd *charlcd_alloc(unsigned int drvdata_size)
 	return lcd;
 }
 EXPORT_SYMBOL_GPL(charlcd_alloc);
-
-void charlcd_free(struct charlcd *lcd)
-{
-	kfree(charlcd_to_priv(lcd));
-}
-EXPORT_SYMBOL_GPL(charlcd_free);
 
 static int panel_notify_sys(struct notifier_block *this, unsigned long code,
 			    void *unused)
@@ -881,7 +807,7 @@ EXPORT_SYMBOL_GPL(charlcd_register);
 
 int charlcd_unregister(struct charlcd *lcd)
 {
-	struct charlcd_priv *priv = charlcd_to_priv(lcd);
+	struct charlcd_priv *priv = to_priv(lcd);
 
 	unregister_reboot_notifier(&panel_notifier);
 	charlcd_puts(lcd, "\x0cLCD driver unloaded.\x1b[Lc\x1b[Lb\x1b[L-");

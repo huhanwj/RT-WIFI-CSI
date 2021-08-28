@@ -40,7 +40,6 @@
 #include <linux/dmapool.h>
 #include <linux/workqueue.h>
 #include <linux/debugfs.h>
-#include <linux/genalloc.h>
 
 #include <asm/io.h>
 #include <asm/irq.h>
@@ -75,7 +74,6 @@ static const char	hcd_name [] = "ohci_hcd";
 
 #define	STATECHANGE_DELAY	msecs_to_jiffies(300)
 #define	IO_WATCHDOG_DELAY	msecs_to_jiffies(275)
-#define	IO_WATCHDOG_OFF		0xffffff00
 
 #include "ohci.h"
 #include "pci-quirks.h"
@@ -233,7 +231,7 @@ static int ohci_urb_enqueue (
 		}
 
 		/* Start up the I/O watchdog timer, if it's not running */
-		if (ohci->prev_frame_no == IO_WATCHDOG_OFF &&
+		if (!timer_pending(&ohci->io_watchdog) &&
 				list_empty(&ohci->eds_in_use) &&
 				!(ohci->flags & OHCI_QUIRK_QEMU)) {
 			ohci->prev_frame_no = ohci_frame_no(ohci);
@@ -419,7 +417,8 @@ static void ohci_usb_reset (struct ohci_hcd *ohci)
  * other cases where the next software may expect clean state from the
  * "firmware".  this is bus-neutral, unlike shutdown() methods.
  */
-static void _ohci_shutdown(struct usb_hcd *hcd)
+static void
+ohci_shutdown (struct usb_hcd *hcd)
 {
 	struct ohci_hcd *ohci;
 
@@ -435,16 +434,6 @@ static void _ohci_shutdown(struct usb_hcd *hcd)
 	ohci->rh_state = OHCI_RH_HALTED;
 }
 
-static void ohci_shutdown(struct usb_hcd *hcd)
-{
-	struct ohci_hcd	*ohci = hcd_to_ohci(hcd);
-	unsigned long flags;
-
-	spin_lock_irqsave(&ohci->lock, flags);
-	_ohci_shutdown(hcd);
-	spin_unlock_irqrestore(&ohci->lock, flags);
-}
-
 /*-------------------------------------------------------------------------*
  * HC functions
  *-------------------------------------------------------------------------*/
@@ -457,8 +446,7 @@ static int ohci_init (struct ohci_hcd *ohci)
 	struct usb_hcd *hcd = ohci_to_hcd(ohci);
 
 	/* Accept arbitrarily long scatter-gather lists */
-	if (!hcd->localmem_pool)
-		hcd->self.sg_tablesize = ~0;
+	hcd->self.sg_tablesize = ~0;
 
 	if (distrust_firmware)
 		ohci->flags |= OHCI_QUIRK_HUB_POWER;
@@ -513,17 +501,9 @@ static int ohci_init (struct ohci_hcd *ohci)
 		return 0;
 
 	timer_setup(&ohci->io_watchdog, io_watchdog_func, 0);
-	ohci->prev_frame_no = IO_WATCHDOG_OFF;
 
-	if (hcd->localmem_pool)
-		ohci->hcca = gen_pool_dma_alloc_align(hcd->localmem_pool,
-						sizeof(*ohci->hcca),
-						&ohci->hcca_dma, 256);
-	else
-		ohci->hcca = dma_alloc_coherent(hcd->self.controller,
-						sizeof(*ohci->hcca),
-						&ohci->hcca_dma,
-						GFP_KERNEL);
+	ohci->hcca = dma_alloc_coherent (hcd->self.controller,
+			sizeof(*ohci->hcca), &ohci->hcca_dma, GFP_KERNEL);
 	if (!ohci->hcca)
 		return -ENOMEM;
 
@@ -750,7 +730,7 @@ static void io_watchdog_func(struct timer_list *t)
 	u32		head;
 	struct ed	*ed;
 	struct td	*td, *td_start, *td_next;
-	unsigned	frame_no, prev_frame_no = IO_WATCHDOG_OFF;
+	unsigned	frame_no;
 	unsigned long	flags;
 
 	spin_lock_irqsave(&ohci->lock, flags);
@@ -769,7 +749,7 @@ static void io_watchdog_func(struct timer_list *t)
  died:
 			usb_hc_died(ohci_to_hcd(ohci));
 			ohci_dump(ohci);
-			_ohci_shutdown(ohci_to_hcd(ohci));
+			ohci_shutdown(ohci_to_hcd(ohci));
 			goto done;
 		} else {
 			/* No write back because the done queue was empty */
@@ -855,7 +835,7 @@ static void io_watchdog_func(struct timer_list *t)
 			}
 		}
 		if (!list_empty(&ohci->eds_in_use)) {
-			prev_frame_no = frame_no;
+			ohci->prev_frame_no = frame_no;
 			ohci->prev_wdh_cnt = ohci->wdh_cnt;
 			ohci->prev_donehead = ohci_readl(ohci,
 					&ohci->regs->donehead);
@@ -865,7 +845,6 @@ static void io_watchdog_func(struct timer_list *t)
 	}
 
  done:
-	ohci->prev_frame_no = prev_frame_no;
 	spin_unlock_irqrestore(&ohci->lock, flags);
 }
 
@@ -994,7 +973,6 @@ static void ohci_stop (struct usb_hcd *hcd)
 	if (quirk_nec(ohci))
 		flush_work(&ohci->nec_work);
 	del_timer_sync(&ohci->io_watchdog);
-	ohci->prev_frame_no = IO_WATCHDOG_OFF;
 
 	ohci_writel (ohci, OHCI_INTR_MIE, &ohci->regs->intrdisable);
 	ohci_usb_reset(ohci);
@@ -1007,14 +985,9 @@ static void ohci_stop (struct usb_hcd *hcd)
 	remove_debug_files (ohci);
 	ohci_mem_cleanup (ohci);
 	if (ohci->hcca) {
-		if (hcd->localmem_pool)
-			gen_pool_free(hcd->localmem_pool,
-				      (unsigned long)ohci->hcca,
-				      sizeof(*ohci->hcca));
-		else
-			dma_free_coherent(hcd->self.controller,
-					  sizeof(*ohci->hcca),
-					  ohci->hcca, ohci->hcca_dma);
+		dma_free_coherent (hcd->self.controller,
+				sizeof *ohci->hcca,
+				ohci->hcca, ohci->hcca_dma);
 		ohci->hcca = NULL;
 		ohci->hcca_dma = 0;
 	}
@@ -1187,7 +1160,7 @@ static const struct hc_driver ohci_hc_driver = {
 	 * generic hardware linkage
 	*/
 	.irq =                  ohci_irq,
-	.flags =                HCD_MEMORY | HCD_DMA | HCD_USB11,
+	.flags =                HCD_MEMORY | HCD_USB11,
 
 	/*
 	* basic lifecycle operations
@@ -1267,6 +1240,11 @@ MODULE_LICENSE ("GPL");
 #define TMIO_OHCI_DRIVER	ohci_hcd_tmio_driver
 #endif
 
+#ifdef CONFIG_TILE_USB
+#include "ohci-tilegx.c"
+#define PLATFORM_DRIVER		ohci_hcd_tilegx_driver
+#endif
+
 static int __init ohci_hcd_mod_init(void)
 {
 	int retval = 0;
@@ -1280,11 +1258,21 @@ static int __init ohci_hcd_mod_init(void)
 	set_bit(USB_OHCI_LOADED, &usb_hcds_loaded);
 
 	ohci_debug_root = debugfs_create_dir("ohci", usb_debug_root);
+	if (!ohci_debug_root) {
+		retval = -ENOENT;
+		goto error_debug;
+	}
 
 #ifdef PS3_SYSTEM_BUS_DRIVER
 	retval = ps3_ohci_driver_register(&PS3_SYSTEM_BUS_DRIVER);
 	if (retval < 0)
 		goto error_ps3;
+#endif
+
+#ifdef PLATFORM_DRIVER
+	retval = platform_driver_register(&PLATFORM_DRIVER);
+	if (retval < 0)
+		goto error_platform;
 #endif
 
 #ifdef OF_PLATFORM_DRIVER
@@ -1330,12 +1318,17 @@ static int __init ohci_hcd_mod_init(void)
 	platform_driver_unregister(&OF_PLATFORM_DRIVER);
  error_of_platform:
 #endif
+#ifdef PLATFORM_DRIVER
+	platform_driver_unregister(&PLATFORM_DRIVER);
+ error_platform:
+#endif
 #ifdef PS3_SYSTEM_BUS_DRIVER
 	ps3_ohci_driver_unregister(&PS3_SYSTEM_BUS_DRIVER);
  error_ps3:
 #endif
 	debugfs_remove(ohci_debug_root);
 	ohci_debug_root = NULL;
+ error_debug:
 
 	clear_bit(USB_OHCI_LOADED, &usb_hcds_loaded);
 	return retval;
@@ -1355,6 +1348,9 @@ static void __exit ohci_hcd_mod_exit(void)
 #endif
 #ifdef OF_PLATFORM_DRIVER
 	platform_driver_unregister(&OF_PLATFORM_DRIVER);
+#endif
+#ifdef PLATFORM_DRIVER
+	platform_driver_unregister(&PLATFORM_DRIVER);
 #endif
 #ifdef PS3_SYSTEM_BUS_DRIVER
 	ps3_ohci_driver_unregister(&PS3_SYSTEM_BUS_DRIVER);

@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Generic push-switch framework
  *
  * Copyright (C) 2006  Paul Mundt
+ *
+ * This file is subject to the terms and conditions of the GNU General Public
+ * License.  See the file "COPYING" in the main directory of this archive
+ * for more details.
  */
 #include <linux/init.h>
 #include <linux/slab.h>
@@ -21,7 +24,7 @@ static ssize_t switch_show(struct device *dev,
 	struct push_switch_platform_info *psw_info = dev->platform_data;
 	return sprintf(buf, "%s\n", psw_info->name);
 }
-static DEVICE_ATTR_RO(switch);
+static DEVICE_ATTR(switch, S_IRUGO, switch_show, NULL);
 
 static void switch_timer(struct timer_list *t)
 {

@@ -1,9 +1,14 @@
-// SPDX-License-Identifier: GPL-2.0
-//
-// Copyright 2003-2008 Simtec Electronics
-//   Ben Dooks <ben@simtec.co.uk>
-//
-// http://www.simtec.co.uk/products/EB2410ITX/
+/* linux/arch/arm/mach-s3c2410/mach-bast.c
+ *
+ * Copyright 2003-2008 Simtec Electronics
+ *   Ben Dooks <ben@simtec.co.uk>
+ *
+ * http://www.simtec.co.uk/products/EB2410ITX/
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+*/
 
 #include <linux/kernel.h>
 #include <linux/types.h>

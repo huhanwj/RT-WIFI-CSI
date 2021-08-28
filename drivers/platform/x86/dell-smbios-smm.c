@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  SMI methods for use with dell-smbios
  *
@@ -6,6 +5,10 @@
  *  Copyright (c) 2014 Gabriele Mazzotta <gabriele.mzt@gmail.com>
  *  Copyright (c) 2014 Pali Rohár <pali.rohar@gmail.com>
  *  Copyright (c) 2017 Dell Inc.
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License version 2 as
+ *  published by the Free Software Foundation.
  */
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
@@ -15,13 +18,13 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/platform_device.h>
-#include "dcdbas.h"
+#include "../../firmware/dcdbas.h"
 #include "dell-smbios.h"
 
 static int da_command_address;
 static int da_command_code;
 static struct calling_interface_buffer *buffer;
-static struct platform_device *platform_device;
+struct platform_device *platform_device;
 static DEFINE_MUTEX(smm_mutex);
 
 static const struct dmi_system_id dell_device_table[] __initconst = {
@@ -55,7 +58,7 @@ static const struct dmi_system_id dell_device_table[] __initconst = {
 };
 MODULE_DEVICE_TABLE(dmi, dell_device_table);
 
-static void parse_da_table(const struct dmi_header *dm)
+static void __init parse_da_table(const struct dmi_header *dm)
 {
 	struct calling_interface_structure *table =
 		container_of(dm, struct calling_interface_structure, header);
@@ -70,7 +73,7 @@ static void parse_da_table(const struct dmi_header *dm)
 	da_command_code = table->cmdIOCode;
 }
 
-static void find_cmd_address(const struct dmi_header *dm, void *dummy)
+static void __init find_cmd_address(const struct dmi_header *dm, void *dummy)
 {
 	switch (dm->type) {
 	case 0xda: /* Calling interface */
@@ -79,7 +82,7 @@ static void find_cmd_address(const struct dmi_header *dm, void *dummy)
 	}
 }
 
-static int dell_smbios_smm_call(struct calling_interface_buffer *input)
+int dell_smbios_smm_call(struct calling_interface_buffer *input)
 {
 	struct smi_cmd command;
 	size_t size;
@@ -125,7 +128,7 @@ static bool test_wsmt_enabled(void)
 	return false;
 }
 
-int init_dell_smbios_smm(void)
+static int __init dell_smbios_smm_init(void)
 {
 	int ret;
 	/*
@@ -173,7 +176,7 @@ fail_platform_device_alloc:
 	return ret;
 }
 
-void exit_dell_smbios_smm(void)
+static void __exit dell_smbios_smm_exit(void)
 {
 	if (platform_device) {
 		dell_smbios_unregister_device(&platform_device->dev);
@@ -181,3 +184,13 @@ void exit_dell_smbios_smm(void)
 		free_page((unsigned long)buffer);
 	}
 }
+
+subsys_initcall(dell_smbios_smm_init);
+module_exit(dell_smbios_smm_exit);
+
+MODULE_AUTHOR("Matthew Garrett <mjg@redhat.com>");
+MODULE_AUTHOR("Gabriele Mazzotta <gabriele.mzt@gmail.com>");
+MODULE_AUTHOR("Pali Rohár <pali.rohar@gmail.com>");
+MODULE_AUTHOR("Mario Limonciello <mario.limonciello@dell.com>");
+MODULE_DESCRIPTION("Dell SMBIOS communications over SMI");
+MODULE_LICENSE("GPL");

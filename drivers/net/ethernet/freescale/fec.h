@@ -20,8 +20,7 @@
 #include <linux/timecounter.h>
 
 #if defined(CONFIG_M523x) || defined(CONFIG_M527x) || defined(CONFIG_M528x) || \
-    defined(CONFIG_M520x) || defined(CONFIG_M532x) || defined(CONFIG_ARM) || \
-    defined(CONFIG_ARM64) || defined(CONFIG_COMPILE_TEST)
+    defined(CONFIG_M520x) || defined(CONFIG_M532x) || defined(CONFIG_ARM)
 /*
  *	Just figures, Motorola would have to change the offsets for
  *	registers in the same peripheral device on different models
@@ -196,7 +195,7 @@
  *	Evidently, ARM SoCs have the FEC block generated in a
  *	little endian mode so adjust endianness accordingly.
  */
-#if defined(CONFIG_ARM) || defined(CONFIG_ARM64)
+#if defined(CONFIG_ARM)
 #define fec32_to_cpu le32_to_cpu
 #define fec16_to_cpu le16_to_cpu
 #define cpu_to_fec32 cpu_to_le32
@@ -452,10 +451,6 @@ struct bufdesc_ex {
  * initialisation.
  */
 #define FEC_QUIRK_MIB_CLEAR		(1 << 15)
-/* Only i.MX25/i.MX27/i.MX28 controller supports FRBR,FRSR registers,
- * those FIFO receive registers are resolved in other platforms.
- */
-#define FEC_QUIRK_HAS_FRREG		(1 << 16)
 
 struct bufdesc_prop {
 	int qid;
@@ -531,6 +526,7 @@ struct fec_enet_private {
 
 	/* Phylib and MDIO interface */
 	struct	mii_bus *mii_bus;
+	int	mii_timeout;
 	uint	phy_speed;
 	phy_interface_t	phy_interface;
 	struct device_node *phy_node;

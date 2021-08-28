@@ -24,24 +24,71 @@
  */
 
 #include <linux/firmware.h>
-#include <linux/module.h>
-#include <linux/pci.h>
-
 #include "amdgpu.h"
 #include "amdgpu_psp.h"
 #include "amdgpu_ucode.h"
 #include "soc15_common.h"
 #include "psp_v10_0.h"
 
-#include "mp/mp_10_0_offset.h"
-#include "gc/gc_9_1_offset.h"
-#include "sdma0/sdma0_4_1_offset.h"
+#include "vega10/soc15ip.h"
+#include "raven1/MP/mp_10_0_offset.h"
+#include "raven1/GC/gc_9_1_offset.h"
+#include "raven1/SDMA0/sdma0_4_1_offset.h"
 
 MODULE_FIRMWARE("amdgpu/raven_asd.bin");
-MODULE_FIRMWARE("amdgpu/picasso_asd.bin");
-MODULE_FIRMWARE("amdgpu/raven2_asd.bin");
 
-static int psp_v10_0_init_microcode(struct psp_context *psp)
+static int
+psp_v10_0_get_fw_type(struct amdgpu_firmware_info *ucode, enum psp_gfx_fw_type *type)
+{
+	switch(ucode->ucode_id) {
+	case AMDGPU_UCODE_ID_SDMA0:
+		*type = GFX_FW_TYPE_SDMA0;
+		break;
+	case AMDGPU_UCODE_ID_SDMA1:
+		*type = GFX_FW_TYPE_SDMA1;
+		break;
+	case AMDGPU_UCODE_ID_CP_CE:
+		*type = GFX_FW_TYPE_CP_CE;
+		break;
+	case AMDGPU_UCODE_ID_CP_PFP:
+		*type = GFX_FW_TYPE_CP_PFP;
+		break;
+	case AMDGPU_UCODE_ID_CP_ME:
+		*type = GFX_FW_TYPE_CP_ME;
+		break;
+	case AMDGPU_UCODE_ID_CP_MEC1:
+		*type = GFX_FW_TYPE_CP_MEC;
+		break;
+	case AMDGPU_UCODE_ID_CP_MEC1_JT:
+		*type = GFX_FW_TYPE_CP_MEC_ME1;
+		break;
+	case AMDGPU_UCODE_ID_CP_MEC2:
+		*type = GFX_FW_TYPE_CP_MEC;
+		break;
+	case AMDGPU_UCODE_ID_CP_MEC2_JT:
+		*type = GFX_FW_TYPE_CP_MEC_ME2;
+		break;
+	case AMDGPU_UCODE_ID_RLC_G:
+		*type = GFX_FW_TYPE_RLC_G;
+		break;
+	case AMDGPU_UCODE_ID_SMC:
+		*type = GFX_FW_TYPE_SMU;
+		break;
+	case AMDGPU_UCODE_ID_UVD:
+		*type = GFX_FW_TYPE_UVD;
+		break;
+	case AMDGPU_UCODE_ID_VCE:
+		*type = GFX_FW_TYPE_VCE;
+		break;
+	case AMDGPU_UCODE_ID_MAXIMUM:
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+int psp_v10_0_init_microcode(struct psp_context *psp)
 {
 	struct amdgpu_device *adev = psp->adev;
 	const char *chip_name;
@@ -53,12 +100,7 @@ static int psp_v10_0_init_microcode(struct psp_context *psp)
 
 	switch (adev->asic_type) {
 	case CHIP_RAVEN:
-		if (adev->rev_id >= 0x8)
-			chip_name = "raven2";
-		else if (adev->pdev->device == 0x15d8)
-			chip_name = "picasso";
-		else
-			chip_name = "raven";
+		chip_name = "raven";
 		break;
 	default: BUG();
 	}
@@ -92,8 +134,26 @@ out:
 	return err;
 }
 
-static int psp_v10_0_ring_init(struct psp_context *psp,
-			       enum psp_ring_type ring_type)
+int psp_v10_0_prep_cmd_buf(struct amdgpu_firmware_info *ucode, struct psp_gfx_cmd_resp *cmd)
+{
+	int ret;
+	uint64_t fw_mem_mc_addr = ucode->mc_addr;
+
+	memset(cmd, 0, sizeof(struct psp_gfx_cmd_resp));
+
+	cmd->cmd_id = GFX_CMD_ID_LOAD_IP_FW;
+	cmd->cmd.cmd_load_ip_fw.fw_phy_addr_lo = lower_32_bits(fw_mem_mc_addr);
+	cmd->cmd.cmd_load_ip_fw.fw_phy_addr_hi = upper_32_bits(fw_mem_mc_addr);
+	cmd->cmd.cmd_load_ip_fw.fw_size = ucode->ucode_size;
+
+	ret = psp_v10_0_get_fw_type(ucode, &cmd->cmd.cmd_load_ip_fw.fw_type);
+	if (ret)
+		DRM_ERROR("Unknown firmware type\n");
+
+	return ret;
+}
+
+int psp_v10_0_ring_init(struct psp_context *psp, enum psp_ring_type ring_type)
 {
 	int ret = 0;
 	struct psp_ring *ring;
@@ -118,8 +178,7 @@ static int psp_v10_0_ring_init(struct psp_context *psp,
 	return 0;
 }
 
-static int psp_v10_0_ring_create(struct psp_context *psp,
-				 enum psp_ring_type ring_type)
+int psp_v10_0_ring_create(struct psp_context *psp, enum psp_ring_type ring_type)
 {
 	int ret = 0;
 	unsigned int psp_ring_reg = 0;
@@ -150,12 +209,14 @@ static int psp_v10_0_ring_create(struct psp_context *psp,
 	return ret;
 }
 
-static int psp_v10_0_ring_stop(struct psp_context *psp,
-			       enum psp_ring_type ring_type)
+int psp_v10_0_ring_stop(struct psp_context *psp, enum psp_ring_type ring_type)
 {
 	int ret = 0;
+	struct psp_ring *ring;
 	unsigned int psp_ring_reg = 0;
 	struct amdgpu_device *adev = psp->adev;
+
+	ring = &psp->km_ring;
 
 	/* Write the ring destroy command to C2PMSG_64 */
 	psp_ring_reg = 3 << 16;
@@ -171,8 +232,7 @@ static int psp_v10_0_ring_stop(struct psp_context *psp,
 	return ret;
 }
 
-static int psp_v10_0_ring_destroy(struct psp_context *psp,
-				  enum psp_ring_type ring_type)
+int psp_v10_0_ring_destroy(struct psp_context *psp, enum psp_ring_type ring_type)
 {
 	int ret = 0;
 	struct psp_ring *ring = &psp->km_ring;
@@ -189,9 +249,10 @@ static int psp_v10_0_ring_destroy(struct psp_context *psp,
 	return ret;
 }
 
-static int psp_v10_0_cmd_submit(struct psp_context *psp,
-				uint64_t cmd_buf_mc_addr, uint64_t fence_mc_addr,
-				int index)
+int psp_v10_0_cmd_submit(struct psp_context *psp,
+		        struct amdgpu_firmware_info *ucode,
+		        uint64_t cmd_buf_mc_addr, uint64_t fence_mc_addr,
+		        int index)
 {
 	unsigned int psp_write_ptr_reg = 0;
 	struct psp_gfx_rb_frame * write_frame = psp->km_ring.ring_mem;
@@ -237,10 +298,9 @@ static int psp_v10_0_cmd_submit(struct psp_context *psp,
 }
 
 static int
-psp_v10_0_sram_map(struct amdgpu_device *adev,
-		   unsigned int *sram_offset, unsigned int *sram_addr_reg_offset,
-		   unsigned int *sram_data_reg_offset,
-		   enum AMDGPU_UCODE_ID ucode_id)
+psp_v10_0_sram_map(unsigned int *sram_offset, unsigned int *sram_addr_reg_offset,
+		  unsigned int *sram_data_reg_offset,
+		  enum AMDGPU_UCODE_ID ucode_id)
 {
 	int ret = 0;
 
@@ -323,9 +383,9 @@ psp_v10_0_sram_map(struct amdgpu_device *adev,
 	return ret;
 }
 
-static bool psp_v10_0_compare_sram_data(struct psp_context *psp,
-					struct amdgpu_firmware_info *ucode,
-					enum AMDGPU_UCODE_ID ucode_type)
+bool psp_v10_0_compare_sram_data(struct psp_context *psp,
+				struct amdgpu_firmware_info *ucode,
+				enum AMDGPU_UCODE_ID ucode_type)
 {
 	int err = 0;
 	unsigned int fw_sram_reg_val = 0;
@@ -335,7 +395,7 @@ static bool psp_v10_0_compare_sram_data(struct psp_context *psp,
 	uint32_t *ucode_mem = NULL;
 	struct amdgpu_device *adev = psp->adev;
 
-	err = psp_v10_0_sram_map(adev, &fw_sram_reg_val, &fw_sram_addr_reg_offset,
+	err = psp_v10_0_sram_map(&fw_sram_reg_val, &fw_sram_addr_reg_offset,
 				&fw_sram_data_reg_offset, ucode_type);
 	if (err)
 		return false;
@@ -359,24 +419,8 @@ static bool psp_v10_0_compare_sram_data(struct psp_context *psp,
 }
 
 
-static int psp_v10_0_mode1_reset(struct psp_context *psp)
+int psp_v10_0_mode1_reset(struct psp_context *psp)
 {
 	DRM_INFO("psp mode 1 reset not supported now! \n");
 	return -EINVAL;
-}
-
-static const struct psp_funcs psp_v10_0_funcs = {
-	.init_microcode = psp_v10_0_init_microcode,
-	.ring_init = psp_v10_0_ring_init,
-	.ring_create = psp_v10_0_ring_create,
-	.ring_stop = psp_v10_0_ring_stop,
-	.ring_destroy = psp_v10_0_ring_destroy,
-	.cmd_submit = psp_v10_0_cmd_submit,
-	.compare_sram_data = psp_v10_0_compare_sram_data,
-	.mode1_reset = psp_v10_0_mode1_reset,
-};
-
-void psp_v10_0_set_psp_funcs(struct psp_context *psp)
-{
-	psp->funcs = &psp_v10_0_funcs;
 }

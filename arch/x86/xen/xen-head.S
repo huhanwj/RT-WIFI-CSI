@@ -9,9 +9,7 @@
 
 #include <asm/boot.h>
 #include <asm/asm.h>
-#include <asm/msr.h>
 #include <asm/page_types.h>
-#include <asm/percpu.h>
 #include <asm/unwind_hints.h>
 
 #include <xen/interface/elfnote.h>
@@ -36,20 +34,6 @@ ENTRY(startup_xen)
 
 	mov %_ASM_SI, xen_start_info
 	mov $init_thread_union+THREAD_SIZE, %_ASM_SP
-
-#ifdef CONFIG_X86_64
-	/* Set up %gs.
-	 *
-	 * The base of %gs always points to fixed_percpu_data.  If the
-	 * stack protector canary is enabled, it is located at %gs:40.
-	 * Note that, on SMP, the boot cpu uses init data section until
-	 * the per cpu areas are set up.
-	 */
-	movl	$MSR_GS_BASE,%ecx
-	movq	$INIT_PER_CPU_VAR(fixed_percpu_data),%rax
-	cdq
-	wrmsr
-#endif
 
 	jmp xen_start_kernel
 END(startup_xen)
@@ -89,9 +73,7 @@ END(hypercall_page)
 	ELFNOTE(Xen, XEN_ELFNOTE_FEATURES,
 		.ascii "!writable_page_tables|pae_pgdir_above_4gb")
 	ELFNOTE(Xen, XEN_ELFNOTE_SUPPORTED_FEATURES,
-		.long (1 << XENFEAT_writable_page_tables) |       \
-		      (1 << XENFEAT_dom0) |                       \
-		      (1 << XENFEAT_linux_rsdp_unrestricted))
+		.long (1 << XENFEAT_writable_page_tables) | (1 << XENFEAT_dom0))
 	ELFNOTE(Xen, XEN_ELFNOTE_PAE_MODE,       .asciz "yes")
 	ELFNOTE(Xen, XEN_ELFNOTE_LOADER,         .asciz "generic")
 	ELFNOTE(Xen, XEN_ELFNOTE_L1_MFN_VALID,

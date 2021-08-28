@@ -1,6 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* QLogic iSCSI Offload Driver
  * Copyright (c) 2016 Cavium Inc.
+ *
+ * This software is available under the terms of the GNU General Public License
+ * (GPL) Version 2, available from the file COPYING in the main directory of
+ * this source tree.
  */
 
 #include <linux/types.h>
@@ -123,24 +126,22 @@ static void init_sqe(struct iscsi_task_params *task_params,
 						     sgl_task_params,
 						     dif_task_params);
 
-			if (scsi_is_slow_sgl(sgl_task_params->num_sges,
-					     sgl_task_params->small_mid_sge))
-				num_sges = ISCSI_WQE_NUM_SGES_SLOWIO;
-			else
-				num_sges = min(sgl_task_params->num_sges,
-					       (u16)SCSI_NUM_SGES_SLOW_SGL_THR);
-		}
+		if (scsi_is_slow_sgl(sgl_task_params->num_sges,
+				     sgl_task_params->small_mid_sge))
+			num_sges = ISCSI_WQE_NUM_SGES_SLOWIO;
+		else
+			num_sges = min(sgl_task_params->num_sges,
+				       (u16)SCSI_NUM_SGES_SLOW_SGL_THR);
+	}
 
-		SET_FIELD(task_params->sqe->flags, ISCSI_WQE_NUM_SGES,
-			  num_sges);
-		SET_FIELD(task_params->sqe->contlen_cdbsize, ISCSI_WQE_CONT_LEN,
-			  buf_size);
+	SET_FIELD(task_params->sqe->flags, ISCSI_WQE_NUM_SGES, num_sges);
+	SET_FIELD(task_params->sqe->contlen_cdbsize, ISCSI_WQE_CONT_LEN,
+		  buf_size);
 
-		if (GET_FIELD(pdu_header->hdr_second_dword,
-			      ISCSI_CMD_HDR_TOTAL_AHS_LEN))
-			SET_FIELD(task_params->sqe->contlen_cdbsize,
-				  ISCSI_WQE_CDB_SIZE,
-				  cmd_params->extended_cdb_sge.sge_len);
+	if (GET_FIELD(pdu_header->hdr_second_dword,
+		      ISCSI_CMD_HDR_TOTAL_AHS_LEN))
+		SET_FIELD(task_params->sqe->contlen_cdbsize, ISCSI_WQE_CDB_SIZE,
+			  cmd_params->extended_cdb_sge.sge_len);
 	}
 		break;
 	case ISCSI_TASK_TYPE_INITIATOR_READ:
@@ -202,15 +203,12 @@ static void init_default_iscsi_task(struct iscsi_task_params *task_params,
 				    struct data_hdr *pdu_header,
 				    enum iscsi_task_type task_type)
 {
-	struct e4_iscsi_task_context *context;
-	u32 val;
+	struct iscsi_task_context *context;
 	u16 index;
-	u8 val_byte;
+	u32 val;
 
 	context = task_params->context;
-	val_byte = context->mstorm_ag_context.cdu_validation;
 	memset(context, 0, sizeof(*context));
-	context->mstorm_ag_context.cdu_validation = val_byte;
 
 	for (index = 0; index <
 	     ARRAY_SIZE(context->ystorm_st_context.pdu_hdr.data.data);
@@ -224,7 +222,7 @@ static void init_default_iscsi_task(struct iscsi_task_params *task_params,
 					    cpu_to_le16(task_params->conn_icid);
 
 	SET_FIELD(context->ustorm_ag_context.flags1,
-		  E4_USTORM_ISCSI_TASK_AG_CTX_R2T2RECV, 1);
+		  USTORM_ISCSI_TASK_AG_CTX_R2T2RECV, 1);
 
 	context->ustorm_st_context.task_type = task_type;
 	context->ustorm_st_context.cq_rss_number = task_params->cq_rss_number;
@@ -254,9 +252,10 @@ void init_initiator_rw_cdb_ystorm_context(struct ystorm_iscsi_task_st_ctx *ystc,
 
 static
 void init_ustorm_task_contexts(struct ustorm_iscsi_task_st_ctx *ustorm_st_cxt,
-			struct e4_ustorm_iscsi_task_ag_ctx *ustorm_ag_cxt,
-			u32 remaining_recv_len, u32 expected_data_transfer_len,
-			u8 num_sges, bool tx_dif_conn_err_en)
+			       struct ustorm_iscsi_task_ag_ctx *ustorm_ag_cxt,
+			       u32 remaining_recv_len,
+			       u32 expected_data_transfer_len,
+			       u8 num_sges, bool tx_dif_conn_err_en)
 {
 	u32 val;
 
@@ -266,12 +265,12 @@ void init_ustorm_task_contexts(struct ustorm_iscsi_task_st_ctx *ustorm_st_cxt,
 	ustorm_st_cxt->exp_data_transfer_len = val;
 	SET_FIELD(ustorm_st_cxt->reg1.reg1_map, ISCSI_REG1_NUM_SGES, num_sges);
 	SET_FIELD(ustorm_ag_cxt->flags2,
-		  E4_USTORM_ISCSI_TASK_AG_CTX_DIF_ERROR_CF_EN,
+		  USTORM_ISCSI_TASK_AG_CTX_DIF_ERROR_CF_EN,
 		  tx_dif_conn_err_en ? 1 : 0);
 }
 
 static
-void set_rw_exp_data_acked_and_cont_len(struct e4_iscsi_task_context *context,
+void set_rw_exp_data_acked_and_cont_len(struct iscsi_task_context *context,
 					struct iscsi_conn_params  *conn_params,
 					enum iscsi_task_type task_type,
 					u32 task_size,
@@ -343,57 +342,56 @@ void init_rtdif_task_context(struct rdif_task_context *rdif_context,
 			     cpu_to_le16(dif_task_params->application_tag_mask);
 		SET_FIELD(rdif_context->flags0, RDIF_TASK_CONTEXT_CRC_SEED,
 			  dif_task_params->crc_seed ? 1 : 0);
-		SET_FIELD(rdif_context->flags0,
-			  RDIF_TASK_CONTEXT_HOST_GUARD_TYPE,
+		SET_FIELD(rdif_context->flags0, RDIF_TASK_CONTEXT_HOSTGUARDTYPE,
 			  dif_task_params->host_guard_type);
 		SET_FIELD(rdif_context->flags0,
-			  RDIF_TASK_CONTEXT_PROTECTION_TYPE,
+			  RDIF_TASK_CONTEXT_PROTECTIONTYPE,
 			  dif_task_params->protection_type);
 		SET_FIELD(rdif_context->flags0,
-			  RDIF_TASK_CONTEXT_INITIAL_REF_TAG_VALID, 1);
+			  RDIF_TASK_CONTEXT_INITIALREFTAGVALID, 1);
 		SET_FIELD(rdif_context->flags0,
-			  RDIF_TASK_CONTEXT_KEEP_REF_TAG_CONST,
+			  RDIF_TASK_CONTEXT_KEEPREFTAGCONST,
 			  dif_task_params->keep_ref_tag_const ? 1 : 0);
 		SET_FIELD(rdif_context->flags1,
-			  RDIF_TASK_CONTEXT_VALIDATE_APP_TAG,
+			  RDIF_TASK_CONTEXT_VALIDATEAPPTAG,
 			  (dif_task_params->validate_app_tag &&
 			  dif_task_params->dif_on_network) ? 1 : 0);
 		SET_FIELD(rdif_context->flags1,
-			  RDIF_TASK_CONTEXT_VALIDATE_GUARD,
+			  RDIF_TASK_CONTEXT_VALIDATEGUARD,
 			  (dif_task_params->validate_guard &&
 			  dif_task_params->dif_on_network) ? 1 : 0);
 		SET_FIELD(rdif_context->flags1,
-			  RDIF_TASK_CONTEXT_VALIDATE_REF_TAG,
+			  RDIF_TASK_CONTEXT_VALIDATEREFTAG,
 			  (dif_task_params->validate_ref_tag &&
 			  dif_task_params->dif_on_network) ? 1 : 0);
 		SET_FIELD(rdif_context->flags1,
-			  RDIF_TASK_CONTEXT_HOST_INTERFACE,
+			  RDIF_TASK_CONTEXT_HOSTINTERFACE,
 			  dif_task_params->dif_on_host ? 1 : 0);
 		SET_FIELD(rdif_context->flags1,
-			  RDIF_TASK_CONTEXT_NETWORK_INTERFACE,
+			  RDIF_TASK_CONTEXT_NETWORKINTERFACE,
 			  dif_task_params->dif_on_network ? 1 : 0);
 		SET_FIELD(rdif_context->flags1,
-			  RDIF_TASK_CONTEXT_FORWARD_GUARD,
+			  RDIF_TASK_CONTEXT_FORWARDGUARD,
 			  dif_task_params->forward_guard ? 1 : 0);
 		SET_FIELD(rdif_context->flags1,
-			  RDIF_TASK_CONTEXT_FORWARD_APP_TAG,
+			  RDIF_TASK_CONTEXT_FORWARDAPPTAG,
 			  dif_task_params->forward_app_tag ? 1 : 0);
 		SET_FIELD(rdif_context->flags1,
-			  RDIF_TASK_CONTEXT_FORWARD_REF_TAG,
+			  RDIF_TASK_CONTEXT_FORWARDREFTAG,
 			  dif_task_params->forward_ref_tag ? 1 : 0);
 		SET_FIELD(rdif_context->flags1,
-			  RDIF_TASK_CONTEXT_FORWARD_APP_TAG_WITH_MASK,
+			  RDIF_TASK_CONTEXT_FORWARDAPPTAGWITHMASK,
 			  dif_task_params->forward_app_tag_with_mask ? 1 : 0);
 		SET_FIELD(rdif_context->flags1,
-			  RDIF_TASK_CONTEXT_FORWARD_REF_TAG_WITH_MASK,
+			  RDIF_TASK_CONTEXT_FORWARDREFTAGWITHMASK,
 			  dif_task_params->forward_ref_tag_with_mask ? 1 : 0);
 		SET_FIELD(rdif_context->flags1,
-			  RDIF_TASK_CONTEXT_INTERVAL_SIZE,
+			  RDIF_TASK_CONTEXT_INTERVALSIZE,
 			  dif_task_params->dif_block_size_log - 9);
 		SET_FIELD(rdif_context->state,
-			  RDIF_TASK_CONTEXT_REF_TAG_MASK,
+			  RDIF_TASK_CONTEXT_REFTAGMASK,
 			  dif_task_params->ref_tag_mask);
-		SET_FIELD(rdif_context->state, RDIF_TASK_CONTEXT_IGNORE_APP_TAG,
+		SET_FIELD(rdif_context->state, RDIF_TASK_CONTEXT_IGNOREAPPTAG,
 			  dif_task_params->ignore_app_tag);
 	}
 
@@ -401,7 +399,7 @@ void init_rtdif_task_context(struct rdif_task_context *rdif_context,
 	    task_type == ISCSI_TASK_TYPE_INITIATOR_WRITE) {
 		tdif_context->app_tag_value =
 				  cpu_to_le16(dif_task_params->application_tag);
-		tdif_context->partial_crc_value_b =
+		tdif_context->partial_crc_valueB =
 		       cpu_to_le16(dif_task_params->crc_seed ? 0xffff : 0x0000);
 		tdif_context->partial_crc_value_a =
 		       cpu_to_le16(dif_task_params->crc_seed ? 0xffff : 0x0000);
@@ -409,68 +407,64 @@ void init_rtdif_task_context(struct rdif_task_context *rdif_context,
 			  dif_task_params->crc_seed ? 1 : 0);
 
 		SET_FIELD(tdif_context->flags0,
-			  TDIF_TASK_CONTEXT_SET_ERROR_WITH_EOP,
+			  TDIF_TASK_CONTEXT_SETERRORWITHEOP,
 			  dif_task_params->tx_dif_conn_err_en ? 1 : 0);
-		SET_FIELD(tdif_context->flags1, TDIF_TASK_CONTEXT_FORWARD_GUARD,
+		SET_FIELD(tdif_context->flags1, TDIF_TASK_CONTEXT_FORWARDGUARD,
 			  dif_task_params->forward_guard   ? 1 : 0);
-		SET_FIELD(tdif_context->flags1,
-			  TDIF_TASK_CONTEXT_FORWARD_APP_TAG,
+		SET_FIELD(tdif_context->flags1, TDIF_TASK_CONTEXT_FORWARDAPPTAG,
 			  dif_task_params->forward_app_tag ? 1 : 0);
-		SET_FIELD(tdif_context->flags1,
-			  TDIF_TASK_CONTEXT_FORWARD_REF_TAG,
+		SET_FIELD(tdif_context->flags1, TDIF_TASK_CONTEXT_FORWARDREFTAG,
 			  dif_task_params->forward_ref_tag ? 1 : 0);
-		SET_FIELD(tdif_context->flags1, TDIF_TASK_CONTEXT_INTERVAL_SIZE,
+		SET_FIELD(tdif_context->flags1, TDIF_TASK_CONTEXT_INTERVALSIZE,
 			  dif_task_params->dif_block_size_log - 9);
-		SET_FIELD(tdif_context->flags1,
-			  TDIF_TASK_CONTEXT_HOST_INTERFACE,
+		SET_FIELD(tdif_context->flags1, TDIF_TASK_CONTEXT_HOSTINTERFACE,
 			  dif_task_params->dif_on_host    ? 1 : 0);
 		SET_FIELD(tdif_context->flags1,
-			  TDIF_TASK_CONTEXT_NETWORK_INTERFACE,
+			  TDIF_TASK_CONTEXT_NETWORKINTERFACE,
 			  dif_task_params->dif_on_network ? 1 : 0);
 		val = cpu_to_le32(dif_task_params->initial_ref_tag);
 		tdif_context->initial_ref_tag = val;
 		tdif_context->app_tag_mask =
 			     cpu_to_le16(dif_task_params->application_tag_mask);
 		SET_FIELD(tdif_context->flags0,
-			  TDIF_TASK_CONTEXT_HOST_GUARD_TYPE,
+			  TDIF_TASK_CONTEXT_HOSTGUARDTYPE,
 			  dif_task_params->host_guard_type);
 		SET_FIELD(tdif_context->flags0,
-			  TDIF_TASK_CONTEXT_PROTECTION_TYPE,
+			  TDIF_TASK_CONTEXT_PROTECTIONTYPE,
 			  dif_task_params->protection_type);
 		SET_FIELD(tdif_context->flags0,
-			  TDIF_TASK_CONTEXT_INITIAL_REF_TAG_VALID,
+			  TDIF_TASK_CONTEXT_INITIALREFTAGVALID,
 			  dif_task_params->initial_ref_tag_is_valid ? 1 : 0);
 		SET_FIELD(tdif_context->flags0,
-			  TDIF_TASK_CONTEXT_KEEP_REF_TAG_CONST,
+			  TDIF_TASK_CONTEXT_KEEPREFTAGCONST,
 			  dif_task_params->keep_ref_tag_const ? 1 : 0);
-		SET_FIELD(tdif_context->flags1,
-			  TDIF_TASK_CONTEXT_VALIDATE_GUARD,
+		SET_FIELD(tdif_context->flags1, TDIF_TASK_CONTEXT_VALIDATEGUARD,
 			  (dif_task_params->validate_guard &&
 			   dif_task_params->dif_on_host) ? 1 : 0);
 		SET_FIELD(tdif_context->flags1,
-			  TDIF_TASK_CONTEXT_VALIDATE_APP_TAG,
+			  TDIF_TASK_CONTEXT_VALIDATEAPPTAG,
 			  (dif_task_params->validate_app_tag &&
 			  dif_task_params->dif_on_host) ? 1 : 0);
 		SET_FIELD(tdif_context->flags1,
-			  TDIF_TASK_CONTEXT_VALIDATE_REF_TAG,
+			  TDIF_TASK_CONTEXT_VALIDATEREFTAG,
 			  (dif_task_params->validate_ref_tag &&
 			   dif_task_params->dif_on_host) ? 1 : 0);
 		SET_FIELD(tdif_context->flags1,
-			  TDIF_TASK_CONTEXT_FORWARD_APP_TAG_WITH_MASK,
+			  TDIF_TASK_CONTEXT_FORWARDAPPTAGWITHMASK,
 			  dif_task_params->forward_app_tag_with_mask ? 1 : 0);
 		SET_FIELD(tdif_context->flags1,
-			  TDIF_TASK_CONTEXT_FORWARD_REF_TAG_WITH_MASK,
+			  TDIF_TASK_CONTEXT_FORWARDREFTAGWITHMASK,
 			  dif_task_params->forward_ref_tag_with_mask ? 1 : 0);
 		SET_FIELD(tdif_context->flags1,
-			  TDIF_TASK_CONTEXT_REF_TAG_MASK,
+			  TDIF_TASK_CONTEXT_REFTAGMASK,
 			  dif_task_params->ref_tag_mask);
 		SET_FIELD(tdif_context->flags0,
-			  TDIF_TASK_CONTEXT_IGNORE_APP_TAG,
+			  TDIF_TASK_CONTEXT_IGNOREAPPTAG,
 			  dif_task_params->ignore_app_tag ? 1 : 0);
 	}
 }
 
-static void set_local_completion_context(struct e4_iscsi_task_context *context)
+static void set_local_completion_context(struct iscsi_task_context *context)
 {
 	SET_FIELD(context->ystorm_st_context.state.flags,
 		  YSTORM_ISCSI_TASK_STATE_LOCAL_COMP, 1);
@@ -487,7 +481,7 @@ static int init_rw_iscsi_task(struct iscsi_task_params *task_params,
 			      struct scsi_dif_task_params *dif_task_params)
 {
 	u32 exp_data_transfer_len = conn_params->max_burst_length;
-	struct e4_iscsi_task_context *cxt;
+	struct iscsi_task_context *cxt;
 	bool slow_io = false;
 	u32 task_size, val;
 	u8 num_sges = 0;
@@ -500,32 +494,18 @@ static int init_rw_iscsi_task(struct iscsi_task_params *task_params,
 
 	cxt = task_params->context;
 
+	val = cpu_to_le32(task_size);
+	cxt->ystorm_st_context.pdu_hdr.cmd.expected_transfer_length = val;
+	init_initiator_rw_cdb_ystorm_context(&cxt->ystorm_st_context,
+					     cmd_params);
+	val = cpu_to_le32(cmd_params->sense_data_buffer_phys_addr.lo);
+	cxt->mstorm_st_context.sense_db.lo = val;
 
-	if (task_type == ISCSI_TASK_TYPE_TARGET_READ) {
-		set_local_completion_context(cxt);
-	} else if (task_type == ISCSI_TASK_TYPE_TARGET_WRITE) {
-		val = cpu_to_le32(task_size +
-			   ((struct iscsi_r2t_hdr *)pdu_header)->buffer_offset);
-		cxt->ystorm_st_context.pdu_hdr.r2t.desired_data_trns_len = val;
-		cxt->mstorm_st_context.expected_itt =
-						   cpu_to_le32(pdu_header->itt);
-	} else {
-		val = cpu_to_le32(task_size);
-		cxt->ystorm_st_context.pdu_hdr.cmd.expected_transfer_length =
-									    val;
-		init_initiator_rw_cdb_ystorm_context(&cxt->ystorm_st_context,
-						     cmd_params);
-		val = cpu_to_le32(cmd_params->sense_data_buffer_phys_addr.lo);
-		cxt->mstorm_st_context.sense_db.lo = val;
-
-		val = cpu_to_le32(cmd_params->sense_data_buffer_phys_addr.hi);
-		cxt->mstorm_st_context.sense_db.hi = val;
-	}
+	val = cpu_to_le32(cmd_params->sense_data_buffer_phys_addr.hi);
+	cxt->mstorm_st_context.sense_db.hi = val;
 
 	if (task_params->tx_io_size) {
 		init_dif_context_flags(&cxt->ystorm_st_context.state.dif_flags,
-				       dif_task_params);
-		init_dif_context_flags(&cxt->ustorm_st_context.dif_flags,
 				       dif_task_params);
 		init_scsi_sgl_context(&cxt->ystorm_st_context.state.sgl_params,
 				      &cxt->ystorm_st_context.state.data_desc,
@@ -615,7 +595,7 @@ int init_initiator_login_request_task(struct iscsi_task_params *task_params,
 				      struct scsi_sgl_task_params *tx_params,
 				      struct scsi_sgl_task_params *rx_params)
 {
-	struct e4_iscsi_task_context *cxt;
+	struct iscsi_task_context *cxt;
 
 	cxt = task_params->context;
 
@@ -657,7 +637,7 @@ int init_initiator_nop_out_task(struct iscsi_task_params *task_params,
 				struct scsi_sgl_task_params *tx_sgl_task_params,
 				struct scsi_sgl_task_params *rx_sgl_task_params)
 {
-	struct e4_iscsi_task_context *cxt;
+	struct iscsi_task_context *cxt;
 
 	cxt = task_params->context;
 
@@ -703,7 +683,7 @@ int init_initiator_logout_request_task(struct iscsi_task_params *task_params,
 				       struct scsi_sgl_task_params *tx_params,
 				       struct scsi_sgl_task_params *rx_params)
 {
-	struct e4_iscsi_task_context *cxt;
+	struct iscsi_task_context *cxt;
 
 	cxt = task_params->context;
 
@@ -758,7 +738,7 @@ int init_initiator_text_request_task(struct iscsi_task_params *task_params,
 				     struct scsi_sgl_task_params *tx_params,
 				     struct scsi_sgl_task_params *rx_params)
 {
-	struct e4_iscsi_task_context *cxt;
+	struct iscsi_task_context *cxt;
 
 	cxt = task_params->context;
 

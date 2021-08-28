@@ -23,9 +23,6 @@
  */
 #include "priv.h"
 
-#include <core/option.h>
-#include <subdev/pmu.h>
-
 int
 nvkm_therm_temp_get(struct nvkm_therm *therm)
 {
@@ -134,12 +131,11 @@ nvkm_therm_update(struct nvkm_therm *therm, int mode)
 			duty = nvkm_therm_update_linear(therm);
 			break;
 		case NVBIOS_THERM_FAN_OTHER:
-			if (therm->cstate) {
+			if (therm->cstate)
 				duty = therm->cstate;
-				poll = false;
-			} else {
+			else
 				duty = nvkm_therm_update_linear_fallback(therm);
-			}
+			poll = false;
 			break;
 		}
 		immd = false;
@@ -194,7 +190,8 @@ nvkm_therm_fan_mode(struct nvkm_therm *therm, int mode)
 
 	/* The default PPWR ucode on fermi interferes with fan management */
 	if ((mode >= ARRAY_SIZE(name)) ||
-	    (mode != NVKM_THERM_CTRL_NONE && nvkm_pmu_fan_controlled(device)))
+	    (mode != NVKM_THERM_CTRL_NONE && device->card_type >= NV_C0 &&
+	     !device->pmu))
 		return -EINVAL;
 
 	/* do not allow automatic fan management if the thermal sensor is
@@ -300,38 +297,6 @@ nvkm_therm_attr_set(struct nvkm_therm *therm,
 	return -EINVAL;
 }
 
-void
-nvkm_therm_clkgate_enable(struct nvkm_therm *therm)
-{
-	if (!therm || !therm->func->clkgate_enable || !therm->clkgating_enabled)
-		return;
-
-	nvkm_debug(&therm->subdev,
-		   "Enabling clockgating\n");
-	therm->func->clkgate_enable(therm);
-}
-
-void
-nvkm_therm_clkgate_fini(struct nvkm_therm *therm, bool suspend)
-{
-	if (!therm || !therm->func->clkgate_fini || !therm->clkgating_enabled)
-		return;
-
-	nvkm_debug(&therm->subdev,
-		   "Preparing clockgating for %s\n",
-		   suspend ? "suspend" : "fini");
-	therm->func->clkgate_fini(therm, suspend);
-}
-
-static void
-nvkm_therm_clkgate_oneinit(struct nvkm_therm *therm)
-{
-	if (!therm->func->clkgate_enable || !therm->clkgating_enabled)
-		return;
-
-	nvkm_info(&therm->subdev, "Clockgating enabled\n");
-}
-
 static void
 nvkm_therm_intr(struct nvkm_subdev *subdev)
 {
@@ -368,7 +333,6 @@ nvkm_therm_oneinit(struct nvkm_subdev *subdev)
 	nvkm_therm_fan_ctor(therm);
 	nvkm_therm_fan_mode(therm, NVKM_THERM_CTRL_AUTO);
 	nvkm_therm_sensor_preinit(therm);
-	nvkm_therm_clkgate_oneinit(therm);
 	return 0;
 }
 
@@ -393,16 +357,6 @@ nvkm_therm_init(struct nvkm_subdev *subdev)
 	return 0;
 }
 
-void
-nvkm_therm_clkgate_init(struct nvkm_therm *therm,
-			const struct nvkm_therm_clkgate_pack *p)
-{
-	if (!therm || !therm->func->clkgate_init || !therm->clkgating_enabled)
-		return;
-
-	therm->func->clkgate_init(therm, p);
-}
-
 static void *
 nvkm_therm_dtor(struct nvkm_subdev *subdev)
 {
@@ -420,10 +374,15 @@ nvkm_therm = {
 	.intr = nvkm_therm_intr,
 };
 
-void
-nvkm_therm_ctor(struct nvkm_therm *therm, struct nvkm_device *device,
-		int index, const struct nvkm_therm_func *func)
+int
+nvkm_therm_new_(const struct nvkm_therm_func *func, struct nvkm_device *device,
+		int index, struct nvkm_therm **ptherm)
 {
+	struct nvkm_therm *therm;
+
+	if (!(therm = *ptherm = kzalloc(sizeof(*therm), GFP_KERNEL)))
+		return -ENOMEM;
+
 	nvkm_subdev_ctor(&nvkm_therm, device, index, &therm->subdev);
 	therm->func = func;
 
@@ -436,20 +395,5 @@ nvkm_therm_ctor(struct nvkm_therm *therm, struct nvkm_device *device,
 	therm->attr_get = nvkm_therm_attr_get;
 	therm->attr_set = nvkm_therm_attr_set;
 	therm->mode = therm->suspend = -1; /* undefined */
-
-	therm->clkgating_enabled = nvkm_boolopt(device->cfgopt,
-						"NvPmEnableGating", false);
-}
-
-int
-nvkm_therm_new_(const struct nvkm_therm_func *func, struct nvkm_device *device,
-		int index, struct nvkm_therm **ptherm)
-{
-	struct nvkm_therm *therm;
-
-	if (!(therm = *ptherm = kzalloc(sizeof(*therm), GFP_KERNEL)))
-		return -ENOMEM;
-
-	nvkm_therm_ctor(therm, device, index, func);
 	return 0;
 }

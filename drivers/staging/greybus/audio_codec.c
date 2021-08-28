@@ -47,7 +47,7 @@ static int gbaudio_module_enable_tx(struct gbaudio_codec_info *codec,
 	int module_state, ret = 0;
 	u16 data_cport, i2s_port, cportid;
 	u8 sig_bits, channels;
-	u32 format, rate;
+	uint32_t format, rate;
 	struct gbaudio_data_connection *data;
 	struct gbaudio_stream_params *params;
 
@@ -182,7 +182,7 @@ static int gbaudio_module_enable_rx(struct gbaudio_codec_info *codec,
 	int module_state, ret = 0;
 	u16 data_cport, i2s_port, cportid;
 	u8 sig_bits, channels;
-	u32 format, rate;
+	uint32_t format, rate;
 	struct gbaudio_data_connection *data;
 	struct gbaudio_stream_params *params;
 
@@ -319,7 +319,7 @@ int gbaudio_module_update(struct gbaudio_codec_info *codec,
 	char intf_name[NAME_SIZE], dir[NAME_SIZE];
 
 	dev_dbg(module->dev, "%s:Module update %s sequence\n", w->name,
-		enable ? "Enable" : "Disable");
+		enable ? "Enable":"Disable");
 
 	if ((w->id != snd_soc_dapm_aif_in) && (w->id != snd_soc_dapm_aif_out)) {
 		dev_dbg(codec->dev, "No action required for %s\n", w->name);
@@ -412,7 +412,7 @@ static int gbcodec_hw_params(struct snd_pcm_substream *substream,
 {
 	int ret;
 	u8 sig_bits, channels;
-	u32 format, rate;
+	uint32_t format, rate;
 	struct gbaudio_module_info *module;
 	struct gbaudio_data_connection *data;
 	struct gb_bundle *bundle;
@@ -567,7 +567,7 @@ static int gbcodec_prepare(struct snd_pcm_substream *substream,
 	if (ret) {
 		mutex_unlock(&codec->lock);
 		dev_err_ratelimited(dai->dev, "set_data_size failed:%d\n",
-				    ret);
+				     ret);
 		return ret;
 	}
 
@@ -587,8 +587,9 @@ static int gbcodec_mute_stream(struct snd_soc_dai *dai, int mute, int stream)
 	struct gbaudio_codec_info *codec = dev_get_drvdata(dai->dev);
 	struct gbaudio_stream_params *params;
 
+
 	dev_dbg(dai->dev, "Mute:%d, Direction:%s\n", mute,
-		stream ? "CAPTURE" : "PLAYBACK");
+		stream ? "CAPTURE":"PLAYBACK");
 
 	mutex_lock(&codec->lock);
 
@@ -826,7 +827,7 @@ int gbaudio_register_module(struct gbaudio_module_info *module)
 					  module->num_dapm_widgets);
 	if (module->controls)
 		snd_soc_add_codec_controls(codec, module->controls,
-					   module->num_controls);
+				     module->num_controls);
 	if (module->dapm_routes)
 		snd_soc_dapm_add_routes(&codec->dapm, module->dapm_routes,
 					module->num_dapm_routes);
@@ -841,8 +842,8 @@ int gbaudio_register_module(struct gbaudio_module_info *module)
 		 * from codec->jack_list
 		 */
 		list_for_each_entry(jack, &codec->jack_list, list) {
-			if ((jack == &module->headset_jack) ||
-			    (jack == &module->button_jack))
+			if ((jack == &module->headset_jack)
+			    || (jack == &module->button_jack))
 				snd_device_register(codec->card->snd_card,
 						    jack->jack);
 		}
@@ -906,6 +907,7 @@ static void gbaudio_codec_clean_data_rx(struct gbaudio_data_connection *data)
 	data->state[1] = GBAUDIO_CODEC_SHUTDOWN;
 }
 
+
 static void gbaudio_codec_cleanup(struct gbaudio_module_info *module)
 {
 	struct gbaudio_data_connection *data;
@@ -921,6 +923,7 @@ static void gbaudio_codec_cleanup(struct gbaudio_module_info *module)
 
 		if (cap_state > GBAUDIO_CODEC_SHUTDOWN)
 			gbaudio_codec_clean_data_rx(data);
+
 	}
 }
 
@@ -969,7 +972,7 @@ void gbaudio_unregister_module(struct gbaudio_module_info *module)
 		dev_dbg(codec->dev, "Removing %d controls\n",
 			module->num_controls);
 		snd_soc_remove_codec_controls(codec, module->controls,
-					      module->num_controls);
+					  module->num_controls);
 	}
 	if (module->dapm_widgets) {
 		dev_dbg(codec->dev, "Removing %d widgets\n",
@@ -1087,6 +1090,7 @@ static const struct of_device_id greybus_asoc_machine_of_match[]  = {
 static struct platform_driver gbaudio_codec_driver = {
 	.driver = {
 		.name = "apb-dummy-codec",
+		.owner = THIS_MODULE,
 #ifdef CONFIG_PM
 		.pm = &gbaudio_codec_pm_ops,
 #endif

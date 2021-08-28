@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * av7110_ca.c: CA and CI stuff
  *
@@ -7,6 +6,21 @@
  *
  * originally based on code by:
  * Copyright (C) 1998,1999 Christian Theiss <mistert@rz.fh-augsburg.de>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * To obtain the license, point your browser to
+ * http://www.gnu.org/copyleft/gpl.html
+ *
  *
  * the project's page is at https://linuxtv.org
  */
@@ -209,13 +223,13 @@ static int dvb_ca_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static __poll_t dvb_ca_poll (struct file *file, poll_table *wait)
+static unsigned int dvb_ca_poll (struct file *file, poll_table *wait)
 {
 	struct dvb_device *dvbdev = file->private_data;
 	struct av7110 *av7110 = dvbdev->priv;
 	struct dvb_ringbuffer *rbuf = &av7110->ci_rbuffer;
 	struct dvb_ringbuffer *wbuf = &av7110->ci_wbuffer;
-	__poll_t mask = 0;
+	unsigned int mask = 0;
 
 	dprintk(8, "av7110:%p\n",av7110);
 
@@ -223,10 +237,10 @@ static __poll_t dvb_ca_poll (struct file *file, poll_table *wait)
 	poll_wait(file, &wbuf->queue, wait);
 
 	if (!dvb_ringbuffer_empty(rbuf))
-		mask |= (EPOLLIN | EPOLLRDNORM);
+		mask |= (POLLIN | POLLRDNORM);
 
 	if (dvb_ringbuffer_free(wbuf) > 1024)
-		mask |= (EPOLLOUT | EPOLLWRNORM);
+		mask |= (POLLOUT | POLLWRNORM);
 
 	return mask;
 }

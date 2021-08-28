@@ -1,7 +1,16 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (c) 2013-2014, 2016-2018 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2014, 2016-2017 The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
  * RMNET Data configuration engine
+ *
  */
 
 #include <linux/skbuff.h>
@@ -23,7 +32,8 @@ struct rmnet_endpoint {
  */
 struct rmnet_port {
 	struct net_device *dev;
-	u32 data_format;
+	u32 ingress_data_format;
+	u32 egress_data_format;
 	u8 nr_rmnet_devs;
 	u8 rmnet_mode;
 	struct hlist_head muxed_ep[RMNET_MAX_LOGICAL_EP];
@@ -45,24 +55,11 @@ struct rmnet_pcpu_stats {
 	struct u64_stats_sync syncp;
 };
 
-struct rmnet_priv_stats {
-	u64 csum_ok;
-	u64 csum_valid_unset;
-	u64 csum_validation_failed;
-	u64 csum_err_bad_buffer;
-	u64 csum_err_invalid_ip_version;
-	u64 csum_err_invalid_transport;
-	u64 csum_fragmented_pkt;
-	u64 csum_skipped;
-	u64 csum_sw;
-};
-
 struct rmnet_priv {
 	u8 mux_id;
 	struct net_device *real_dev;
 	struct rmnet_pcpu_stats __percpu *pcpu_stats;
 	struct gro_cells gro_cells;
-	struct rmnet_priv_stats stats;
 };
 
 struct rmnet_port *rmnet_get_port(struct net_device *real_dev);

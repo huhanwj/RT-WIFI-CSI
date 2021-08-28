@@ -28,16 +28,10 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include <linux/slab.h>
-
-#include <drm/drm_auth.h>
-#include <drm/drm_drv.h>
-#include <drm/drm_file.h>
-#include <drm/drm_lease.h>
-#include <drm/drm_print.h>
-
+#include <drm/drmP.h>
 #include "drm_internal.h"
 #include "drm_legacy.h"
+#include <drm/drm_lease.h>
 
 /**
  * DOC: master and authentication
@@ -109,11 +103,14 @@ struct drm_master *drm_master_create(struct drm_device *dev)
 		return NULL;
 
 	kref_init(&master->refcount);
-	drm_master_legacy_init(master);
+	spin_lock_init(&master->lock.spinlock);
+	init_waitqueue_head(&master->lock.lock_queue);
 	idr_init(&master->magic_map);
 	master->dev = dev;
 
 	/* initialize the tree of output resource lessees */
+	master->lessor = NULL;
+	master->lessee_id = 0;
 	INIT_LIST_HEAD(&master->lessees);
 	INIT_LIST_HEAD(&master->lessee_list);
 	idr_init(&master->leases);
@@ -145,7 +142,6 @@ static int drm_new_set_master(struct drm_device *dev, struct drm_file *fpriv)
 
 	lockdep_assert_held_once(&dev->master_mutex);
 
-	WARN_ON(fpriv->is_master);
 	old_master = fpriv->master;
 	fpriv->master = drm_master_create(dev);
 	if (!fpriv->master) {
@@ -174,7 +170,6 @@ out_err:
 	/* drop references and restore old master on failure */
 	drm_master_put(&fpriv->master);
 	fpriv->master = old_master;
-	fpriv->is_master = 0;
 
 	return ret;
 }
@@ -235,12 +230,6 @@ int drm_dropmaster_ioctl(struct drm_device *dev, void *data,
 	if (!dev->master)
 		goto out_unlock;
 
-	if (file_priv->master->lessor != NULL) {
-		DRM_DEBUG_LEASE("Attempt to drop lessee %d as master\n", file_priv->master->lessee_id);
-		ret = -EINVAL;
-		goto out_unlock;
-	}
-
 	ret = 0;
 	drm_drop_master(dev, file_priv);
 out_unlock:
@@ -277,7 +266,21 @@ void drm_master_release(struct drm_file *file_priv)
 	if (!drm_is_current_master(file_priv))
 		goto out;
 
-	drm_legacy_lock_master_cleanup(dev, master);
+	if (drm_core_check_feature(dev, DRIVER_LEGACY)) {
+		/*
+		 * Since the master is disappearing, so is the
+		 * possibility to lock.
+		 */
+		mutex_lock(&dev->struct_mutex);
+		if (master->lock.hw_lock) {
+			if (dev->sigdata.lock == master->lock.hw_lock)
+				dev->sigdata.lock = NULL;
+			master->lock.hw_lock = NULL;
+			master->lock.file_priv = NULL;
+			wake_up_interruptible_all(&master->lock.lock_queue);
+		}
+		mutex_unlock(&dev->struct_mutex);
+	}
 
 	if (dev->master == file_priv->master)
 		drm_drop_master(dev, file_priv);
@@ -357,23 +360,3 @@ void drm_master_put(struct drm_master **master)
 	*master = NULL;
 }
 EXPORT_SYMBOL(drm_master_put);
-
-/* Used by drm_client and drm_fb_helper */
-bool drm_master_internal_acquire(struct drm_device *dev)
-{
-	mutex_lock(&dev->master_mutex);
-	if (dev->master) {
-		mutex_unlock(&dev->master_mutex);
-		return false;
-	}
-
-	return true;
-}
-EXPORT_SYMBOL(drm_master_internal_acquire);
-
-/* Used by drm_client and drm_fb_helper */
-void drm_master_internal_release(struct drm_device *dev)
-{
-	mutex_unlock(&dev->master_mutex);
-}
-EXPORT_SYMBOL(drm_master_internal_release);

@@ -5,13 +5,11 @@
 #include <string.h>
 
 #include <linux/kernel.h>
-#include <linux/string.h>
-#include <linux/zalloc.h>
 
 #include "util/dso.h"
+#include "util/util.h"
 #include "util/debug.h"
 #include "util/callchain.h"
-#include "util/symbol_conf.h"
 #include "srcline.h"
 #include "string2.h"
 #include "symbol.h"
@@ -87,9 +85,6 @@ static struct symbol *new_inline_sym(struct dso *dso,
 	struct symbol *inline_sym;
 	char *demangled = NULL;
 
-	if (!funcname)
-		funcname = "??";
-
 	if (dso) {
 		demangled = dso__demangle_sym(dso, 0, funcname);
 		if (demangled)
@@ -106,9 +101,8 @@ static struct symbol *new_inline_sym(struct dso *dso,
 	} else {
 		/* create a fake symbol for the inline frame */
 		inline_sym = symbol__new(base_sym ? base_sym->start : 0,
-					 base_sym ? (base_sym->end - base_sym->start) : 0,
+					 base_sym ? base_sym->end : 0,
 					 base_sym ? base_sym->binding : 0,
-					 base_sym ? base_sym->type : 0,
 					 funcname);
 		if (inline_sym)
 			inline_sym->inlined = 1;
@@ -289,8 +283,7 @@ static int addr2line(const char *dso_name, u64 addr,
 	}
 
 	if (a2l == NULL) {
-		if (!symbol_conf.disable_add2line_warn)
-			pr_warning("addr2line_init failed for %s\n", dso_name);
+		pr_warning("addr2line_init failed for %s\n", dso_name);
 		return 0;
 	}
 
@@ -467,7 +460,7 @@ static struct inline_node *addr2inlines(const char *dso_name, u64 addr,
 		char *srcline;
 		struct symbol *inline_sym;
 
-		strim(funcname);
+		rtrim(funcname);
 
 		if (getline(&filename, &filelen, fp) == -1)
 			goto out;
@@ -503,8 +496,7 @@ out:
 #define A2L_FAIL_LIMIT 123
 
 char *__get_srcline(struct dso *dso, u64 addr, struct symbol *sym,
-		  bool show_sym, bool show_addr, bool unwind_inlines,
-		  u64 ip)
+		  bool show_sym, bool show_addr, bool unwind_inlines)
 {
 	char *file = NULL;
 	unsigned line = 0;
@@ -544,39 +536,11 @@ out:
 
 	if (sym) {
 		if (asprintf(&srcline, "%s+%" PRIu64, show_sym ? sym->name : "",
-					ip - sym->start) < 0)
+					addr - sym->start) < 0)
 			return SRCLINE_UNKNOWN;
 	} else if (asprintf(&srcline, "%s[%" PRIx64 "]", dso->short_name, addr) < 0)
 		return SRCLINE_UNKNOWN;
 	return srcline;
-}
-
-/* Returns filename and fills in line number in line */
-char *get_srcline_split(struct dso *dso, u64 addr, unsigned *line)
-{
-	char *file = NULL;
-	const char *dso_name;
-
-	if (!dso->has_srcline)
-		goto out;
-
-	dso_name = dso__name(dso);
-	if (dso_name == NULL)
-		goto out;
-
-	if (!addr2line(dso_name, addr, &file, line, dso, true, NULL, NULL))
-		goto out;
-
-	dso->a2l_fails = 0;
-	return file;
-
-out:
-	if (dso->a2l_fails && ++dso->a2l_fails > A2L_FAIL_LIMIT) {
-		dso->has_srcline = 0;
-		dso__free_a2l(dso);
-	}
-
-	return NULL;
 }
 
 void free_srcline(char *srcline)
@@ -586,9 +550,9 @@ void free_srcline(char *srcline)
 }
 
 char *get_srcline(struct dso *dso, u64 addr, struct symbol *sym,
-		  bool show_sym, bool show_addr, u64 ip)
+		  bool show_sym, bool show_addr)
 {
-	return __get_srcline(dso, addr, sym, show_sym, show_addr, false, ip);
+	return __get_srcline(dso, addr, sym, show_sym, show_addr, false);
 }
 
 struct srcline_node {
@@ -597,12 +561,11 @@ struct srcline_node {
 	struct rb_node		rb_node;
 };
 
-void srcline__tree_insert(struct rb_root_cached *tree, u64 addr, char *srcline)
+void srcline__tree_insert(struct rb_root *tree, u64 addr, char *srcline)
 {
-	struct rb_node **p = &tree->rb_root.rb_node;
+	struct rb_node **p = &tree->rb_node;
 	struct rb_node *parent = NULL;
 	struct srcline_node *i, *node;
-	bool leftmost = true;
 
 	node = zalloc(sizeof(struct srcline_node));
 	if (!node) {
@@ -618,18 +581,16 @@ void srcline__tree_insert(struct rb_root_cached *tree, u64 addr, char *srcline)
 		i = rb_entry(parent, struct srcline_node, rb_node);
 		if (addr < i->addr)
 			p = &(*p)->rb_left;
-		else {
+		else
 			p = &(*p)->rb_right;
-			leftmost = false;
-		}
 	}
 	rb_link_node(&node->rb_node, parent, p);
-	rb_insert_color_cached(&node->rb_node, tree, leftmost);
+	rb_insert_color(&node->rb_node, tree);
 }
 
-char *srcline__tree_find(struct rb_root_cached *tree, u64 addr)
+char *srcline__tree_find(struct rb_root *tree, u64 addr)
 {
-	struct rb_node *n = tree->rb_root.rb_node;
+	struct rb_node *n = tree->rb_node;
 
 	while (n) {
 		struct srcline_node *i = rb_entry(n, struct srcline_node,
@@ -646,15 +607,15 @@ char *srcline__tree_find(struct rb_root_cached *tree, u64 addr)
 	return NULL;
 }
 
-void srcline__tree_delete(struct rb_root_cached *tree)
+void srcline__tree_delete(struct rb_root *tree)
 {
 	struct srcline_node *pos;
-	struct rb_node *next = rb_first_cached(tree);
+	struct rb_node *next = rb_first(tree);
 
 	while (next) {
 		pos = rb_entry(next, struct srcline_node, rb_node);
 		next = rb_next(&pos->rb_node);
-		rb_erase_cached(&pos->rb_node, tree);
+		rb_erase(&pos->rb_node, tree);
 		free_srcline(pos->srcline);
 		zfree(&pos);
 	}
@@ -688,32 +649,28 @@ void inline_node__delete(struct inline_node *node)
 	free(node);
 }
 
-void inlines__tree_insert(struct rb_root_cached *tree,
-			  struct inline_node *inlines)
+void inlines__tree_insert(struct rb_root *tree, struct inline_node *inlines)
 {
-	struct rb_node **p = &tree->rb_root.rb_node;
+	struct rb_node **p = &tree->rb_node;
 	struct rb_node *parent = NULL;
 	const u64 addr = inlines->addr;
 	struct inline_node *i;
-	bool leftmost = true;
 
 	while (*p != NULL) {
 		parent = *p;
 		i = rb_entry(parent, struct inline_node, rb_node);
 		if (addr < i->addr)
 			p = &(*p)->rb_left;
-		else {
+		else
 			p = &(*p)->rb_right;
-			leftmost = false;
-		}
 	}
 	rb_link_node(&inlines->rb_node, parent, p);
-	rb_insert_color_cached(&inlines->rb_node, tree, leftmost);
+	rb_insert_color(&inlines->rb_node, tree);
 }
 
-struct inline_node *inlines__tree_find(struct rb_root_cached *tree, u64 addr)
+struct inline_node *inlines__tree_find(struct rb_root *tree, u64 addr)
 {
-	struct rb_node *n = tree->rb_root.rb_node;
+	struct rb_node *n = tree->rb_node;
 
 	while (n) {
 		struct inline_node *i = rb_entry(n, struct inline_node,
@@ -730,15 +687,15 @@ struct inline_node *inlines__tree_find(struct rb_root_cached *tree, u64 addr)
 	return NULL;
 }
 
-void inlines__tree_delete(struct rb_root_cached *tree)
+void inlines__tree_delete(struct rb_root *tree)
 {
 	struct inline_node *pos;
-	struct rb_node *next = rb_first_cached(tree);
+	struct rb_node *next = rb_first(tree);
 
 	while (next) {
 		pos = rb_entry(next, struct inline_node, rb_node);
 		next = rb_next(&pos->rb_node);
-		rb_erase_cached(&pos->rb_node, tree);
+		rb_erase(&pos->rb_node, tree);
 		inline_node__delete(pos);
 	}
 }

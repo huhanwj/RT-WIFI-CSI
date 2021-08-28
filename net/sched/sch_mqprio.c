@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * net/sched/sch_mqprio.c
  *
  * Copyright (c) 2010 John Fastabend <john.r.fastabend@intel.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * version 2 as published by the Free Software Foundation.
  */
 
 #include <linux/types.h>
@@ -37,7 +40,7 @@ static void mqprio_destroy(struct Qdisc *sch)
 		for (ntx = 0;
 		     ntx < dev->num_tx_queues && priv->qdiscs[ntx];
 		     ntx++)
-			qdisc_put(priv->qdiscs[ntx]);
+			qdisc_destroy(priv->qdiscs[ntx]);
 		kfree(priv->qdiscs);
 	}
 
@@ -122,16 +125,14 @@ static int parse_attr(struct nlattr *tb[], int maxtype, struct nlattr *nla,
 	int nested_len = nla_len(nla) - NLA_ALIGN(len);
 
 	if (nested_len >= nla_attr_size(0))
-		return nla_parse_deprecated(tb, maxtype,
-					    nla_data(nla) + NLA_ALIGN(len),
-					    nested_len, policy, NULL);
+		return nla_parse(tb, maxtype, nla_data(nla) + NLA_ALIGN(len),
+				 nested_len, policy, NULL);
 
 	memset(tb, 0, sizeof(struct nlattr *) * (maxtype + 1));
 	return 0;
 }
 
-static int mqprio_init(struct Qdisc *sch, struct nlattr *opt,
-		       struct netlink_ext_ack *extack)
+static int mqprio_init(struct Qdisc *sch, struct nlattr *opt)
 {
 	struct net_device *dev = qdisc_dev(sch);
 	struct mqprio_sched *priv = qdisc_priv(sch);
@@ -228,7 +229,7 @@ static int mqprio_init(struct Qdisc *sch, struct nlattr *opt,
 		qdisc = qdisc_create_dflt(dev_queue,
 					  get_default_qdisc_ops(dev, i),
 					  TC_H_MAKE(TC_H_MAJ(sch->handle),
-						    TC_H_MIN(i + 1)), extack);
+						    TC_H_MIN(i + 1)));
 		if (!qdisc)
 			return -ENOMEM;
 
@@ -298,7 +299,7 @@ static void mqprio_attach(struct Qdisc *sch)
 		qdisc = priv->qdiscs[ntx];
 		old = dev_graft_qdisc(qdisc->dev_queue, qdisc);
 		if (old)
-			qdisc_put(old);
+			qdisc_destroy(old);
 		if (ntx < dev->real_num_tx_queues)
 			qdisc_hash_add(qdisc, false);
 	}
@@ -318,7 +319,7 @@ static struct netdev_queue *mqprio_queue_get(struct Qdisc *sch,
 }
 
 static int mqprio_graft(struct Qdisc *sch, unsigned long cl, struct Qdisc *new,
-			struct Qdisc **old, struct netlink_ext_ack *extack)
+		    struct Qdisc **old)
 {
 	struct net_device *dev = qdisc_dev(sch);
 	struct netdev_queue *dev_queue = mqprio_queue_get(sch, cl);
@@ -347,7 +348,7 @@ static int dump_rates(struct mqprio_sched *priv,
 	int i;
 
 	if (priv->flags & TC_MQPRIO_F_MIN_RATE) {
-		nest = nla_nest_start_noflag(skb, TCA_MQPRIO_MIN_RATE64);
+		nest = nla_nest_start(skb, TCA_MQPRIO_MIN_RATE64);
 		if (!nest)
 			goto nla_put_failure;
 
@@ -361,7 +362,7 @@ static int dump_rates(struct mqprio_sched *priv,
 	}
 
 	if (priv->flags & TC_MQPRIO_F_MAX_RATE) {
-		nest = nla_nest_start_noflag(skb, TCA_MQPRIO_MAX_RATE64);
+		nest = nla_nest_start(skb, TCA_MQPRIO_MAX_RATE64);
 		if (!nest)
 			goto nla_put_failure;
 
@@ -387,40 +388,22 @@ static int mqprio_dump(struct Qdisc *sch, struct sk_buff *skb)
 	struct nlattr *nla = (struct nlattr *)skb_tail_pointer(skb);
 	struct tc_mqprio_qopt opt = { 0 };
 	struct Qdisc *qdisc;
-	unsigned int ntx, tc;
+	unsigned int i;
 
 	sch->q.qlen = 0;
 	memset(&sch->bstats, 0, sizeof(sch->bstats));
 	memset(&sch->qstats, 0, sizeof(sch->qstats));
 
-	/* MQ supports lockless qdiscs. However, statistics accounting needs
-	 * to account for all, none, or a mix of locked and unlocked child
-	 * qdiscs. Percpu stats are added to counters in-band and locking
-	 * qdisc totals are added at end.
-	 */
-	for (ntx = 0; ntx < dev->num_tx_queues; ntx++) {
-		qdisc = netdev_get_tx_queue(dev, ntx)->qdisc_sleeping;
+	for (i = 0; i < dev->num_tx_queues; i++) {
+		qdisc = rtnl_dereference(netdev_get_tx_queue(dev, i)->qdisc);
 		spin_lock_bh(qdisc_lock(qdisc));
-
-		if (qdisc_is_percpu_stats(qdisc)) {
-			__u32 qlen = qdisc_qlen_sum(qdisc);
-
-			__gnet_stats_copy_basic(NULL, &sch->bstats,
-						qdisc->cpu_bstats,
-						&qdisc->bstats);
-			__gnet_stats_copy_queue(&sch->qstats,
-						qdisc->cpu_qstats,
-						&qdisc->qstats, qlen);
-		} else {
-			sch->q.qlen		+= qdisc->q.qlen;
-			sch->bstats.bytes	+= qdisc->bstats.bytes;
-			sch->bstats.packets	+= qdisc->bstats.packets;
-			sch->qstats.backlog	+= qdisc->qstats.backlog;
-			sch->qstats.drops	+= qdisc->qstats.drops;
-			sch->qstats.requeues	+= qdisc->qstats.requeues;
-			sch->qstats.overlimits	+= qdisc->qstats.overlimits;
-		}
-
+		sch->q.qlen		+= qdisc->q.qlen;
+		sch->bstats.bytes	+= qdisc->bstats.bytes;
+		sch->bstats.packets	+= qdisc->bstats.packets;
+		sch->qstats.backlog	+= qdisc->qstats.backlog;
+		sch->qstats.drops	+= qdisc->qstats.drops;
+		sch->qstats.requeues	+= qdisc->qstats.requeues;
+		sch->qstats.overlimits	+= qdisc->qstats.overlimits;
 		spin_unlock_bh(qdisc_lock(qdisc));
 	}
 
@@ -428,9 +411,9 @@ static int mqprio_dump(struct Qdisc *sch, struct sk_buff *skb)
 	memcpy(opt.prio_tc_map, dev->prio_tc_map, sizeof(opt.prio_tc_map));
 	opt.hw = priv->hw_offload;
 
-	for (tc = 0; tc < netdev_get_num_tc(dev); tc++) {
-		opt.count[tc] = dev->tc_to_txq[tc].count;
-		opt.offset[tc] = dev->tc_to_txq[tc].offset;
+	for (i = 0; i < netdev_get_num_tc(dev); i++) {
+		opt.count[i] = dev->tc_to_txq[i].count;
+		opt.offset[i] = dev->tc_to_txq[i].offset;
 	}
 
 	if (nla_put(skb, TCA_OPTIONS, NLA_ALIGN(sizeof(opt)), &opt))
@@ -512,6 +495,7 @@ static int mqprio_dump_class_stats(struct Qdisc *sch, unsigned long cl,
 	if (cl >= TC_H_MIN_PRIORITY) {
 		int i;
 		__u32 qlen = 0;
+		struct Qdisc *qdisc;
 		struct gnet_stats_queue qstats = {0};
 		struct gnet_stats_basic_packed bstats = {0};
 		struct net_device *dev = qdisc_dev(sch);
@@ -527,26 +511,18 @@ static int mqprio_dump_class_stats(struct Qdisc *sch, unsigned long cl,
 
 		for (i = tc.offset; i < tc.offset + tc.count; i++) {
 			struct netdev_queue *q = netdev_get_tx_queue(dev, i);
-			struct Qdisc *qdisc = rtnl_dereference(q->qdisc);
-			struct gnet_stats_basic_cpu __percpu *cpu_bstats = NULL;
-			struct gnet_stats_queue __percpu *cpu_qstats = NULL;
 
+			qdisc = rtnl_dereference(q->qdisc);
 			spin_lock_bh(qdisc_lock(qdisc));
-			if (qdisc_is_percpu_stats(qdisc)) {
-				cpu_bstats = qdisc->cpu_bstats;
-				cpu_qstats = qdisc->cpu_qstats;
-			}
-
-			qlen = qdisc_qlen_sum(qdisc);
-			__gnet_stats_copy_basic(NULL, &sch->bstats,
-						cpu_bstats, &qdisc->bstats);
-			__gnet_stats_copy_queue(&sch->qstats,
-						cpu_qstats,
-						&qdisc->qstats,
-						qlen);
+			qlen		  += qdisc->q.qlen;
+			bstats.bytes      += qdisc->bstats.bytes;
+			bstats.packets    += qdisc->bstats.packets;
+			qstats.backlog    += qdisc->qstats.backlog;
+			qstats.drops      += qdisc->qstats.drops;
+			qstats.requeues   += qdisc->qstats.requeues;
+			qstats.overlimits += qdisc->qstats.overlimits;
 			spin_unlock_bh(qdisc_lock(qdisc));
 		}
-
 		/* Reclaim root sleeping lock before completing stats */
 		if (d->lock)
 			spin_lock_bh(d->lock);
@@ -559,7 +535,8 @@ static int mqprio_dump_class_stats(struct Qdisc *sch, unsigned long cl,
 		sch = dev_queue->qdisc_sleeping;
 		if (gnet_stats_copy_basic(qdisc_root_sleeping_running(sch),
 					  d, NULL, &sch->bstats) < 0 ||
-		    qdisc_qstats_copy(d, sch) < 0)
+		    gnet_stats_copy_queue(d, NULL,
+					  &sch->qstats, sch->q.qlen) < 0)
 			return -1;
 	}
 	return 0;

@@ -30,7 +30,7 @@ struct trancevibrator {
 	unsigned int speed;
 };
 
-static ssize_t speed_show(struct device *dev, struct device_attribute *attr,
+static ssize_t show_speed(struct device *dev, struct device_attribute *attr,
 			  char *buf)
 {
 	struct usb_interface *intf = to_usb_interface(dev);
@@ -39,16 +39,14 @@ static ssize_t speed_show(struct device *dev, struct device_attribute *attr,
 	return sprintf(buf, "%d\n", tv->speed);
 }
 
-static ssize_t speed_store(struct device *dev, struct device_attribute *attr,
+static ssize_t set_speed(struct device *dev, struct device_attribute *attr,
 			 const char *buf, size_t count)
 {
 	struct usb_interface *intf = to_usb_interface(dev);
 	struct trancevibrator *tv = usb_get_intfdata(intf);
 	int temp, retval, old;
 
-	retval = kstrtoint(buf, 10, &temp);
-	if (retval)
-		return retval;
+	temp = simple_strtoul(buf, NULL, 10);
 	if (temp > 255)
 		temp = 255;
 	else if (temp < 0)
@@ -71,13 +69,8 @@ static ssize_t speed_store(struct device *dev, struct device_attribute *attr,
 	}
 	return count;
 }
-static DEVICE_ATTR_RW(speed);
 
-static struct attribute *tv_attrs[] = {
-	&dev_attr_speed.attr,
-	NULL,
-};
-ATTRIBUTE_GROUPS(tv);
+static DEVICE_ATTR(speed, S_IRUGO | S_IWUSR, show_speed, set_speed);
 
 static int tv_probe(struct usb_interface *interface,
 		    const struct usb_device_id *id)
@@ -94,9 +87,15 @@ static int tv_probe(struct usb_interface *interface,
 
 	dev->udev = usb_get_dev(udev);
 	usb_set_intfdata(interface, dev);
+	retval = device_create_file(&interface->dev, &dev_attr_speed);
+	if (retval)
+		goto error_create_file;
 
 	return 0;
 
+error_create_file:
+	usb_put_dev(udev);
+	usb_set_intfdata(interface, NULL);
 error:
 	kfree(dev);
 	return retval;
@@ -107,6 +106,7 @@ static void tv_disconnect(struct usb_interface *interface)
 	struct trancevibrator *dev;
 
 	dev = usb_get_intfdata (interface);
+	device_remove_file(&interface->dev, &dev_attr_speed);
 	usb_set_intfdata(interface, NULL);
 	usb_put_dev(dev->udev);
 	kfree(dev);
@@ -118,7 +118,6 @@ static struct usb_driver tv_driver = {
 	.probe =	tv_probe,
 	.disconnect =	tv_disconnect,
 	.id_table =	id_table,
-	.dev_groups =	tv_groups,
 };
 
 module_usb_driver(tv_driver);

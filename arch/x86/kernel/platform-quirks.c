@@ -9,7 +9,6 @@ void __init x86_early_init_platform_quirks(void)
 {
 	x86_platform.legacy.i8042 = X86_LEGACY_I8042_EXPECTED_PRESENT;
 	x86_platform.legacy.rtc = 1;
-	x86_platform.legacy.warm_reset = 1;
 	x86_platform.legacy.reserve_bios_regions = 0;
 	x86_platform.legacy.devices.pnpbios = 1;
 
@@ -33,14 +32,9 @@ void __init x86_early_init_platform_quirks(void)
 		x86_platform.set_legacy_features();
 }
 
-bool __init x86_pnpbios_disabled(void)
-{
-	return x86_platform.legacy.devices.pnpbios == 0;
-}
-
 #if defined(CONFIG_PNPBIOS)
 bool __init arch_pnpbios_disabled(void)
 {
-	return x86_pnpbios_disabled();
+	return x86_platform.legacy.devices.pnpbios == 0;
 }
 #endif

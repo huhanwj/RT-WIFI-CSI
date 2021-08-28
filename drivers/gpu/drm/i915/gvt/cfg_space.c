@@ -56,10 +56,6 @@ static const u8 pci_cfg_space_rw_bmp[PCI_INTERRUPT_LINE + 4] = {
 
 /**
  * vgpu_pci_cfg_mem_write - write virtual cfg space memory
- * @vgpu: target vgpu
- * @off: offset
- * @src: src ptr to write
- * @bytes: number of bytes
  *
  * Use this function to write virtual cfg space memory.
  * For standard cfg space, only RW bits can be changed,
@@ -95,10 +91,6 @@ static void vgpu_pci_cfg_mem_write(struct intel_vgpu *vgpu, unsigned int off,
 
 /**
  * intel_vgpu_emulate_cfg_read - emulate vGPU configuration space read
- * @vgpu: target vgpu
- * @offset: offset
- * @p_data: return data ptr
- * @bytes: number of bytes to read
  *
  * Returns:
  * Zero on success, negative error code if failed.
@@ -127,6 +119,16 @@ static int map_aperture(struct intel_vgpu *vgpu, bool map)
 	if (map == vgpu->cfg_space.bar[INTEL_GVT_PCI_BAR_APERTURE].tracked)
 		return 0;
 
+	if (map) {
+		vgpu->gm.aperture_va = memremap(aperture_pa, aperture_sz,
+						MEMREMAP_WC);
+		if (!vgpu->gm.aperture_va)
+			return -ENOMEM;
+	} else {
+		memunmap(vgpu->gm.aperture_va);
+		vgpu->gm.aperture_va = NULL;
+	}
+
 	val = vgpu_cfg_space(vgpu)[PCI_BASE_ADDRESS_2];
 	if (val & PCI_BASE_ADDRESS_MEM_TYPE_64)
 		val = *(u64 *)(vgpu_cfg_space(vgpu) + PCI_BASE_ADDRESS_2);
@@ -139,8 +141,11 @@ static int map_aperture(struct intel_vgpu *vgpu, bool map)
 						  aperture_pa >> PAGE_SHIFT,
 						  aperture_sz >> PAGE_SHIFT,
 						  map);
-	if (ret)
+	if (ret) {
+		memunmap(vgpu->gm.aperture_va);
+		vgpu->gm.aperture_va = NULL;
 		return ret;
+	}
 
 	vgpu->cfg_space.bar[INTEL_GVT_PCI_BAR_APERTURE].tracked = map;
 	return 0;
@@ -286,10 +291,6 @@ static int emulate_pci_bar_write(struct intel_vgpu *vgpu, unsigned int offset,
 
 /**
  * intel_vgpu_emulate_cfg_read - emulate vGPU configuration space write
- * @vgpu: target vgpu
- * @offset: offset
- * @p_data: write data ptr
- * @bytes: number of bytes to write
  *
  * Returns:
  * Zero on success, negative error code if failed.
@@ -334,8 +335,7 @@ int intel_vgpu_emulate_cfg_write(struct intel_vgpu *vgpu, unsigned int offset,
 	case INTEL_GVT_PCI_OPREGION:
 		if (WARN_ON(!IS_ALIGNED(offset, 4)))
 			return -EINVAL;
-		ret = intel_vgpu_opregion_base_write_handler(vgpu,
-						   *(u32 *)p_data);
+		ret = intel_vgpu_init_opregion(vgpu, *(u32 *)p_data);
 		if (ret)
 			return ret;
 

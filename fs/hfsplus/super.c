@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/fs/hfsplus/super.c
  *
@@ -19,7 +18,7 @@
 #include <linux/nls.h>
 
 static struct inode *hfsplus_alloc_inode(struct super_block *sb);
-static void hfsplus_free_inode(struct inode *inode);
+static void hfsplus_destroy_inode(struct inode *inode);
 
 #include "hfsplus_fs.h"
 #include "xattr.h"
@@ -362,7 +361,7 @@ static int hfsplus_remount(struct super_block *sb, int *flags, char *data)
 
 static const struct super_operations hfsplus_sops = {
 	.alloc_inode	= hfsplus_alloc_inode,
-	.free_inode	= hfsplus_free_inode,
+	.destroy_inode	= hfsplus_destroy_inode,
 	.write_inode	= hfsplus_write_inode,
 	.evict_inode	= hfsplus_evict_inode,
 	.put_super	= hfsplus_put_super,
@@ -525,10 +524,8 @@ static int hfsplus_fill_super(struct super_block *sb, void *data, int silent)
 		goto out_put_root;
 	if (!hfs_brec_read(&fd, &entry, sizeof(entry))) {
 		hfs_find_exit(&fd);
-		if (entry.type != cpu_to_be16(HFSPLUS_FOLDER)) {
-			err = -EINVAL;
+		if (entry.type != cpu_to_be16(HFSPLUS_FOLDER))
 			goto out_put_root;
-		}
 		inode = hfsplus_iget(sb, be32_to_cpu(entry.folder.id));
 		if (IS_ERR(inode)) {
 			err = PTR_ERR(inode);
@@ -552,7 +549,7 @@ static int hfsplus_fill_super(struct super_block *sb, void *data, int silent)
 
 		if (!sbi->hidden_dir) {
 			mutex_lock(&sbi->vh_mutex);
-			sbi->hidden_dir = hfsplus_new_inode(sb, root, S_IFDIR);
+			sbi->hidden_dir = hfsplus_new_inode(sb, S_IFDIR);
 			if (!sbi->hidden_dir) {
 				mutex_unlock(&sbi->vh_mutex);
 				err = -ENOMEM;
@@ -565,8 +562,8 @@ static int hfsplus_fill_super(struct super_block *sb, void *data, int silent)
 				goto out_put_hidden_dir;
 			}
 
-			err = hfsplus_init_security(sbi->hidden_dir,
-							root, &str);
+			err = hfsplus_init_inode_security(sbi->hidden_dir,
+								root, &str);
 			if (err == -EOPNOTSUPP)
 				err = 0; /* Operation is not supported. */
 			else if (err) {
@@ -591,7 +588,6 @@ static int hfsplus_fill_super(struct super_block *sb, void *data, int silent)
 	return 0;
 
 out_put_hidden_dir:
-	cancel_delayed_work_sync(&sbi->sync_work);
 	iput(sbi->hidden_dir);
 out_put_root:
 	dput(sb->s_root);
@@ -629,9 +625,16 @@ static struct inode *hfsplus_alloc_inode(struct super_block *sb)
 	return i ? &i->vfs_inode : NULL;
 }
 
-static void hfsplus_free_inode(struct inode *inode)
+static void hfsplus_i_callback(struct rcu_head *head)
 {
+	struct inode *inode = container_of(head, struct inode, i_rcu);
+
 	kmem_cache_free(hfsplus_inode_cachep, HFSPLUS_I(inode));
+}
+
+static void hfsplus_destroy_inode(struct inode *inode)
+{
+	call_rcu(&inode->i_rcu, hfsplus_i_callback);
 }
 
 #define HFSPLUS_INODE_SIZE	sizeof(struct hfsplus_inode_info)

@@ -245,12 +245,12 @@ ehci_urb_done(struct ehci_hcd *ehci, struct urb *urb, int status)
 	}
 
 	if (unlikely(urb->unlinked)) {
-		INCR(ehci->stats.unlink);
+		COUNT(ehci->stats.unlink);
 	} else {
 		/* report non-error and short read status as zero */
 		if (status == -EINPROGRESS || status == -EREMOTEIO)
 			status = 0;
-		INCR(ehci->stats.complete);
+		COUNT(ehci->stats.complete);
 	}
 
 #ifdef EHCI_URB_TRACE
@@ -1188,10 +1188,10 @@ static int submit_single_step_set_feature(
 	 * 15 secs after the setup
 	 */
 	if (is_setup) {
-		/* SETUP pid, and interrupt after SETUP completion */
+		/* SETUP pid */
 		qtd_fill(ehci, qtd, urb->setup_dma,
 				sizeof(struct usb_ctrlrequest),
-				QTD_IOC | token | (2 /* "setup" */ << 8), 8);
+				token | (2 /* "setup" */ << 8), 8);
 
 		submit_async(ehci, urb, &qtd_list, GFP_ATOMIC);
 		return 0; /*Return now; we shall come back after 15 seconds*/
@@ -1228,8 +1228,12 @@ static int submit_single_step_set_feature(
 	qtd_prev->hw_next = QTD_NEXT(ehci, qtd->qtd_dma);
 	list_add_tail(&qtd->qtd_list, head);
 
-	/* Interrupt after STATUS completion */
-	qtd_fill(ehci, qtd, 0, 0, token | QTD_IOC, 0);
+	/* dont fill any data in such packets */
+	qtd_fill(ehci, qtd, 0, 0, token, 0);
+
+	/* by default, enable interrupt on urb completion */
+	if (likely(!(urb->transfer_flags & URB_NO_INTERRUPT)))
+		qtd->hw_token |= cpu_to_hc32(ehci, QTD_IOC);
 
 	submit_async(ehci, urb, &qtd_list, GFP_KERNEL);
 

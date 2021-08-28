@@ -1,19 +1,33 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  Copyright (C) 2017 Chelsio Communications.  All rights reserved.
+ *
+ *  This program is free software; you can redistribute it and/or modify it
+ *  under the terms and conditions of the GNU General Public License,
+ *  version 2, as published by the Free Software Foundation.
+ *
+ *  This program is distributed in the hope it will be useful, but WITHOUT
+ *  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ *  FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ *  more details.
+ *
+ *  The full GNU General Public License is included in this distribution in
+ *  the file called "COPYING".
+ *
  */
 
 #ifndef __CUDBG_ENTITY_H__
 #define __CUDBG_ENTITY_H__
 
-#define EDC0_FLAG 0
-#define EDC1_FLAG 1
-#define MC_FLAG 2
-#define MC0_FLAG 3
-#define MC1_FLAG 4
-#define HMA_FLAG 5
+#define EDC0_FLAG 3
+#define EDC1_FLAG 4
 
 #define CUDBG_ENTITY_SIGNATURE 0xCCEDB001
+
+struct card_mem {
+	u16 size_edc0;
+	u16 size_edc1;
+	u16 mem_flag;
+};
 
 struct cudbg_mbox_log {
 	struct mbox_cmd entry;
@@ -50,18 +64,6 @@ struct cudbg_hw_sched {
 	u32 map;
 };
 
-#define SGE_QBASE_DATA_REG_NUM 4
-
-struct sge_qbase_reg_field {
-	u32 reg_addr;
-	u32 reg_data[SGE_QBASE_DATA_REG_NUM];
-	/* Max supported PFs */
-	u32 pf_data_value[PCIE_FW_MASTER_M + 1][SGE_QBASE_DATA_REG_NUM];
-	/* Max supported VFs */
-	u32 vf_data_value[T6_VF_M + 1][SGE_QBASE_DATA_REG_NUM];
-	u32 vfcount; /* Actual number of max vfs in current configuration */
-};
-
 struct ireg_field {
 	u32 ireg_addr;
 	u32 ireg_data;
@@ -83,53 +85,6 @@ struct cudbg_tp_la {
 	u32 size;
 	u32 mode;
 	u8 data[0];
-};
-
-static const char * const cudbg_region[] = {
-	"DBQ contexts:", "IMSG contexts:", "FLM cache:", "TCBs:",
-	"Pstructs:", "Timers:", "Rx FL:", "Tx FL:", "Pstruct FL:",
-	"Tx payload:", "Rx payload:", "LE hash:", "iSCSI region:",
-	"TDDP region:", "TPT region:", "STAG region:", "RQ region:",
-	"RQUDP region:", "PBL region:", "TXPBL region:",
-	"DBVFIFO region:", "ULPRX state:", "ULPTX state:",
-	"On-chip queues:"
-};
-
-/* Memory region info relative to current memory (i.e. wrt 0). */
-struct cudbg_region_info {
-	bool exist; /* Does region exists in current memory? */
-	u32 start;  /* Start wrt 0 */
-	u32 end;    /* End wrt 0 */
-};
-
-struct cudbg_mem_desc {
-	u32 base;
-	u32 limit;
-	u32 idx;
-};
-
-#define CUDBG_MEMINFO_REV 1
-
-struct cudbg_meminfo {
-	struct cudbg_mem_desc avail[4];
-	struct cudbg_mem_desc mem[ARRAY_SIZE(cudbg_region) + 3];
-	u32 avail_c;
-	u32 mem_c;
-	u32 up_ram_lo;
-	u32 up_ram_hi;
-	u32 up_extmem2_lo;
-	u32 up_extmem2_hi;
-	u32 rx_pages_data[3];
-	u32 tx_pages_data[4];
-	u32 p_structs;
-	u32 reserved[12];
-	u32 port_used[4];
-	u32 port_alloc[4];
-	u32 loopback_used[NCHAN];
-	u32 loopback_alloc[NCHAN];
-	u32 p_structs_free_cnt;
-	u32 free_rx_cnt;
-	u32 free_tx_cnt;
 };
 
 struct cudbg_cim_pif_la {
@@ -190,7 +145,6 @@ struct cudbg_tid_info_region_rev1 {
 	u32 reserved[16];
 };
 
-#define CUDBG_LOWMEM_MAX_CTXT_QIDS 256
 #define CUDBG_MAX_FL_QIDS 1024
 
 struct cudbg_ch_cntxt {
@@ -240,9 +194,6 @@ struct cudbg_vpd_data {
 };
 
 #define CUDBG_MAX_TCAM_TID 0x800
-#define CUDBG_T6_CLIP 1536
-#define CUDBG_MAX_TID_COMP_EN 6144
-#define CUDBG_MAX_TID_COMP_DIS 3072
 
 enum cudbg_le_entry_types {
 	LE_ET_UNKNOWN = 0,
@@ -274,18 +225,12 @@ struct cudbg_tid_data {
 
 #define CUDBG_NUM_ULPTX 11
 #define CUDBG_NUM_ULPTX_READ 512
-#define CUDBG_NUM_ULPTX_ASIC 6
-#define CUDBG_NUM_ULPTX_ASIC_READ 128
-
-#define CUDBG_ULPTX_LA_REV 1
 
 struct cudbg_ulptx_la {
 	u32 rdptr[CUDBG_NUM_ULPTX];
 	u32 wrptr[CUDBG_NUM_ULPTX];
 	u32 rddata[CUDBG_NUM_ULPTX];
 	u32 rd_data[CUDBG_NUM_ULPTX][CUDBG_NUM_ULPTX_READ];
-	u32 rdptr_asic[CUDBG_NUM_ULPTX_ASIC_READ];
-	u32 rddata_asic[CUDBG_NUM_ULPTX_ASIC_READ][CUDBG_NUM_ULPTX_ASIC];
 };
 
 #define CUDBG_CHAC_PBT_ADDR 0x2800
@@ -301,48 +246,6 @@ struct cudbg_pbt_tables {
 	u32 pbt_static[CUDBG_PBT_STATIC_ENTRIES];
 	u32 lrf_table[CUDBG_LRF_ENTRIES];
 	u32 pbt_data[CUDBG_PBT_DATA_ENTRIES];
-};
-
-enum cudbg_qdesc_qtype {
-	CUDBG_QTYPE_UNKNOWN = 0,
-	CUDBG_QTYPE_NIC_TXQ,
-	CUDBG_QTYPE_NIC_RXQ,
-	CUDBG_QTYPE_NIC_FLQ,
-	CUDBG_QTYPE_CTRLQ,
-	CUDBG_QTYPE_FWEVTQ,
-	CUDBG_QTYPE_INTRQ,
-	CUDBG_QTYPE_PTP_TXQ,
-	CUDBG_QTYPE_OFLD_TXQ,
-	CUDBG_QTYPE_RDMA_RXQ,
-	CUDBG_QTYPE_RDMA_FLQ,
-	CUDBG_QTYPE_RDMA_CIQ,
-	CUDBG_QTYPE_ISCSI_RXQ,
-	CUDBG_QTYPE_ISCSI_FLQ,
-	CUDBG_QTYPE_ISCSIT_RXQ,
-	CUDBG_QTYPE_ISCSIT_FLQ,
-	CUDBG_QTYPE_CRYPTO_TXQ,
-	CUDBG_QTYPE_CRYPTO_RXQ,
-	CUDBG_QTYPE_CRYPTO_FLQ,
-	CUDBG_QTYPE_TLS_RXQ,
-	CUDBG_QTYPE_TLS_FLQ,
-	CUDBG_QTYPE_MAX,
-};
-
-#define CUDBG_QDESC_REV 1
-
-struct cudbg_qdesc_entry {
-	u32 data_size;
-	u32 qtype;
-	u32 qid;
-	u32 desc_size;
-	u32 num_desc;
-	u8 data[0]; /* Must be last */
-};
-
-struct cudbg_qdesc_info {
-	u32 qdesc_entry_size;
-	u32 num_queues;
-	u8 data[0]; /* Must be last */
 };
 
 #define IREG_NUM_ELEM 4
@@ -410,11 +313,6 @@ static const u32 t5_sge_dbg_index_array[2][IREG_NUM_ELEM] = {
 	{0x10cc, 0x10d4, 0x0, 16},
 };
 
-static const u32 t6_sge_qbase_index_array[] = {
-	/* 1 addr reg SGE_QBASE_INDEX and 4 data reg SGE_QBASE_MAP[0-3] */
-	0x1250, 0x1240, 0x1244, 0x1248, 0x124c,
-};
-
 static const u32 t5_pcie_pdbg_array[][IREG_NUM_ELEM] = {
 	{0x5a04, 0x5a0c, 0x00, 0x20}, /* t5_pcie_pdbg_regs_00_to_20 */
 	{0x5a04, 0x5a0c, 0x21, 0x20}, /* t5_pcie_pdbg_regs_21_to_40 */
@@ -436,25 +334,6 @@ static const u32 t5_pm_tx_array[][IREG_NUM_ELEM] = {
 	{0x8FF0, 0x8FF4, 0x10021, 0x1D}, /* t5_pm_tx_regs_10021_to_1003c */
 };
 
-#define CUDBG_NUM_PCIE_CONFIG_REGS 0x61
-
-static const u32 t5_pcie_config_array[][2] = {
-	{0x0, 0x34},
-	{0x3c, 0x40},
-	{0x50, 0x64},
-	{0x70, 0x80},
-	{0x94, 0xa0},
-	{0xb0, 0xb8},
-	{0xd0, 0xd4},
-	{0x100, 0x128},
-	{0x140, 0x148},
-	{0x150, 0x164},
-	{0x170, 0x178},
-	{0x180, 0x194},
-	{0x1a0, 0x1b8},
-	{0x1c0, 0x208},
-};
-
 static const u32 t6_ma_ireg_array[][IREG_NUM_ELEM] = {
 	{0x78f8, 0x78fc, 0xa000, 23}, /* t6_ma_regs_a000_to_a016 */
 	{0x78f8, 0x78fc, 0xa400, 30}, /* t6_ma_regs_a400_to_a41e */
@@ -466,45 +345,37 @@ static const u32 t6_ma_ireg_array2[][IREG_NUM_ELEM] = {
 	{0x78f8, 0x78fc, 0xe640, 13} /* t6_ma_regs_e640_to_e7c0 */
 };
 
-static const u32 t6_up_cim_reg_array[][IREG_NUM_ELEM + 1] = {
-	{0x7b50, 0x7b54, 0x2000, 0x20, 0}, /* up_cim_2000_to_207c */
-	{0x7b50, 0x7b54, 0x2080, 0x1d, 0}, /* up_cim_2080_to_20fc */
-	{0x7b50, 0x7b54, 0x00, 0x20, 0}, /* up_cim_00_to_7c */
-	{0x7b50, 0x7b54, 0x80, 0x20, 0}, /* up_cim_80_to_fc */
-	{0x7b50, 0x7b54, 0x100, 0x11, 0}, /* up_cim_100_to_14c */
-	{0x7b50, 0x7b54, 0x200, 0x10, 0}, /* up_cim_200_to_23c */
-	{0x7b50, 0x7b54, 0x240, 0x2, 0}, /* up_cim_240_to_244 */
-	{0x7b50, 0x7b54, 0x250, 0x2, 0}, /* up_cim_250_to_254 */
-	{0x7b50, 0x7b54, 0x260, 0x2, 0}, /* up_cim_260_to_264 */
-	{0x7b50, 0x7b54, 0x270, 0x2, 0}, /* up_cim_270_to_274 */
-	{0x7b50, 0x7b54, 0x280, 0x20, 0}, /* up_cim_280_to_2fc */
-	{0x7b50, 0x7b54, 0x300, 0x20, 0}, /* up_cim_300_to_37c */
-	{0x7b50, 0x7b54, 0x380, 0x14, 0}, /* up_cim_380_to_3cc */
-	{0x7b50, 0x7b54, 0x4900, 0x4, 0x4}, /* up_cim_4900_to_4c60 */
-	{0x7b50, 0x7b54, 0x4904, 0x4, 0x4}, /* up_cim_4904_to_4c64 */
-	{0x7b50, 0x7b54, 0x4908, 0x4, 0x4}, /* up_cim_4908_to_4c68 */
-	{0x7b50, 0x7b54, 0x4910, 0x4, 0x4}, /* up_cim_4910_to_4c70 */
-	{0x7b50, 0x7b54, 0x4914, 0x4, 0x4}, /* up_cim_4914_to_4c74 */
-	{0x7b50, 0x7b54, 0x4920, 0x10, 0x10}, /* up_cim_4920_to_4a10 */
-	{0x7b50, 0x7b54, 0x4924, 0x10, 0x10}, /* up_cim_4924_to_4a14 */
-	{0x7b50, 0x7b54, 0x4928, 0x10, 0x10}, /* up_cim_4928_to_4a18 */
-	{0x7b50, 0x7b54, 0x492c, 0x10, 0x10}, /* up_cim_492c_to_4a1c */
+static const u32 t6_up_cim_reg_array[][IREG_NUM_ELEM] = {
+	{0x7b50, 0x7b54, 0x2000, 0x20}, /* up_cim_2000_to_207c */
+	{0x7b50, 0x7b54, 0x2080, 0x1d}, /* up_cim_2080_to_20fc */
+	{0x7b50, 0x7b54, 0x00, 0x20}, /* up_cim_00_to_7c */
+	{0x7b50, 0x7b54, 0x80, 0x20}, /* up_cim_80_to_fc */
+	{0x7b50, 0x7b54, 0x100, 0x11}, /* up_cim_100_to_14c */
+	{0x7b50, 0x7b54, 0x200, 0x10}, /* up_cim_200_to_23c */
+	{0x7b50, 0x7b54, 0x240, 0x2}, /* up_cim_240_to_244 */
+	{0x7b50, 0x7b54, 0x250, 0x2}, /* up_cim_250_to_254 */
+	{0x7b50, 0x7b54, 0x260, 0x2}, /* up_cim_260_to_264 */
+	{0x7b50, 0x7b54, 0x270, 0x2}, /* up_cim_270_to_274 */
+	{0x7b50, 0x7b54, 0x280, 0x20}, /* up_cim_280_to_2fc */
+	{0x7b50, 0x7b54, 0x300, 0x20}, /* up_cim_300_to_37c */
+	{0x7b50, 0x7b54, 0x380, 0x14}, /* up_cim_380_to_3cc */
+
 };
 
-static const u32 t5_up_cim_reg_array[][IREG_NUM_ELEM + 1] = {
-	{0x7b50, 0x7b54, 0x2000, 0x20, 0}, /* up_cim_2000_to_207c */
-	{0x7b50, 0x7b54, 0x2080, 0x19, 0}, /* up_cim_2080_to_20ec */
-	{0x7b50, 0x7b54, 0x00, 0x20, 0}, /* up_cim_00_to_7c */
-	{0x7b50, 0x7b54, 0x80, 0x20, 0}, /* up_cim_80_to_fc */
-	{0x7b50, 0x7b54, 0x100, 0x11, 0}, /* up_cim_100_to_14c */
-	{0x7b50, 0x7b54, 0x200, 0x10, 0}, /* up_cim_200_to_23c */
-	{0x7b50, 0x7b54, 0x240, 0x2, 0}, /* up_cim_240_to_244 */
-	{0x7b50, 0x7b54, 0x250, 0x2, 0}, /* up_cim_250_to_254 */
-	{0x7b50, 0x7b54, 0x260, 0x2, 0}, /* up_cim_260_to_264 */
-	{0x7b50, 0x7b54, 0x270, 0x2, 0}, /* up_cim_270_to_274 */
-	{0x7b50, 0x7b54, 0x280, 0x20, 0}, /* up_cim_280_to_2fc */
-	{0x7b50, 0x7b54, 0x300, 0x20, 0}, /* up_cim_300_to_37c */
-	{0x7b50, 0x7b54, 0x380, 0x14, 0}, /* up_cim_380_to_3cc */
+static const u32 t5_up_cim_reg_array[][IREG_NUM_ELEM] = {
+	{0x7b50, 0x7b54, 0x2000, 0x20}, /* up_cim_2000_to_207c */
+	{0x7b50, 0x7b54, 0x2080, 0x19}, /* up_cim_2080_to_20ec */
+	{0x7b50, 0x7b54, 0x00, 0x20}, /* up_cim_00_to_7c */
+	{0x7b50, 0x7b54, 0x80, 0x20}, /* up_cim_80_to_fc */
+	{0x7b50, 0x7b54, 0x100, 0x11}, /* up_cim_100_to_14c */
+	{0x7b50, 0x7b54, 0x200, 0x10}, /* up_cim_200_to_23c */
+	{0x7b50, 0x7b54, 0x240, 0x2}, /* up_cim_240_to_244 */
+	{0x7b50, 0x7b54, 0x250, 0x2}, /* up_cim_250_to_254 */
+	{0x7b50, 0x7b54, 0x260, 0x2}, /* up_cim_260_to_264 */
+	{0x7b50, 0x7b54, 0x270, 0x2}, /* up_cim_270_to_274 */
+	{0x7b50, 0x7b54, 0x280, 0x20}, /* up_cim_280_to_2fc */
+	{0x7b50, 0x7b54, 0x300, 0x20}, /* up_cim_300_to_37c */
+	{0x7b50, 0x7b54, 0x380, 0x14}, /* up_cim_380_to_3cc */
 };
 
 static const u32 t6_hma_ireg_array[][IREG_NUM_ELEM] = {

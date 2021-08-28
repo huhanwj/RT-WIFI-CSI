@@ -1,10 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Amlogic Meson GXL Internal PHY Driver
  *
  * Copyright (C) 2015 Amlogic, Inc. All rights reserved.
  * Copyright (C) 2016 BayLibre, SAS. All rights reserved.
  * Author: Neil Armstrong <narmstrong@baylibre.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
  */
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -14,127 +24,29 @@
 #include <linux/netdevice.h>
 #include <linux/bitfield.h>
 
-#define TSTCNTL		20
-#define  TSTCNTL_READ		BIT(15)
-#define  TSTCNTL_WRITE		BIT(14)
-#define  TSTCNTL_REG_BANK_SEL	GENMASK(12, 11)
-#define  TSTCNTL_TEST_MODE	BIT(10)
-#define  TSTCNTL_READ_ADDRESS	GENMASK(9, 5)
-#define  TSTCNTL_WRITE_ADDRESS	GENMASK(4, 0)
-#define TSTREAD1	21
-#define TSTWRITE	23
-#define INTSRC_FLAG	29
-#define  INTSRC_ANEG_PR		BIT(1)
-#define  INTSRC_PARALLEL_FAULT	BIT(2)
-#define  INTSRC_ANEG_LP_ACK	BIT(3)
-#define  INTSRC_LINK_DOWN	BIT(4)
-#define  INTSRC_REMOTE_FAULT	BIT(5)
-#define  INTSRC_ANEG_COMPLETE	BIT(6)
-#define INTSRC_MASK	30
-
-#define BANK_ANALOG_DSP		0
-#define BANK_WOL		1
-#define BANK_BIST		3
-
-/* WOL Registers */
-#define LPI_STATUS	0xc
-#define  LPI_STATUS_RSV12	BIT(12)
-
-/* BIST Registers */
-#define FR_PLL_CONTROL	0x1b
-#define FR_PLL_DIV0	0x1c
-#define FR_PLL_DIV1	0x1d
-
-static int meson_gxl_open_banks(struct phy_device *phydev)
-{
-	int ret;
-
-	/* Enable Analog and DSP register Bank access by
-	 * toggling TSTCNTL_TEST_MODE bit in the TSTCNTL register
-	 */
-	ret = phy_write(phydev, TSTCNTL, 0);
-	if (ret)
-		return ret;
-	ret = phy_write(phydev, TSTCNTL, TSTCNTL_TEST_MODE);
-	if (ret)
-		return ret;
-	ret = phy_write(phydev, TSTCNTL, 0);
-	if (ret)
-		return ret;
-	return phy_write(phydev, TSTCNTL, TSTCNTL_TEST_MODE);
-}
-
-static void meson_gxl_close_banks(struct phy_device *phydev)
-{
-	phy_write(phydev, TSTCNTL, 0);
-}
-
-static int meson_gxl_read_reg(struct phy_device *phydev,
-			      unsigned int bank, unsigned int reg)
-{
-	int ret;
-
-	ret = meson_gxl_open_banks(phydev);
-	if (ret)
-		goto out;
-
-	ret = phy_write(phydev, TSTCNTL, TSTCNTL_READ |
-			FIELD_PREP(TSTCNTL_REG_BANK_SEL, bank) |
-			TSTCNTL_TEST_MODE |
-			FIELD_PREP(TSTCNTL_READ_ADDRESS, reg));
-	if (ret)
-		goto out;
-
-	ret = phy_read(phydev, TSTREAD1);
-out:
-	/* Close the bank access on our way out */
-	meson_gxl_close_banks(phydev);
-	return ret;
-}
-
-static int meson_gxl_write_reg(struct phy_device *phydev,
-			       unsigned int bank, unsigned int reg,
-			       uint16_t value)
-{
-	int ret;
-
-	ret = meson_gxl_open_banks(phydev);
-	if (ret)
-		goto out;
-
-	ret = phy_write(phydev, TSTWRITE, value);
-	if (ret)
-		goto out;
-
-	ret = phy_write(phydev, TSTCNTL, TSTCNTL_WRITE |
-			FIELD_PREP(TSTCNTL_REG_BANK_SEL, bank) |
-			TSTCNTL_TEST_MODE |
-			FIELD_PREP(TSTCNTL_WRITE_ADDRESS, reg));
-
-out:
-	/* Close the bank access on our way out */
-	meson_gxl_close_banks(phydev);
-	return ret;
-}
-
 static int meson_gxl_config_init(struct phy_device *phydev)
 {
-	int ret;
+	/* Enable Analog and DSP register Bank access by */
+	phy_write(phydev, 0x14, 0x0000);
+	phy_write(phydev, 0x14, 0x0400);
+	phy_write(phydev, 0x14, 0x0000);
+	phy_write(phydev, 0x14, 0x0400);
+
+	/* Write Analog register 23 */
+	phy_write(phydev, 0x17, 0x8E0D);
+	phy_write(phydev, 0x14, 0x4417);
 
 	/* Enable fractional PLL */
-	ret = meson_gxl_write_reg(phydev, BANK_BIST, FR_PLL_CONTROL, 0x5);
-	if (ret)
-		return ret;
+	phy_write(phydev, 0x17, 0x0005);
+	phy_write(phydev, 0x14, 0x5C1B);
 
 	/* Program fraction FR_PLL_DIV1 */
-	ret = meson_gxl_write_reg(phydev, BANK_BIST, FR_PLL_DIV1, 0x029a);
-	if (ret)
-		return ret;
+	phy_write(phydev, 0x17, 0x029A);
+	phy_write(phydev, 0x14, 0x5C1D);
 
 	/* Program fraction FR_PLL_DIV1 */
-	ret = meson_gxl_write_reg(phydev, BANK_BIST, FR_PLL_DIV0, 0xaaaa);
-	if (ret)
-		return ret;
+	phy_write(phydev, 0x17, 0xAAAA);
+	phy_write(phydev, 0x14, 0x5C1C);
 
 	return 0;
 }
@@ -166,8 +78,27 @@ static int meson_gxl_read_status(struct phy_device *phydev)
 		else if (!ret)
 			goto read_status_continue;
 
-		/* Aneg is done, let's check everything is fine */
-		wol = meson_gxl_read_reg(phydev, BANK_WOL, LPI_STATUS);
+		/* Need to access WOL bank, make sure the access is open */
+		ret = phy_write(phydev, 0x14, 0x0000);
+		if (ret)
+			return ret;
+		ret = phy_write(phydev, 0x14, 0x0400);
+		if (ret)
+			return ret;
+		ret = phy_write(phydev, 0x14, 0x0000);
+		if (ret)
+			return ret;
+		ret = phy_write(phydev, 0x14, 0x0400);
+		if (ret)
+			return ret;
+
+		/* Request LPI_STATUS WOL register */
+		ret = phy_write(phydev, 0x14, 0x8D80);
+		if (ret)
+			return ret;
+
+		/* Read LPI_STATUS value */
+		wol = phy_read(phydev, 0x15);
 		if (wol < 0)
 			return wol;
 
@@ -179,7 +110,7 @@ static int meson_gxl_read_status(struct phy_device *phydev)
 		if (exp < 0)
 			return exp;
 
-		if (!(wol & LPI_STATUS_RSV12) ||
+		if (!(wol & BIT(12)) ||
 		    ((exp & EXPANSION_NWAY) && !(lpa & LPA_LPACK))) {
 			/* Looks like aneg failed after all */
 			phydev_dbg(phydev, "LPA corruption - aneg restart\n");
@@ -191,66 +122,24 @@ read_status_continue:
 	return genphy_read_status(phydev);
 }
 
-static int meson_gxl_ack_interrupt(struct phy_device *phydev)
-{
-	int ret = phy_read(phydev, INTSRC_FLAG);
-
-	return ret < 0 ? ret : 0;
-}
-
-static int meson_gxl_config_intr(struct phy_device *phydev)
-{
-	u16 val;
-	int ret;
-
-	if (phydev->interrupts == PHY_INTERRUPT_ENABLED) {
-		val = INTSRC_ANEG_PR
-			| INTSRC_PARALLEL_FAULT
-			| INTSRC_ANEG_LP_ACK
-			| INTSRC_LINK_DOWN
-			| INTSRC_REMOTE_FAULT
-			| INTSRC_ANEG_COMPLETE;
-	} else {
-		val = 0;
-	}
-
-	/* Ack any pending IRQ */
-	ret = meson_gxl_ack_interrupt(phydev);
-	if (ret)
-		return ret;
-
-	return phy_write(phydev, INTSRC_MASK, val);
-}
-
 static struct phy_driver meson_gxl_phy[] = {
 	{
-		PHY_ID_MATCH_EXACT(0x01814400),
+		.phy_id		= 0x01814400,
+		.phy_id_mask	= 0xfffffff0,
 		.name		= "Meson GXL Internal PHY",
-		/* PHY_BASIC_FEATURES */
+		.features	= PHY_BASIC_FEATURES,
 		.flags		= PHY_IS_INTERNAL,
-		.soft_reset     = genphy_soft_reset,
 		.config_init	= meson_gxl_config_init,
+		.config_aneg	= genphy_config_aneg,
+		.aneg_done      = genphy_aneg_done,
 		.read_status	= meson_gxl_read_status,
-		.ack_interrupt	= meson_gxl_ack_interrupt,
-		.config_intr	= meson_gxl_config_intr,
-		.suspend        = genphy_suspend,
-		.resume         = genphy_resume,
-	}, {
-		PHY_ID_MATCH_EXACT(0x01803301),
-		.name		= "Meson G12A Internal PHY",
-		/* PHY_BASIC_FEATURES */
-		.flags		= PHY_IS_INTERNAL,
-		.soft_reset     = genphy_soft_reset,
-		.ack_interrupt	= meson_gxl_ack_interrupt,
-		.config_intr	= meson_gxl_config_intr,
 		.suspend        = genphy_suspend,
 		.resume         = genphy_resume,
 	},
 };
 
 static struct mdio_device_id __maybe_unused meson_gxl_tbl[] = {
-	{ PHY_ID_MATCH_VENDOR(0x01814400) },
-	{ PHY_ID_MATCH_VENDOR(0x01803301) },
+	{ 0x01814400, 0xfffffff0 },
 	{ }
 };
 
@@ -261,5 +150,4 @@ MODULE_DEVICE_TABLE(mdio, meson_gxl_tbl);
 MODULE_DESCRIPTION("Amlogic Meson GXL Internal PHY driver");
 MODULE_AUTHOR("Baoqi wang");
 MODULE_AUTHOR("Neil Armstrong <narmstrong@baylibre.com>");
-MODULE_AUTHOR("Jerome Brunet <jbrunet@baylibre.com>");
 MODULE_LICENSE("GPL");

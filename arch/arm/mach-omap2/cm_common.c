@@ -1,9 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * OMAP2+ common Clock Management (CM) IP block functions
  *
  * Copyright (C) 2012 Texas Instruments, Inc.
  * Paul Walmsley
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * XXX This code should eventually be moved to a CM driver.
  */
@@ -26,7 +29,7 @@
  * common CM functions
  */
 static struct cm_ll_data null_cm_ll_data;
-static const struct cm_ll_data *cm_ll_data = &null_cm_ll_data;
+static struct cm_ll_data *cm_ll_data = &null_cm_ll_data;
 
 /* cm_base: base virtual address of the CM IP block */
 struct omap_domain_base cm_base;
@@ -175,16 +178,6 @@ int omap_cm_module_disable(u8 part, u16 inst, u16 clkctrl_offs)
 	return 0;
 }
 
-u32 omap_cm_xlate_clkctrl(u8 part, u16 inst, u16 clkctrl_offs)
-{
-	if (!cm_ll_data->xlate_clkctrl) {
-		WARN_ONCE(1, "cm: %s: no low-level function defined\n",
-			  __func__);
-		return 0;
-	}
-	return cm_ll_data->xlate_clkctrl(part, inst, clkctrl_offs);
-}
-
 /**
  * cm_register - register per-SoC low-level data with the CM
  * @cld: low-level per-SoC OMAP CM data & function pointers to register
@@ -196,7 +189,7 @@ u32 omap_cm_xlate_clkctrl(u8 part, u16 inst, u16 clkctrl_offs)
  * is NULL, or -EEXIST if cm_register() has already been called
  * without an intervening cm_unregister().
  */
-int cm_register(const struct cm_ll_data *cld)
+int cm_register(struct cm_ll_data *cld)
 {
 	if (!cld)
 		return -EINVAL;
@@ -220,7 +213,7 @@ int cm_register(const struct cm_ll_data *cld)
  * -EINVAL if @cld is NULL or if @cld does not match the struct
  * cm_ll_data * previously registered by cm_register().
  */
-int cm_unregister(const struct cm_ll_data *cld)
+int cm_unregister(struct cm_ll_data *cld)
 {
 	if (!cld || cm_ll_data != cld)
 		return -EINVAL;

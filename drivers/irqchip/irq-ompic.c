@@ -171,9 +171,9 @@ static int __init ompic_of_init(struct device_node *node,
 
 	/* Setup the device */
 	ompic_base = ioremap(res.start, resource_size(&res));
-	if (!ompic_base) {
+	if (IS_ERR(ompic_base)) {
 		pr_err("ompic: unable to map registers");
-		return -ENOMEM;
+		return PTR_ERR(ompic_base);
 	}
 
 	irq = irq_of_parse_and_map(node, 0);

@@ -37,6 +37,7 @@
 #include "gmc/gmc_8_2_sh_mask.h"
 #include "oss/oss_3_0_d.h"
 #include "oss/oss_3_0_sh_mask.h"
+#include "gca/gfx_8_0_sh_mask.h"
 #include "dce/dce_10_0_d.h"
 #include "dce/dce_10_0_sh_mask.h"
 #include "smu/smu_7_1_3_d.h"
@@ -278,32 +279,32 @@ void xgpu_vi_init_golden_registers(struct amdgpu_device *adev)
 {
 	switch (adev->asic_type) {
 	case CHIP_FIJI:
-		amdgpu_device_program_register_sequence(adev,
-							xgpu_fiji_mgcg_cgcg_init,
-							ARRAY_SIZE(
-								xgpu_fiji_mgcg_cgcg_init));
-		amdgpu_device_program_register_sequence(adev,
-							xgpu_fiji_golden_settings_a10,
-							ARRAY_SIZE(
-								xgpu_fiji_golden_settings_a10));
-		amdgpu_device_program_register_sequence(adev,
-							xgpu_fiji_golden_common_all,
-							ARRAY_SIZE(
-								xgpu_fiji_golden_common_all));
+		amdgpu_program_register_sequence(adev,
+						 xgpu_fiji_mgcg_cgcg_init,
+						 (const u32)ARRAY_SIZE(
+						 xgpu_fiji_mgcg_cgcg_init));
+		amdgpu_program_register_sequence(adev,
+						 xgpu_fiji_golden_settings_a10,
+						 (const u32)ARRAY_SIZE(
+						 xgpu_fiji_golden_settings_a10));
+		amdgpu_program_register_sequence(adev,
+						 xgpu_fiji_golden_common_all,
+						 (const u32)ARRAY_SIZE(
+						 xgpu_fiji_golden_common_all));
 		break;
 	case CHIP_TONGA:
-		amdgpu_device_program_register_sequence(adev,
-							xgpu_tonga_mgcg_cgcg_init,
-							ARRAY_SIZE(
-								xgpu_tonga_mgcg_cgcg_init));
-		amdgpu_device_program_register_sequence(adev,
-							xgpu_tonga_golden_settings_a11,
-							ARRAY_SIZE(
-								xgpu_tonga_golden_settings_a11));
-		amdgpu_device_program_register_sequence(adev,
-							xgpu_tonga_golden_common_all,
-							ARRAY_SIZE(
-								xgpu_tonga_golden_common_all));
+		amdgpu_program_register_sequence(adev,
+						 xgpu_tonga_mgcg_cgcg_init,
+						 (const u32)ARRAY_SIZE(
+						 xgpu_tonga_mgcg_cgcg_init));
+		amdgpu_program_register_sequence(adev,
+						 xgpu_tonga_golden_settings_a11,
+						 (const u32)ARRAY_SIZE(
+						 xgpu_tonga_golden_settings_a11));
+		amdgpu_program_register_sequence(adev,
+						 xgpu_tonga_golden_common_all,
+						 (const u32)ARRAY_SIZE(
+						 xgpu_tonga_golden_common_all));
 		break;
 	default:
 		BUG_ON("Doesn't support chip type.\n");
@@ -445,10 +446,8 @@ static int xgpu_vi_send_access_requests(struct amdgpu_device *adev,
 		request == IDH_REQ_GPU_FINI_ACCESS ||
 		request == IDH_REQ_GPU_RESET_ACCESS) {
 		r = xgpu_vi_poll_msg(adev, IDH_READY_TO_ACCESS_GPU);
-		if (r) {
-			pr_err("Doesn't get ack from pf, give up\n");
-			return r;
-		}
+		if (r)
+			pr_err("Doesn't get ack from pf, continue\n");
 	}
 
 	return 0;
@@ -457,11 +456,6 @@ static int xgpu_vi_send_access_requests(struct amdgpu_device *adev,
 static int xgpu_vi_request_reset(struct amdgpu_device *adev)
 {
 	return xgpu_vi_send_access_requests(adev, IDH_REQ_GPU_RESET_ACCESS);
-}
-
-static int xgpu_vi_wait_reset_cmpl(struct amdgpu_device *adev)
-{
-	return xgpu_vi_poll_msg(adev, IDH_FLR_NOTIFICATION_CMPL);
 }
 
 static int xgpu_vi_request_full_gpu_access(struct amdgpu_device *adev,
@@ -515,13 +509,12 @@ static void xgpu_vi_mailbox_flr_work(struct work_struct *work)
 
 	/* wait until RCV_MSG become 3 */
 	if (xgpu_vi_poll_msg(adev, IDH_FLR_NOTIFICATION_CMPL)) {
-		pr_err("failed to receive FLR_CMPL\n");
+		pr_err("failed to recieve FLR_CMPL\n");
 		return;
 	}
 
 	/* Trigger recovery due to world switch failure */
-	if (amdgpu_device_should_recover_gpu(adev))
-		amdgpu_device_gpu_recover(adev, NULL);
+	amdgpu_sriov_gpu_reset(adev, NULL);
 }
 
 static int xgpu_vi_set_mailbox_rcv_irq(struct amdgpu_device *adev,
@@ -545,7 +538,7 @@ static int xgpu_vi_mailbox_rcv_irq(struct amdgpu_device *adev,
 	int r;
 
 	/* trigger gpu-reset by hypervisor only if TDR disbaled */
-	if (!amdgpu_gpu_recovery) {
+	if (amdgpu_lockup_timeout == 0) {
 		/* see what event we get */
 		r = xgpu_vi_mailbox_rcv_msg(adev, IDH_FLR_NOTIFICATION);
 
@@ -579,11 +572,11 @@ int xgpu_vi_mailbox_add_irq_id(struct amdgpu_device *adev)
 {
 	int r;
 
-	r = amdgpu_irq_add_id(adev, AMDGPU_IRQ_CLIENTID_LEGACY, 135, &adev->virt.rcv_irq);
+	r = amdgpu_irq_add_id(adev, AMDGPU_IH_CLIENTID_LEGACY, 135, &adev->virt.rcv_irq);
 	if (r)
 		return r;
 
-	r = amdgpu_irq_add_id(adev, AMDGPU_IRQ_CLIENTID_LEGACY, 138, &adev->virt.ack_irq);
+	r = amdgpu_irq_add_id(adev, AMDGPU_IH_CLIENTID_LEGACY, 138, &adev->virt.ack_irq);
 	if (r) {
 		amdgpu_irq_put(adev, &adev->virt.rcv_irq, 0);
 		return r;
@@ -620,6 +613,5 @@ const struct amdgpu_virt_ops xgpu_vi_virt_ops = {
 	.req_full_gpu		= xgpu_vi_request_full_gpu_access,
 	.rel_full_gpu		= xgpu_vi_release_full_gpu_access,
 	.reset_gpu		= xgpu_vi_request_reset,
-	.wait_reset             = xgpu_vi_wait_reset_cmpl,
 	.trans_msg		= NULL, /* Does not need to trans VF errors to host. */
 };

@@ -53,6 +53,12 @@
 # define NEED_MOVBE	0
 #endif
 
+#ifdef CONFIG_X86_5LEVEL
+# define NEED_LA57	(1<<(X86_FEATURE_LA57 & 31))
+#else
+# define NEED_LA57	0
+#endif
+
 #ifdef CONFIG_X86_64
 #ifdef CONFIG_PARAVIRT
 /* Paravirtualized systems may not have PSE or PGE available */
@@ -98,9 +104,8 @@
 #define REQUIRED_MASK13	0
 #define REQUIRED_MASK14	0
 #define REQUIRED_MASK15	0
-#define REQUIRED_MASK16	0
+#define REQUIRED_MASK16	(NEED_LA57)
 #define REQUIRED_MASK17	0
-#define REQUIRED_MASK18	0
-#define REQUIRED_MASK_CHECK BUILD_BUG_ON_ZERO(NCAPINTS != 19)
+#define REQUIRED_MASK_CHECK BUILD_BUG_ON_ZERO(NCAPINTS != 18)
 
 #endif /* _ASM_X86_REQUIRED_FEATURES_H */

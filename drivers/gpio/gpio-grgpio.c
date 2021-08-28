@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Driver for Aeroflex Gaisler GRGPIO General Purpose I/O cores.
  *
@@ -13,6 +12,11 @@
  * See "Documentation/devicetree/bindings/gpio/gpio-grgpio.txt" for
  * information on open firmware properties.
  *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
  * Contributors: Andreas Larsson <andreas@gaisler.com>
  */
 
@@ -22,10 +26,12 @@
 #include <linux/spinlock.h>
 #include <linux/io.h>
 #include <linux/of.h>
+#include <linux/of_gpio.h>
 #include <linux/of_platform.h>
-#include <linux/gpio/driver.h>
+#include <linux/gpio.h>
 #include <linux/slab.h>
 #include <linux/err.h>
+#include <linux/gpio/driver.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
 #include <linux/irqdomain.h>
@@ -329,6 +335,7 @@ static int grgpio_probe(struct platform_device *ofdev)
 	void  __iomem *regs;
 	struct gpio_chip *gc;
 	struct grgpio_priv *priv;
+	struct resource *res;
 	int err;
 	u32 prop;
 	s32 *irqmap;
@@ -339,7 +346,8 @@ static int grgpio_probe(struct platform_device *ofdev)
 	if (!priv)
 		return -ENOMEM;
 
-	regs = devm_platform_ioremap_resource(ofdev, 0);
+	res = platform_get_resource(ofdev, IORESOURCE_MEM, 0);
+	regs = devm_ioremap_resource(&ofdev->dev, res);
 	if (IS_ERR(regs))
 		return PTR_ERR(regs);
 
@@ -408,6 +416,8 @@ static int grgpio_probe(struct platform_device *ofdev)
 				 * Continue without irq functionality for that
 				 * gpio line
 				 */
+				dev_err(priv->dev,
+					"Failed to get irq for offset %d\n", i);
 				continue;
 			}
 			priv->uirqs[lirq->index].uirq = ret;

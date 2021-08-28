@@ -31,7 +31,6 @@
 
 #define DMCU_COMMON_REG_LIST_DCE_BASE() \
 	SR(DMCU_CTRL), \
-	SR(DMCU_STATUS), \
 	SR(DMCU_RAM_ACCESS_CTRL), \
 	SR(DMCU_IRAM_WR_CTRL), \
 	SR(DMCU_IRAM_WR_DATA), \
@@ -43,25 +42,7 @@
 	SR(DMCU_IRAM_RD_CTRL), \
 	SR(DMCU_IRAM_RD_DATA), \
 	SR(DMCU_INTERRUPT_TO_UC_EN_MASK), \
-	SR(SMU_INTERRUPT_CONTROL), \
-	SR(DC_DMCU_SCRATCH)
-
-#define DMCU_DCE80_REG_LIST() \
-	SR(DMCU_CTRL), \
-	SR(DMCU_STATUS), \
-	SR(DMCU_RAM_ACCESS_CTRL), \
-	SR(DMCU_IRAM_WR_CTRL), \
-	SR(DMCU_IRAM_WR_DATA), \
-	SR(MASTER_COMM_DATA_REG1), \
-	SR(MASTER_COMM_DATA_REG2), \
-	SR(MASTER_COMM_DATA_REG3), \
-	SR(MASTER_COMM_CMD_REG), \
-	SR(MASTER_COMM_CNTL_REG), \
-	SR(DMCU_IRAM_RD_CTRL), \
-	SR(DMCU_IRAM_RD_DATA), \
-	SR(DMCU_INTERRUPT_TO_UC_EN_MASK), \
-	SR(SMU_INTERRUPT_CONTROL), \
-	SR(DC_DMCU_SCRATCH)
+	SR(SMU_INTERRUPT_CONTROL)
 
 #define DMCU_DCE110_COMMON_REG_LIST() \
 	DMCU_COMMON_REG_LIST_DCE_BASE(), \
@@ -77,16 +58,10 @@
 #define DMCU_COMMON_MASK_SH_LIST_DCE_COMMON_BASE(mask_sh) \
 	DMCU_SF(DMCU_CTRL, \
 			DMCU_ENABLE, mask_sh), \
-	DMCU_SF(DMCU_STATUS, \
-			UC_IN_STOP_MODE, mask_sh), \
-	DMCU_SF(DMCU_STATUS, \
-			UC_IN_RESET, mask_sh), \
 	DMCU_SF(DMCU_RAM_ACCESS_CTRL, \
 			IRAM_HOST_ACCESS_EN, mask_sh), \
 	DMCU_SF(DMCU_RAM_ACCESS_CTRL, \
 			IRAM_WR_ADDR_AUTO_INC, mask_sh), \
-	DMCU_SF(DMCU_RAM_ACCESS_CTRL, \
-			IRAM_RD_ADDR_AUTO_INC, mask_sh), \
 	DMCU_SF(MASTER_COMM_CMD_REG, \
 			MASTER_COMM_CMD_REG_BYTE0, mask_sh), \
 	DMCU_SF(MASTER_COMM_CNTL_REG, MASTER_COMM_INTERRUPT, mask_sh), \
@@ -98,24 +73,6 @@
 			STATIC_SCREEN3_INT_TO_UC_EN, mask_sh), \
 	DMCU_SF(DMCU_INTERRUPT_TO_UC_EN_MASK, \
 			STATIC_SCREEN4_INT_TO_UC_EN, mask_sh), \
-	DMCU_SF(SMU_INTERRUPT_CONTROL, DC_SMU_INT_ENABLE, mask_sh)
-
-#define DMCU_MASK_SH_LIST_DCE80(mask_sh) \
-	DMCU_SF(DMCU_CTRL, \
-			DMCU_ENABLE, mask_sh), \
-	DMCU_SF(DMCU_STATUS, \
-			UC_IN_STOP_MODE, mask_sh), \
-	DMCU_SF(DMCU_STATUS, \
-			UC_IN_RESET, mask_sh), \
-	DMCU_SF(DMCU_RAM_ACCESS_CTRL, \
-			IRAM_HOST_ACCESS_EN, mask_sh), \
-	DMCU_SF(DMCU_RAM_ACCESS_CTRL, \
-			IRAM_WR_ADDR_AUTO_INC, mask_sh), \
-	DMCU_SF(DMCU_RAM_ACCESS_CTRL, \
-			IRAM_RD_ADDR_AUTO_INC, mask_sh), \
-	DMCU_SF(MASTER_COMM_CMD_REG, \
-			MASTER_COMM_CMD_REG_BYTE0, mask_sh), \
-	DMCU_SF(MASTER_COMM_CNTL_REG, MASTER_COMM_INTERRUPT, mask_sh), \
 	DMCU_SF(SMU_INTERRUPT_CONTROL, DC_SMU_INT_ENABLE, mask_sh)
 
 #define DMCU_MASK_SH_LIST_DCE110(mask_sh) \
@@ -132,10 +89,7 @@
 	type DMCU_IRAM_MEM_PWR_STATE; \
 	type IRAM_HOST_ACCESS_EN; \
 	type IRAM_WR_ADDR_AUTO_INC; \
-	type IRAM_RD_ADDR_AUTO_INC; \
 	type DMCU_ENABLE; \
-	type UC_IN_STOP_MODE; \
-	type UC_IN_RESET; \
 	type MASTER_COMM_CMD_REG_BYTE0; \
 	type MASTER_COMM_INTERRUPT; \
 	type DPHY_RX_FAST_TRAINING_CAPABLE; \
@@ -158,7 +112,6 @@ struct dce_dmcu_mask {
 
 struct dce_dmcu_registers {
 	uint32_t DMCU_CTRL;
-	uint32_t DMCU_STATUS;
 	uint32_t DMCU_RAM_ACCESS_CTRL;
 	uint32_t DCI_MEM_PWR_STATUS;
 	uint32_t DMU_MEM_PWR_CNTL;
@@ -174,7 +127,6 @@ struct dce_dmcu_registers {
 	uint32_t DMCU_IRAM_RD_DATA;
 	uint32_t DMCU_INTERRUPT_TO_UC_EN_MASK;
 	uint32_t SMU_INTERRUPT_CONTROL;
-	uint32_t DC_DMCU_SCRATCH;
 };
 
 struct dce_dmcu {
@@ -199,16 +151,16 @@ struct dce_dmcu {
  ******************************************************************/
 union dce_dmcu_psr_config_data_reg1 {
 	struct {
-		unsigned int timehyst_frames:8;                  /*[7:0]*/
-		unsigned int hyst_lines:7;                       /*[14:8]*/
-		unsigned int rfb_update_auto_en:1;               /*[15:15]*/
-		unsigned int dp_port_num:3;                      /*[18:16]*/
-		unsigned int dcp_sel:3;                          /*[21:19]*/
-		unsigned int phy_type:1;                         /*[22:22]*/
-		unsigned int frame_cap_ind:1;                    /*[23:23]*/
-		unsigned int aux_chan:3;                         /*[26:24]*/
-		unsigned int aux_repeat:4;                       /*[30:27]*/
-		unsigned int allow_smu_optimizations:1;         /*[31:31]*/
+		unsigned int timehyst_frames:8;    /*[7:0]*/
+		unsigned int hyst_lines:7;         /*[14:8]*/
+		unsigned int rfb_update_auto_en:1; /*[15:15]*/
+		unsigned int dp_port_num:3;        /*[18:16]*/
+		unsigned int dcp_sel:3;            /*[21:19]*/
+		unsigned int phy_type:1;           /*[22:22]*/
+		unsigned int frame_cap_ind:1;      /*[23:23]*/
+		unsigned int aux_chan:3;           /*[26:24]*/
+		unsigned int aux_repeat:4;         /*[30:27]*/
+		unsigned int reserved:1;           /*[31:31]*/
 	} bits;
 	unsigned int u32All;
 };
@@ -236,7 +188,7 @@ union dce_dmcu_psr_config_data_reg3 {
 	struct {
 		unsigned int psr_level:16;      /*[15:0]*/
 		unsigned int link_rate:4;       /*[19:16]*/
-		unsigned int reserved:12;        /*[31:20]*/
+		unsigned int reserved:12;       /*[31:20]*/
 	} bits;
 	unsigned int u32All;
 };
@@ -261,16 +213,6 @@ struct dmcu *dcn10_dmcu_create(
 	const struct dce_dmcu_shift *dmcu_shift,
 	const struct dce_dmcu_mask *dmcu_mask);
 
-#if defined(CONFIG_DRM_AMD_DC_DCN2_0)
-struct dmcu *dcn20_dmcu_create(
-	struct dc_context *ctx,
-	const struct dce_dmcu_registers *regs,
-	const struct dce_dmcu_shift *dmcu_shift,
-	const struct dce_dmcu_mask *dmcu_mask);
-#endif
-
 void dce_dmcu_destroy(struct dmcu **dmcu);
-
-static const uint32_t abm_gain_stepsize = 0x0060;
 
 #endif /* _DCE_ABM_H_ */

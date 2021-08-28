@@ -1,8 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Fujifilm Finepix subdriver
  *
  * Copyright (C) 2008 Frank Zago
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -80,7 +89,7 @@ static void dostream(struct work_struct *work)
 	int ret = 0;
 	int len;
 
-	gspca_dbg(gspca_dev, D_STREAM, "dostream started\n");
+	PDEBUG(D_STREAM, "dostream started");
 
 	/* loop reading a frame */
 again:
@@ -151,7 +160,7 @@ again:
 	}
 
 out:
-	gspca_dbg(gspca_dev, D_STREAM, "dostream stopped\n");
+	PDEBUG(D_STREAM, "dostream stopped");
 }
 
 /* this function is called at probe time */

@@ -1,10 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2011 matt mooney <mfm@muteddisk.com>
  *               2005-2007 Takahiro Hirofuchi
  * Copyright (C) 2015-2016 Samsung Electronics
  *               Igor Kotrasinski <i.kotrasinsk@samsung.com>
  *               Krzysztof Opasiak <k.opasiak@samsung.com>
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <sys/stat.h>
@@ -123,7 +135,6 @@ static int query_import_device(int sockfd, char *busid)
 	struct op_import_request request;
 	struct op_import_reply   reply;
 	uint16_t code = OP_REP_IMPORT;
-	int status;
 
 	memset(&request, 0, sizeof(request));
 	memset(&reply, 0, sizeof(reply));
@@ -146,10 +157,9 @@ static int query_import_device(int sockfd, char *busid)
 	}
 
 	/* receive a reply */
-	rc = usbip_net_recv_op_common(sockfd, &code, &status);
+	rc = usbip_net_recv_op_common(sockfd, &code);
 	if (rc < 0) {
-		err("Attach Request for %s failed - %s\n",
-		    busid, usbip_op_common_status_string(status));
+		err("recv op_common");
 		return -1;
 	}
 
@@ -184,8 +194,10 @@ static int attach_device(char *host, char *busid)
 	}
 
 	rhport = query_import_device(sockfd, busid);
-	if (rhport < 0)
+	if (rhport < 0) {
+		err("query");
 		return -1;
+	}
 
 	close(sockfd);
 

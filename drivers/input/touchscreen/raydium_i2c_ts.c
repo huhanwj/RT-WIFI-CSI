@@ -1,8 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Raydium touchscreen I2C driver.
  *
  * Copyright (C) 2012-2014, Raydium Semiconductor Corporation.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * version 2, and only version 2, as published by the
+ * Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
  * Raydium reserves the right to make changes without further notice
  * to the materials described herein. Raydium does not assume any
@@ -457,7 +466,7 @@ static bool raydium_i2c_boot_trigger(struct i2c_client *client)
 		}
 	}
 
-	return false;
+	return 0;
 }
 
 static bool raydium_i2c_fw_trigger(struct i2c_client *client)
@@ -483,7 +492,7 @@ static bool raydium_i2c_fw_trigger(struct i2c_client *client)
 		}
 	}
 
-	return false;
+	return 0;
 }
 
 static int raydium_i2c_check_path(struct i2c_client *client)
@@ -743,20 +752,13 @@ static int raydium_i2c_fw_update(struct raydium_data *ts)
 {
 	struct i2c_client *client = ts->client;
 	const struct firmware *fw = NULL;
-	char *fw_file;
+	const char *fw_file = "raydium.fw";
 	int error;
-
-	fw_file = kasprintf(GFP_KERNEL, "raydium_%#04x.fw",
-			    le32_to_cpu(ts->info.hw_ver));
-	if (!fw_file)
-		return -ENOMEM;
-
-	dev_dbg(&client->dev, "firmware name: %s\n", fw_file);
 
 	error = request_firmware(&fw, fw_file, &client->dev);
 	if (error) {
 		dev_err(&client->dev, "Unable to open firmware %s\n", fw_file);
-		goto out_free_fw_file;
+		return error;
 	}
 
 	disable_irq(client->irq);
@@ -784,9 +786,6 @@ out_enable_irq:
 	msleep(100);
 
 	release_firmware(fw);
-
-out_free_fw_file:
-	kfree(fw_file);
 
 	return error;
 }

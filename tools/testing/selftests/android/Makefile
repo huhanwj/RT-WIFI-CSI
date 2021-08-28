@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 SUBDIRS := ion
 
 TEST_PROGS := run.sh
@@ -12,12 +11,16 @@ all:
 		BUILD_TARGET=$(OUTPUT)/$$DIR;	\
 		mkdir $$BUILD_TARGET  -p;	\
 		make OUTPUT=$$BUILD_TARGET -C $$DIR $@;\
-		#SUBDIR test prog name should be in the form: SUBDIR_test.sh \
+		#SUBDIR test prog name should be in the form: SUBDIR_test.sh
 		TEST=$$DIR"_test.sh"; \
-		if [ -e $$DIR/$$TEST ]; then \
-			rsync -a $$DIR/$$TEST $$BUILD_TARGET/; \
-		fi \
+		if [ -e $$DIR/$$TEST ]; then
+			rsync -a $$DIR/$$TEST $$BUILD_TARGET/;
+		fi
 	done
+
+override define RUN_TESTS
+	@cd $(OUTPUT); ./run.sh
+endef
 
 override define INSTALL_RULE
 	mkdir -p $(INSTALL_PATH)
@@ -28,6 +31,10 @@ override define INSTALL_RULE
 		mkdir $$BUILD_TARGET  -p;	\
 		$(MAKE) OUTPUT=$$BUILD_TARGET -C $$SUBDIR INSTALL_PATH=$(INSTALL_PATH)/$$SUBDIR install; \
 	done;
+endef
+
+override define EMIT_TESTS
+	echo "./run.sh"
 endef
 
 override define CLEAN

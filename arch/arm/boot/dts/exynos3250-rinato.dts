@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Samsung's Exynos3250 based Rinato board device tree source
  *
@@ -7,6 +6,10 @@
  *
  * Device tree source file for Samsung's Rinato board which is based on
  * Samsung Exynos3250 SoC.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 /dts-v1/;
@@ -22,10 +25,6 @@
 
 	aliases {
 		i2c7 = &i2c_max77836;
-	};
-
-	chosen {
-		stdout-path = &serial_1;
 	};
 
 	memory@40000000 {
@@ -116,13 +115,11 @@
 			cooling-maps {
 				map0 {
 					/* Corresponds to 500MHz */
-					cooling-device = <&cpu0 5 5>,
-							 <&cpu1 5 5>;
+					cooling-device = <&cpu0 5 5>;
 				};
 				map1 {
 					/* Corresponds to 200MHz */
-					cooling-device = <&cpu0 8 8>,
-							 <&cpu1 8 8>;
+					cooling-device = <&cpu0 8 8>;
 				};
 			};
 		};
@@ -242,11 +239,6 @@
 		wr-act = <1>;
 		wr-hold = <0>;
 	};
-};
-
-&gpu {
-	mali-supply = <&buck3_reg>;
-	status = "okay";
 };
 
 &i2c_0 {

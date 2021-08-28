@@ -1,25 +1,34 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) Fuzhou Rockchip Electronics Co.Ltd
  * Author: Chris Zhong <zyw@rock-chips.com>
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
+
+#include <drm/drmP.h>
+#include <drm/drm_atomic_helper.h>
+#include <drm/drm_crtc_helper.h>
+#include <drm/drm_dp_helper.h>
+#include <drm/drm_edid.h>
+#include <drm/drm_of.h>
 
 #include <linux/clk.h>
 #include <linux/component.h>
 #include <linux/extcon.h>
 #include <linux/firmware.h>
-#include <linux/mfd/syscon.h>
-#include <linux/phy/phy.h>
 #include <linux/regmap.h>
 #include <linux/reset.h>
+#include <linux/mfd/syscon.h>
+#include <linux/phy/phy.h>
 
 #include <sound/hdmi-codec.h>
-
-#include <drm/drm_atomic_helper.h>
-#include <drm/drm_dp_helper.h>
-#include <drm/drm_edid.h>
-#include <drm/drm_of.h>
-#include <drm/drm_probe_helper.h>
 
 #include "cdn-dp-core.h"
 #include "cdn-dp-reg.h"
@@ -34,6 +43,8 @@
 #define GRF_SOC_CON9		0x6224
 #define DP_SEL_VOP_LIT		BIT(12)
 #define GRF_SOC_CON26		0x6268
+#define UPHY_SEL_BIT		3
+#define UPHY_SEL_MASK		BIT(19)
 #define DPTX_HPD_SEL		(3 << 12)
 #define DPTX_HPD_DEL		(2 << 12)
 #define DPTX_HPD_SEL_MASK	(3 << 28)
@@ -265,9 +276,11 @@ static int cdn_dp_connector_get_modes(struct drm_connector *connector)
 
 		dp->sink_has_audio = drm_detect_monitor_audio(edid);
 		ret = drm_add_edid_modes(connector, edid);
-		if (ret)
-			drm_connector_update_edid_property(connector,
+		if (ret) {
+			drm_mode_connector_update_edid_property(connector,
 								edid);
+			drm_edid_to_eld(connector, edid);
+		}
 	}
 	mutex_unlock(&dp->lock);
 
@@ -382,6 +395,11 @@ static int cdn_dp_enable_phy(struct cdn_dp_device *dp, struct cdn_dp_port *port)
 {
 	union extcon_property_value property;
 	int ret;
+
+	ret = cdn_dp_grf_write(dp, GRF_SOC_CON26,
+			       (port->id << UPHY_SEL_BIT) | UPHY_SEL_MASK);
+	if (ret)
+		return ret;
 
 	if (!port->phy_enabled) {
 		ret = phy_power_on(port->phy);
@@ -1053,7 +1071,7 @@ static int cdn_dp_bind(struct device *dev, struct device *master, void *data)
 
 	drm_connector_helper_add(connector, &cdn_dp_connector_helper_funcs);
 
-	ret = drm_connector_attach_encoder(connector, encoder);
+	ret = drm_mode_connector_attach_encoder(connector, encoder);
 	if (ret) {
 		DRM_ERROR("failed to attach connector and encoder\n");
 		goto err_free_connector;

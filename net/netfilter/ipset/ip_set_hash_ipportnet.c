@@ -1,5 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (C) 2003-2013 Jozsef Kadlecsik <kadlec@netfilter.org> */
+/* Copyright (C) 2003-2013 Jozsef Kadlecsik <kadlec@blackhole.kfki.hu>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
 
 /* Kernel module implementing an IP set type: the hash:ip,port,net type */
 
@@ -30,7 +34,7 @@
 #define IPSET_TYPE_REV_MAX	7 /* skbinfo support added */
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Jozsef Kadlecsik <kadlec@netfilter.org>");
+MODULE_AUTHOR("Jozsef Kadlecsik <kadlec@blackhole.kfki.hu>");
 IP_SET_MODULE_DESC("hash:ip,port,net", IPSET_TYPE_REV_MIN, IPSET_TYPE_REV_MAX);
 MODULE_ALIAS("ip_set_hash:ip,port,net");
 
@@ -164,7 +168,7 @@ hash_ipportnet4_uadt(struct ip_set *set, struct nlattr *tb[],
 	struct hash_ipportnet4_elem e = { .cidr = HOST_MASK - 1 };
 	struct ip_set_ext ext = IP_SET_INIT_UEXT(set);
 	u32 ip = 0, ip_to = 0, p = 0, port, port_to;
-	u32 ip2_from = 0, ip2_to = 0, ip2;
+	u32 ip2_from = 0, ip2_to = 0, ip2_last, ip2;
 	bool with_ports = false;
 	u8 cidr;
 	int ret;
@@ -265,21 +269,22 @@ hash_ipportnet4_uadt(struct ip_set *set, struct nlattr *tb[],
 		ip_set_mask_from_to(ip2_from, ip2_to, e.cidr + 1);
 	}
 
-	if (retried) {
+	if (retried)
 		ip = ntohl(h->next.ip);
-		p = ntohs(h->next.port);
-		ip2 = ntohl(h->next.ip2);
-	} else {
-		p = port;
-		ip2 = ip2_from;
-	}
 	for (; ip <= ip_to; ip++) {
 		e.ip = htonl(ip);
+		p = retried && ip == ntohl(h->next.ip) ? ntohs(h->next.port)
+						       : port;
 		for (; p <= port_to; p++) {
 			e.port = htons(p);
-			do {
+			ip2 = retried &&
+			      ip == ntohl(h->next.ip) &&
+			      p == ntohs(h->next.port)
+				? ntohl(h->next.ip2) : ip2_from;
+			while (ip2 <= ip2_to) {
 				e.ip2 = htonl(ip2);
-				ip2 = ip_set_range_to_cidr(ip2, ip2_to, &cidr);
+				ip2_last = ip_set_range_to_cidr(ip2, ip2_to,
+								&cidr);
 				e.cidr = cidr - 1;
 				ret = adtfn(set, &e, &ext, &ext, flags);
 
@@ -287,10 +292,9 @@ hash_ipportnet4_uadt(struct ip_set *set, struct nlattr *tb[],
 					return ret;
 
 				ret = 0;
-			} while (ip2++ < ip2_to);
-			ip2 = ip2_from;
+				ip2 = ip2_last + 1;
+			}
 		}
-		p = port;
 	}
 	return ret;
 }

@@ -163,7 +163,8 @@ void qib_get_eeprom_info(struct qib_devdata *dd)
 			if (bguid[6] == 0xff) {
 				if (bguid[5] == 0xff) {
 					qib_dev_err(dd,
-						    "Can't set GUID from base, wraps to OUI!\n");
+						"Can't set %s GUID from base, wraps to OUI!\n",
+						qib_get_unit_name(t));
 					dd->base_guid = 0;
 					goto bail;
 				}

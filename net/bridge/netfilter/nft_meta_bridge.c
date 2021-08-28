@@ -1,4 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0
+/*
+ * Copyright (c) 2014 Intel Corporation
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ */
+
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/module.h>
@@ -7,16 +15,8 @@
 #include <linux/netfilter/nf_tables.h>
 #include <net/netfilter/nf_tables.h>
 #include <net/netfilter/nft_meta.h>
-#include <linux/if_bridge.h>
 
-static const struct net_device *
-nft_meta_get_bridge(const struct net_device *dev)
-{
-	if (dev && netif_is_bridge_port(dev))
-		return netdev_master_upper_dev_get_rcu((struct net_device *)dev);
-
-	return NULL;
-}
+#include "../br_private.h"
 
 static void nft_meta_bridge_get_eval(const struct nft_expr *expr,
 				     struct nft_regs *regs,
@@ -25,43 +25,25 @@ static void nft_meta_bridge_get_eval(const struct nft_expr *expr,
 	const struct nft_meta *priv = nft_expr_priv(expr);
 	const struct net_device *in = nft_in(pkt), *out = nft_out(pkt);
 	u32 *dest = &regs->data[priv->dreg];
-	const struct net_device *br_dev;
+	const struct net_bridge_port *p;
 
 	switch (priv->key) {
 	case NFT_META_BRI_IIFNAME:
-		br_dev = nft_meta_get_bridge(in);
+		if (in == NULL || (p = br_port_get_rcu(in)) == NULL)
+			goto err;
 		break;
 	case NFT_META_BRI_OIFNAME:
-		br_dev = nft_meta_get_bridge(out);
+		if (out == NULL || (p = br_port_get_rcu(out)) == NULL)
+			goto err;
 		break;
-	case NFT_META_BRI_IIFPVID: {
-		u16 p_pvid;
-
-		br_dev = nft_meta_get_bridge(in);
-		if (!br_dev || !br_vlan_enabled(br_dev))
-			goto err;
-
-		br_vlan_get_pvid_rcu(in, &p_pvid);
-		nft_reg_store16(dest, p_pvid);
-		return;
-	}
-	case NFT_META_BRI_IIFVPROTO: {
-		u16 p_proto;
-
-		br_dev = nft_meta_get_bridge(in);
-		if (!br_dev || !br_vlan_enabled(br_dev))
-			goto err;
-
-		br_vlan_get_proto(br_dev, &p_proto);
-		nft_reg_store16(dest, htons(p_proto));
-		return;
-	}
 	default:
-		return nft_meta_get_eval(expr, regs, pkt);
+		goto out;
 	}
 
-	strncpy((char *)dest, br_dev ? br_dev->name : "", IFNAMSIZ);
+	strncpy((char *)dest, p->br->dev->name, IFNAMSIZ);
 	return;
+out:
+	return nft_meta_get_eval(expr, regs, pkt);
 err:
 	regs->verdict.code = NFT_BREAK;
 }
@@ -78,10 +60,6 @@ static int nft_meta_bridge_get_init(const struct nft_ctx *ctx,
 	case NFT_META_BRI_IIFNAME:
 	case NFT_META_BRI_OIFNAME:
 		len = IFNAMSIZ;
-		break;
-	case NFT_META_BRI_IIFPVID:
-	case NFT_META_BRI_IIFVPROTO:
-		len = sizeof(u16);
 		break;
 	default:
 		return nft_meta_get_init(ctx, expr, tb);
@@ -153,5 +131,5 @@ module_init(nft_meta_bridge_module_init);
 module_exit(nft_meta_bridge_module_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("wenxu <wenxu@ucloud.cn>");
+MODULE_AUTHOR("Tomasz Bursztyka <tomasz.bursztyka@linux.intel.com>");
 MODULE_ALIAS_NFT_AF_EXPR(AF_BRIDGE, "meta");

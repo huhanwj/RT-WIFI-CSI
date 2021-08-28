@@ -1,21 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright 2012 Red Hat
+ *
+ * This file is subject to the terms and conditions of the GNU General
+ * Public License version 2. See the file COPYING in the main
+ * directory of this archive for more details.
  *
  * Authors: Matthew Garrett
  *          Dave Airlie
  */
-
 #include <linux/module.h>
 #include <linux/console.h>
-
-#include <drm/drm_drv.h>
-#include <drm/drm_file.h>
-#include <drm/drm_ioctl.h>
-#include <drm/drm_pci.h>
-#include <drm/drm_pciids.h>
+#include <drm/drmP.h>
 
 #include "mgag200_drv.h"
+
+#include <drm/drm_pciids.h>
 
 /*
  * This is the generic driver code. This binds the driver to the drm core,
@@ -43,10 +42,29 @@ static const struct pci_device_id pciidlist[] = {
 
 MODULE_DEVICE_TABLE(pci, pciidlist);
 
+static void mgag200_kick_out_firmware_fb(struct pci_dev *pdev)
+{
+	struct apertures_struct *ap;
+	bool primary = false;
+
+	ap = alloc_apertures(1);
+	if (!ap)
+		return;
+
+	ap->ranges[0].base = pci_resource_start(pdev, 0);
+	ap->ranges[0].size = pci_resource_len(pdev, 0);
+
+#ifdef CONFIG_X86
+	primary = pdev->resource[PCI_ROM_RESOURCE].flags & IORESOURCE_ROM_SHADOW;
+#endif
+	drm_fb_helper_remove_conflicting_framebuffers(ap, "mgag200drmfb", primary);
+	kfree(ap);
+}
+
 
 static int mga_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
-	drm_fb_helper_remove_conflicting_pci_framebuffers(pdev, 0, "mgag200drmfb");
+	mgag200_kick_out_firmware_fb(pdev);
 
 	return drm_get_pci_dev(pdev, ent, &driver);
 }
@@ -60,7 +78,13 @@ static void mga_pci_remove(struct pci_dev *pdev)
 
 static const struct file_operations mgag200_driver_fops = {
 	.owner = THIS_MODULE,
-	DRM_VRAM_MM_FILE_OPERATIONS
+	.open = drm_open,
+	.release = drm_release,
+	.unlocked_ioctl = drm_ioctl,
+	.mmap = mgag200_mmap,
+	.poll = drm_poll,
+	.compat_ioctl = drm_compat_ioctl,
+	.read = drm_read,
 };
 
 static struct drm_driver driver = {
@@ -74,7 +98,10 @@ static struct drm_driver driver = {
 	.major = DRIVER_MAJOR,
 	.minor = DRIVER_MINOR,
 	.patchlevel = DRIVER_PATCHLEVEL,
-	DRM_GEM_VRAM_DRIVER
+
+	.gem_free_object_unlocked = mgag200_gem_free_object,
+	.dumb_create = mgag200_dumb_create,
+	.dumb_map_offset = mgag200_dumb_mmap_offset,
 };
 
 static struct pci_driver mgag200_pci_driver = {

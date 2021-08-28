@@ -1,7 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * IBM OPAL RTC driver
  * Copyright (C) 2014 IBM
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -45,8 +57,7 @@ static void tm_to_opal(struct rtc_time *tm, u32 *y_m_d, u64 *h_m_s_ms)
 
 static int opal_get_rtc_time(struct device *dev, struct rtc_time *tm)
 {
-	s64 rc = OPAL_BUSY;
-	int retries = 10;
+	long rc = OPAL_BUSY;
 	u32 y_m_d;
 	u64 h_m_s_ms;
 	__be32 __y_m_d;
@@ -54,17 +65,10 @@ static int opal_get_rtc_time(struct device *dev, struct rtc_time *tm)
 
 	while (rc == OPAL_BUSY || rc == OPAL_BUSY_EVENT) {
 		rc = opal_rtc_read(&__y_m_d, &__h_m_s_ms);
-		if (rc == OPAL_BUSY_EVENT) {
-			msleep(OPAL_BUSY_DELAY_MS);
+		if (rc == OPAL_BUSY_EVENT)
 			opal_poll_events(NULL);
-		} else if (rc == OPAL_BUSY) {
-			msleep(OPAL_BUSY_DELAY_MS);
-		} else if (rc == OPAL_HARDWARE || rc == OPAL_INTERNAL_ERROR) {
-			if (retries--) {
-				msleep(10); /* Wait 10ms before retry */
-				rc = OPAL_BUSY; /* go around again */
-			}
-		}
+		else
+			msleep(10);
 	}
 
 	if (rc != OPAL_SUCCESS)
@@ -79,26 +83,17 @@ static int opal_get_rtc_time(struct device *dev, struct rtc_time *tm)
 
 static int opal_set_rtc_time(struct device *dev, struct rtc_time *tm)
 {
-	s64 rc = OPAL_BUSY;
-	int retries = 10;
+	long rc = OPAL_BUSY;
 	u32 y_m_d = 0;
 	u64 h_m_s_ms = 0;
 
 	tm_to_opal(tm, &y_m_d, &h_m_s_ms);
-
 	while (rc == OPAL_BUSY || rc == OPAL_BUSY_EVENT) {
 		rc = opal_rtc_write(y_m_d, h_m_s_ms);
-		if (rc == OPAL_BUSY_EVENT) {
-			msleep(OPAL_BUSY_DELAY_MS);
+		if (rc == OPAL_BUSY_EVENT)
 			opal_poll_events(NULL);
-		} else if (rc == OPAL_BUSY) {
-			msleep(OPAL_BUSY_DELAY_MS);
-		} else if (rc == OPAL_HARDWARE || rc == OPAL_INTERNAL_ERROR) {
-			if (retries--) {
-				msleep(10); /* Wait 10ms before retry */
-				rc = OPAL_BUSY; /* go around again */
-			}
-		}
+		else
+			msleep(10);
 	}
 
 	return rc == OPAL_SUCCESS ? 0 : -EIO;
@@ -212,7 +207,7 @@ exit:
 	return rc;
 }
 
-static int opal_tpo_alarm_irq_enable(struct device *dev, unsigned int enabled)
+int opal_tpo_alarm_irq_enable(struct device *dev, unsigned int enabled)
 {
 	struct rtc_wkalrm alarm = { .enabled = 0 };
 

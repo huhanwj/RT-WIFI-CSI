@@ -1,10 +1,13 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * machine.h -- SoC Regulator support, machine/board driver API.
  *
  * Copyright (C) 2007, 2008 Wolfson Microelectronics PLC.
  *
  * Author: Liam Girdwood <lrg@slimlogic.co.uk>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * Regulator Machine/Board Interface.
  */
@@ -39,16 +42,6 @@ struct regulator;
 #define REGULATOR_CHANGE_DRMS		0x10
 #define REGULATOR_CHANGE_BYPASS		0x20
 
-/*
- * operations in suspend mode
- * DO_NOTHING_IN_SUSPEND - the default value
- * DISABLE_IN_SUSPEND	- turn off regulator in suspend states
- * ENABLE_IN_SUSPEND	- keep regulator on in suspend states
- */
-#define DO_NOTHING_IN_SUSPEND	0
-#define DISABLE_IN_SUSPEND	1
-#define ENABLE_IN_SUSPEND	2
-
 /* Regulator active discharge flags */
 enum regulator_active_discharge {
 	REGULATOR_ACTIVE_DISCHARGE_DEFAULT,
@@ -63,24 +56,16 @@ enum regulator_active_discharge {
  * state.  One of enabled or disabled must be set for the
  * configuration to be applied.
  *
- * @uV: Default operating voltage during suspend, it can be adjusted
- *	among <min_uV, max_uV>.
- * @min_uV: Minimum suspend voltage may be set.
- * @max_uV: Maximum suspend voltage may be set.
+ * @uV: Operating voltage during suspend.
  * @mode: Operating mode during suspend.
- * @enabled: operations during suspend.
- *	     - DO_NOTHING_IN_SUSPEND
- *	     - DISABLE_IN_SUSPEND
- *	     - ENABLE_IN_SUSPEND
- * @changeable: Is this state can be switched between enabled/disabled,
+ * @enabled: Enabled during suspend.
+ * @disabled: Disabled during suspend.
  */
 struct regulator_state {
-	int uV;
-	int min_uV;
-	int max_uV;
-	unsigned int mode;
-	int enabled;
-	bool changeable;
+	int uV;	/* suspend voltage */
+	unsigned int mode; /* suspend regulator operating mode */
+	int enabled; /* is regulator enabled in this suspend state */
+	int disabled; /* is the regulator disabled in this suspend state */
 };
 
 /**
@@ -100,7 +85,6 @@ struct regulator_state {
  * @ilim_uA: Maximum input current.
  * @system_load: Load that isn't captured by any consumer requests.
  *
- * @max_spread: Max possible spread between coupled regulators
  * @valid_modes_mask: Mask of modes which may be configured by consumers.
  * @valid_ops_mask: Operations which may be performed by consumers.
  *
@@ -151,12 +135,6 @@ struct regulation_constraints {
 	int ilim_uA;
 
 	int system_load;
-
-	/* used for coupled regulators */
-	u32 *max_spread;
-
-	/* used for changing voltage in steps */
-	int max_uV_step;
 
 	/* valid regulator operating modes for this machine */
 	unsigned int valid_modes_mask;
@@ -247,12 +225,12 @@ struct regulator_init_data {
 
 #ifdef CONFIG_REGULATOR
 void regulator_has_full_constraints(void);
+int regulator_suspend_prepare(suspend_state_t state);
+int regulator_suspend_finish(void);
 #else
 static inline void regulator_has_full_constraints(void)
 {
 }
-#endif
-
 static inline int regulator_suspend_prepare(suspend_state_t state)
 {
 	return 0;
@@ -261,5 +239,6 @@ static inline int regulator_suspend_finish(void)
 {
 	return 0;
 }
+#endif
 
 #endif

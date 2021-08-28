@@ -128,10 +128,9 @@ run_cmd_parmap() {
 	fi
 	echo $@ >>$DEBUG_FILE
 	$@ 2>>$DEBUG_FILE
-	err=$?
-	if [[ $err -ne 0 ]]; then
+	if [[ $? -ne 0 ]]; then
 		echo "coccicheck failed"
-		exit $err
+		exit $?
 	fi
 }
 
@@ -178,7 +177,7 @@ coccinelle () {
     REQ_NUM=$(echo $REQ | ${DIR}/scripts/ld-version.sh)
     if [ "$REQ_NUM" != "0" ] ; then
 	    if [ "$SPATCH_VERSION_NUM" -lt "$REQ_NUM" ] ; then
-		    echo "Skipping coccinelle SmPL patch: $COCCI"
+		    echo "Skipping coccinele SmPL patch: $COCCI"
 		    echo "You have coccinelle:           $SPATCH_VERSION"
 		    echo "This SmPL patch requires:      $REQ"
 		    return

@@ -1,8 +1,17 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * v4l2 device driver for cx2388x based TV cards
  *
  * (c) 2003,04 Gerd Knorr <kraxel@bytesex.org> [SUSE Labs]
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
  */
 
 #ifndef CX88_H
@@ -99,6 +108,7 @@ static inline unsigned int norm_maxh(v4l2_std_id norm)
 /* static data                                                 */
 
 struct cx8800_fmt {
+	const char  *name;
 	u32   fourcc;          /* v4l2 format id */
 	int   depth;
 	int   flags;
@@ -724,7 +734,7 @@ int cx8802_start_dma(struct cx8802_dev    *dev,
 int cx88_enum_input(struct cx88_core *core, struct v4l2_input *i);
 int cx88_set_freq(struct cx88_core  *core, const struct v4l2_frequency *f);
 int cx88_video_mux(struct cx88_core *core, unsigned int input);
-int cx88_querycap(struct file *file, struct cx88_core *core,
-		  struct v4l2_capability *cap);
+void cx88_querycap(struct file *file, struct cx88_core *core,
+		   struct v4l2_capability *cap);
 
 #endif

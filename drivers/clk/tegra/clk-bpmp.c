@@ -1,6 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2016 NVIDIA Corporation
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/clk-provider.h>
@@ -583,15 +586,9 @@ static struct clk_hw *tegra_bpmp_clk_of_xlate(struct of_phandle_args *clkspec,
 	unsigned int id = clkspec->args[0], i;
 	struct tegra_bpmp *bpmp = data;
 
-	for (i = 0; i < bpmp->num_clocks; i++) {
-		struct tegra_bpmp_clk *clk = bpmp->clocks[i];
-
-		if (!clk)
-			continue;
-
-		if (clk->id == id)
-			return &clk->hw;
-	}
+	for (i = 0; i < bpmp->num_clocks; i++)
+		if (bpmp->clocks[i]->id == id)
+			return &bpmp->clocks[i]->hw;
 
 	return NULL;
 }

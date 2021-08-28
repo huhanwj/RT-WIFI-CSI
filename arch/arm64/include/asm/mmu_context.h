@@ -1,12 +1,25 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Based on arch/arm/include/asm/mmu_context.h
  *
  * Copyright (C) 1996 Russell King.
  * Copyright (C) 2012 ARM Ltd.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #ifndef __ASM_MMU_CONTEXT_H
 #define __ASM_MMU_CONTEXT_H
+
+#define FALKOR_RESERVED_ASID	1
 
 #ifndef __ASSEMBLY__
 
@@ -24,8 +37,6 @@
 #include <asm/sysreg.h>
 #include <asm/tlbflush.h>
 
-extern bool rodata_full;
-
 static inline void contextidr_thread_switch(struct task_struct *next)
 {
 	if (!IS_ENABLED(CONFIG_PID_IN_CONTEXTIDR))
@@ -40,17 +51,10 @@ static inline void contextidr_thread_switch(struct task_struct *next)
  */
 static inline void cpu_set_reserved_ttbr0(void)
 {
-	unsigned long ttbr = phys_to_ttbr(__pa_symbol(empty_zero_page));
+	unsigned long ttbr = __pa_symbol(empty_zero_page);
 
 	write_sysreg(ttbr, ttbr0_el1);
 	isb();
-}
-
-static inline void cpu_switch_mm(pgd_t *pgd, struct mm_struct *mm)
-{
-	BUG_ON(pgd == swapper_pg_dir);
-	cpu_set_reserved_ttbr0();
-	cpu_do_switch_mm(virt_to_phys(pgd),mm);
 }
 
 /*
@@ -59,23 +63,11 @@ static inline void cpu_switch_mm(pgd_t *pgd, struct mm_struct *mm)
  * physical memory, in which case it will be smaller.
  */
 extern u64 idmap_t0sz;
-extern u64 idmap_ptrs_per_pgd;
 
 static inline bool __cpu_uses_extended_idmap(void)
 {
-	if (IS_ENABLED(CONFIG_ARM64_VA_BITS_52))
-		return false;
-
-	return unlikely(idmap_t0sz != TCR_T0SZ(VA_BITS));
-}
-
-/*
- * True if the extended ID map requires an extra level of translation table
- * to be configured.
- */
-static inline bool __cpu_uses_extended_idmap_level(void)
-{
-	return ARM64_HW_PGTABLE_LEVELS(64 - idmap_t0sz) > CONFIG_PGTABLE_LEVELS;
+	return (!IS_ENABLED(CONFIG_ARM64_VA_BITS_48) &&
+		unlikely(idmap_t0sz != TCR_T0SZ(VA_BITS)));
 }
 
 /*
@@ -95,7 +87,7 @@ static inline void __cpu_set_tcr_t0sz(unsigned long t0sz)
 	isb();
 }
 
-#define cpu_set_default_tcr_t0sz()	__cpu_set_tcr_t0sz(TCR_T0SZ(vabits_actual))
+#define cpu_set_default_tcr_t0sz()	__cpu_set_tcr_t0sz(TCR_T0SZ(VA_BITS))
 #define cpu_set_idmap_tcr_t0sz()	__cpu_set_tcr_t0sz(idmap_t0sz)
 
 /*
@@ -135,31 +127,18 @@ static inline void cpu_install_idmap(void)
  * Atomically replaces the active TTBR1_EL1 PGD with a new VA-compatible PGD,
  * avoiding the possibility of conflicting TLB entries being allocated.
  */
-static inline void cpu_replace_ttbr1(pgd_t *pgdp)
+static inline void cpu_replace_ttbr1(pgd_t *pgd)
 {
 	typedef void (ttbr_replace_func)(phys_addr_t);
 	extern ttbr_replace_func idmap_cpu_replace_ttbr1;
 	ttbr_replace_func *replace_phys;
 
-	/* phys_to_ttbr() zeros lower 2 bits of ttbr with 52-bit PA */
-	phys_addr_t ttbr1 = phys_to_ttbr(virt_to_phys(pgdp));
-
-	if (system_supports_cnp() && !WARN_ON(pgdp != lm_alias(swapper_pg_dir))) {
-		/*
-		 * cpu_replace_ttbr1() is used when there's a boot CPU
-		 * up (i.e. cpufeature framework is not up yet) and
-		 * latter only when we enable CNP via cpufeature's
-		 * enable() callback.
-		 * Also we rely on the cpu_hwcap bit being set before
-		 * calling the enable() function.
-		 */
-		ttbr1 |= TTBR_CNP_BIT;
-	}
+	phys_addr_t pgd_phys = virt_to_phys(pgd);
 
 	replace_phys = (void *)__pa_symbol(idmap_cpu_replace_ttbr1);
 
 	cpu_install_idmap();
-	replace_phys(ttbr1);
+	replace_phys(pgd_phys);
 	cpu_uninstall_idmap();
 }
 
@@ -191,7 +170,7 @@ static inline void update_saved_ttbr0(struct task_struct *tsk,
 	else
 		ttbr = virt_to_phys(mm->pgd) | ASID(mm) << 48;
 
-	WRITE_ONCE(task_thread_info(tsk)->ttbr0, ttbr);
+	task_thread_info(tsk)->ttbr0 = ttbr;
 }
 #else
 static inline void update_saved_ttbr0(struct task_struct *tsk,
@@ -246,7 +225,6 @@ switch_mm(struct mm_struct *prev, struct mm_struct *next,
 #define activate_mm(prev,next)	switch_mm(prev, next, current)
 
 void verify_cpu_asid_bits(void);
-void post_ttbr_update_workaround(void);
 
 #endif /* !__ASSEMBLY__ */
 

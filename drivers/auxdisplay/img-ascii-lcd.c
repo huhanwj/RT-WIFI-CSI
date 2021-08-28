@@ -1,7 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2016 Imagination Technologies
  * Author: Paul Burton <paul.burton@mips.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
  */
 
 #include <generated/utsrelease.h>
@@ -93,7 +97,7 @@ static struct img_ascii_lcd_config boston_config = {
 static void malta_update(struct img_ascii_lcd_ctx *ctx)
 {
 	unsigned int i;
-	int err = 0;
+	int err;
 
 	for (i = 0; i < ctx->cfg->num_chars; i++) {
 		err = regmap_write(ctx->regmap,
@@ -176,7 +180,7 @@ static int sead3_wait_lcd_idle(struct img_ascii_lcd_ctx *ctx)
 static void sead3_update(struct img_ascii_lcd_ctx *ctx)
 {
 	unsigned int i;
-	int err = 0;
+	int err;
 
 	for (i = 0; i < ctx->cfg->num_chars; i++) {
 		err = sead3_wait_lcd_idle(ctx);
@@ -220,7 +224,7 @@ MODULE_DEVICE_TABLE(of, img_ascii_lcd_matches);
 
 /**
  * img_ascii_lcd_scroll() - scroll the display by a character
- * @t: really a pointer to the private data structure
+ * @arg: really a pointer to the private data structure
  *
  * Scroll the current message along the LCD by one character, rearming the
  * timer if required.
@@ -437,7 +441,3 @@ static struct platform_driver img_ascii_lcd_driver = {
 	.remove	= img_ascii_lcd_remove,
 };
 module_platform_driver(img_ascii_lcd_driver);
-
-MODULE_DESCRIPTION("Imagination Technologies ASCII LCD Display");
-MODULE_AUTHOR("Paul Burton <paul.burton@mips.com>");
-MODULE_LICENSE("GPL");

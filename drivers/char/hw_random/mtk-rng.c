@@ -1,8 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Driver for Mediatek Hardware Random Number Generator
  *
  * Copyright (C) 2017 Sean Wang <sean.wang@mediatek.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation; either version 2 of
+ * the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  */
 #define MTK_RNG_DEV KBUILD_MODNAME
 
@@ -126,7 +135,6 @@ static int mtk_rng_probe(struct platform_device *pdev)
 #endif
 	priv->rng.read = mtk_rng_read;
 	priv->rng.priv = (unsigned long)&pdev->dev;
-	priv->rng.quality = 900;
 
 	priv->clk = devm_clk_get(&pdev->dev, "rng");
 	if (IS_ERR(priv->clk)) {

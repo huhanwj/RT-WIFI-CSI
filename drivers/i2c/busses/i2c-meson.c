@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * I2C bus driver for Amlogic Meson SoCs
  *
  * Copyright (C) 2014 Beniamino Galvani <b.galvani@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/clk.h>
@@ -13,7 +16,6 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/of.h>
-#include <linux/of_device.h>
 #include <linux/platform_device.h>
 #include <linux/types.h>
 
@@ -55,10 +57,6 @@ enum {
 	STATE_WRITE,
 };
 
-struct meson_i2c_data {
-	unsigned char div_factor;
-};
-
 /**
  * struct meson_i2c - Meson I2C device private data
  *
@@ -66,6 +64,7 @@ struct meson_i2c_data {
  * @dev:	Pointer to device structure
  * @regs:	Base address of the device memory mapped registers
  * @clk:	Pointer to clock structure
+ * @irq:	IRQ number
  * @msg:	Pointer to the current I2C message
  * @state:	Current state in the driver state machine
  * @last:	Flag set for the last message in the transfer
@@ -76,7 +75,6 @@ struct meson_i2c_data {
  * @done:	Completion used to wait for transfer termination
  * @tokens:	Sequence of tokens to be written to the device
  * @num_tokens:	Number of tokens
- * @data:	Pointer to the controlller's platform data
  */
 struct meson_i2c {
 	struct i2c_adapter	adap;
@@ -95,8 +93,6 @@ struct meson_i2c {
 	struct completion	done;
 	u32			tokens[2];
 	int			num_tokens;
-
-	const struct meson_i2c_data *data;
 };
 
 static void meson_i2c_set_mask(struct meson_i2c *i2c, int reg, u32 mask,
@@ -132,7 +128,7 @@ static void meson_i2c_set_clk_div(struct meson_i2c *i2c, unsigned int freq)
 	unsigned long clk_rate = clk_get_rate(i2c->clk);
 	unsigned int div;
 
-	div = DIV_ROUND_UP(clk_rate, freq * i2c->data->div_factor);
+	div = DIV_ROUND_UP(clk_rate, freq * 4);
 
 	/* clock divider has 12 bits */
 	if (div >= (1 << 12)) {
@@ -380,9 +376,6 @@ static int meson_i2c_probe(struct platform_device *pdev)
 	spin_lock_init(&i2c->lock);
 	init_completion(&i2c->done);
 
-	i2c->data = (const struct meson_i2c_data *)
-		of_device_get_match_data(&pdev->dev);
-
 	i2c->clk = devm_clk_get(&pdev->dev, NULL);
 	if (IS_ERR(i2c->clk)) {
 		dev_err(&pdev->dev, "can't get device clock\n");
@@ -447,25 +440,11 @@ static int meson_i2c_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static const struct meson_i2c_data i2c_meson6_data = {
-	.div_factor = 4,
-};
-
-static const struct meson_i2c_data i2c_gxbb_data = {
-	.div_factor = 4,
-};
-
-static const struct meson_i2c_data i2c_axg_data = {
-	.div_factor = 3,
-};
-
 static const struct of_device_id meson_i2c_match[] = {
-	{ .compatible = "amlogic,meson6-i2c", .data = &i2c_meson6_data },
-	{ .compatible = "amlogic,meson-gxbb-i2c", .data = &i2c_gxbb_data },
-	{ .compatible = "amlogic,meson-axg-i2c", .data = &i2c_axg_data },
-	{},
+	{ .compatible = "amlogic,meson6-i2c" },
+	{ .compatible = "amlogic,meson-gxbb-i2c" },
+	{ },
 };
-
 MODULE_DEVICE_TABLE(of, meson_i2c_match);
 
 static struct platform_driver meson_i2c_driver = {

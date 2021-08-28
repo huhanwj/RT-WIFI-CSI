@@ -12,10 +12,7 @@
 #include <subcmd/parse-options.h>
 #include <linux/compiler.h>
 #include <linux/kernel.h>
-#include <linux/zalloc.h>
 #include <errno.h>
-#include <internal/cpumap.h>
-#include <perf/cpumap.h>
 #include "bench.h"
 #include "futex.h"
 
@@ -35,7 +32,7 @@ static struct worker *worker;
 static unsigned int nsecs = 10;
 static bool silent = false, multi = false;
 static bool done = false, fshared = false;
-static unsigned int nthreads = 0;
+static unsigned int ncpus, nthreads = 0;
 static int futex_flag = 0;
 struct timeval start, end, runtime;
 static pthread_mutex_t thread_lock;
@@ -116,10 +113,9 @@ static void *workerfn(void *arg)
 	return NULL;
 }
 
-static void create_threads(struct worker *w, pthread_attr_t thread_attr,
-			   struct perf_cpu_map *cpu)
+static void create_threads(struct worker *w, pthread_attr_t thread_attr)
 {
-	cpu_set_t cpuset;
+	cpu_set_t cpu;
 	unsigned int i;
 
 	threads_starting = nthreads;
@@ -134,10 +130,10 @@ static void create_threads(struct worker *w, pthread_attr_t thread_attr,
 		} else
 			worker[i].futex = &global_futex;
 
-		CPU_ZERO(&cpuset);
-		CPU_SET(cpu->map[i % cpu->nr], &cpuset);
+		CPU_ZERO(&cpu);
+		CPU_SET(i % ncpus, &cpu);
 
-		if (pthread_attr_setaffinity_np(&thread_attr, sizeof(cpu_set_t), &cpuset))
+		if (pthread_attr_setaffinity_np(&thread_attr, sizeof(cpu_set_t), &cpu))
 			err(EXIT_FAILURE, "pthread_attr_setaffinity_np");
 
 		if (pthread_create(&w[i].thread, &thread_attr, workerfn, &worker[i]))
@@ -151,22 +147,19 @@ int bench_futex_lock_pi(int argc, const char **argv)
 	unsigned int i;
 	struct sigaction act;
 	pthread_attr_t thread_attr;
-	struct perf_cpu_map *cpu;
 
 	argc = parse_options(argc, argv, options, bench_futex_lock_pi_usage, 0);
 	if (argc)
 		goto err;
 
-	cpu = perf_cpu_map__new(NULL);
-	if (!cpu)
-		err(EXIT_FAILURE, "calloc");
+	ncpus = sysconf(_SC_NPROCESSORS_ONLN);
 
 	sigfillset(&act.sa_mask);
 	act.sa_sigaction = toggle_done;
 	sigaction(SIGINT, &act, NULL);
 
 	if (!nthreads)
-		nthreads = cpu->nr;
+		nthreads = ncpus;
 
 	worker = calloc(nthreads, sizeof(*worker));
 	if (!worker)
@@ -187,7 +180,7 @@ int bench_futex_lock_pi(int argc, const char **argv)
 	pthread_attr_init(&thread_attr);
 	gettimeofday(&start, NULL);
 
-	create_threads(worker, thread_attr, cpu);
+	create_threads(worker, thread_attr);
 	pthread_attr_destroy(&thread_attr);
 
 	pthread_mutex_lock(&thread_lock);
@@ -219,7 +212,7 @@ int bench_futex_lock_pi(int argc, const char **argv)
 			       worker[i].tid, worker[i].futex, t);
 
 		if (multi)
-			zfree(&worker[i].futex);
+			free(worker[i].futex);
 	}
 
 	print_summary();

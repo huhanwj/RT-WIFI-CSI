@@ -20,8 +20,6 @@
 #include <linux/kernel.h>
 #include <linux/time64.h>
 #include <errno.h>
-#include <internal/cpumap.h>
-#include <perf/cpumap.h>
 #include "bench.h"
 #include "futex.h"
 
@@ -91,19 +89,19 @@ static void print_summary(void)
 }
 
 static void block_threads(pthread_t *w,
-			  pthread_attr_t thread_attr, struct perf_cpu_map *cpu)
+			  pthread_attr_t thread_attr)
 {
-	cpu_set_t cpuset;
+	cpu_set_t cpu;
 	unsigned int i;
 
 	threads_starting = nthreads;
 
 	/* create and block all threads */
 	for (i = 0; i < nthreads; i++) {
-		CPU_ZERO(&cpuset);
-		CPU_SET(cpu->map[i % cpu->nr], &cpuset);
+		CPU_ZERO(&cpu);
+		CPU_SET(i % ncpus, &cpu);
 
-		if (pthread_attr_setaffinity_np(&thread_attr, sizeof(cpu_set_t), &cpuset))
+		if (pthread_attr_setaffinity_np(&thread_attr, sizeof(cpu_set_t), &cpu))
 			err(EXIT_FAILURE, "pthread_attr_setaffinity_np");
 
 		if (pthread_create(&w[i], &thread_attr, workerfn, NULL))
@@ -124,7 +122,6 @@ int bench_futex_wake(int argc, const char **argv)
 	unsigned int i, j;
 	struct sigaction act;
 	pthread_attr_t thread_attr;
-	struct perf_cpu_map *cpu;
 
 	argc = parse_options(argc, argv, options, bench_futex_wake_usage, 0);
 	if (argc) {
@@ -132,9 +129,7 @@ int bench_futex_wake(int argc, const char **argv)
 		exit(EXIT_FAILURE);
 	}
 
-	cpu = perf_cpu_map__new(NULL);
-	if (!cpu)
-		err(EXIT_FAILURE, "calloc");
+	ncpus = sysconf(_SC_NPROCESSORS_ONLN);
 
 	sigfillset(&act.sa_mask);
 	act.sa_sigaction = toggle_done;
@@ -166,7 +161,7 @@ int bench_futex_wake(int argc, const char **argv)
 		struct timeval start, end, runtime;
 
 		/* create, launch & block all threads */
-		block_threads(worker, thread_attr, cpu);
+		block_threads(worker, thread_attr);
 
 		/* make sure all threads are already blocked */
 		pthread_mutex_lock(&thread_lock);

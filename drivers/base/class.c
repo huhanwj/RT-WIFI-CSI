@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * class.c - basic device class management
  *
@@ -6,6 +5,9 @@
  * Copyright (c) 2002-3 Open Source Development Labs
  * Copyright (c) 2003-2004 Greg Kroah-Hartman
  * Copyright (c) 2003-2004 IBM Corp.
+ *
+ * This file is released under the GPLv2
+ *
  */
 
 #include <linux/device.h>
@@ -117,22 +119,16 @@ static void class_put(struct class *cls)
 		kset_put(&cls->p->subsys);
 }
 
-static struct device *klist_class_to_dev(struct klist_node *n)
-{
-	struct device_private *p = to_device_private_class(n);
-	return p->device;
-}
-
 static void klist_class_dev_get(struct klist_node *n)
 {
-	struct device *dev = klist_class_to_dev(n);
+	struct device *dev = container_of(n, struct device, knode_class);
 
 	get_device(dev);
 }
 
 static void klist_class_dev_put(struct klist_node *n)
 {
-	struct device *dev = klist_class_to_dev(n);
+	struct device *dev = container_of(n, struct device, knode_class);
 
 	put_device(dev);
 }
@@ -283,7 +279,7 @@ void class_dev_iter_init(struct class_dev_iter *iter, struct class *class,
 	struct klist_node *start_knode = NULL;
 
 	if (start)
-		start_knode = &start->p->knode_class;
+		start_knode = &start->knode_class;
 	klist_iter_init_node(&class->p->klist_devices, &iter->ki, start_knode);
 	iter->type = type;
 }
@@ -310,7 +306,7 @@ struct device *class_dev_iter_next(struct class_dev_iter *iter)
 		knode = klist_next(&iter->ki);
 		if (!knode)
 			return NULL;
-		dev = klist_class_to_dev(knode);
+		dev = container_of(knode, struct device, knode_class);
 		if (!iter->type || iter->type == dev->type)
 			return dev;
 	}

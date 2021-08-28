@@ -49,7 +49,6 @@
 #include <rdma/ib_addr.h>
 #include <rdma/ib_smi.h>
 #include <rdma/ib_user_verbs.h>
-#include <rdma/uverbs_ioctl.h>
 
 #include "pvrdma.h"
 
@@ -92,19 +91,22 @@ int pvrdma_req_notify_cq(struct ib_cq *ibcq,
 
 /**
  * pvrdma_create_cq - create completion queue
- * @ibcq: Allocated CQ
+ * @ibdev: the device
  * @attr: completion queue attributes
+ * @context: user context
  * @udata: user data
  *
- * @return: 0 on success
+ * @return: ib_cq completion queue pointer on success,
+ *          otherwise returns negative errno.
  */
-int pvrdma_create_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
-		     struct ib_udata *udata)
+struct ib_cq *pvrdma_create_cq(struct ib_device *ibdev,
+			       const struct ib_cq_init_attr *attr,
+			       struct ib_ucontext *context,
+			       struct ib_udata *udata)
 {
-	struct ib_device *ibdev = ibcq->device;
 	int entries = attr->cqe;
 	struct pvrdma_dev *dev = to_vdev(ibdev);
-	struct pvrdma_cq *cq = to_vcq(ibcq);
+	struct pvrdma_cq *cq;
 	int ret;
 	int npages;
 	unsigned long flags;
@@ -112,30 +114,32 @@ int pvrdma_create_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
 	union pvrdma_cmd_resp rsp;
 	struct pvrdma_cmd_create_cq *cmd = &req.create_cq;
 	struct pvrdma_cmd_create_cq_resp *resp = &rsp.create_cq_resp;
-	struct pvrdma_create_cq_resp cq_resp = {};
 	struct pvrdma_create_cq ucmd;
-	struct pvrdma_ucontext *context = rdma_udata_to_drv_context(
-		udata, struct pvrdma_ucontext, ibucontext);
 
 	BUILD_BUG_ON(sizeof(struct pvrdma_cqe) != 64);
 
 	entries = roundup_pow_of_two(entries);
 	if (entries < 1 || entries > dev->dsr->caps.max_cqe)
-		return -EINVAL;
+		return ERR_PTR(-EINVAL);
 
 	if (!atomic_add_unless(&dev->num_cqs, 1, dev->dsr->caps.max_cq))
-		return -ENOMEM;
+		return ERR_PTR(-ENOMEM);
+
+	cq = kzalloc(sizeof(*cq), GFP_KERNEL);
+	if (!cq) {
+		atomic_dec(&dev->num_cqs);
+		return ERR_PTR(-ENOMEM);
+	}
 
 	cq->ibcq.cqe = entries;
-	cq->is_kernel = !udata;
 
-	if (!cq->is_kernel) {
+	if (context) {
 		if (ib_copy_from_udata(&ucmd, udata, sizeof(ucmd))) {
 			ret = -EFAULT;
 			goto err_cq;
 		}
 
-		cq->umem = ib_umem_get(udata, ucmd.buf_addr, ucmd.buf_size,
+		cq->umem = ib_umem_get(context, ucmd.buf_addr, ucmd.buf_size,
 				       IB_ACCESS_LOCAL_WRITE, 1);
 		if (IS_ERR(cq->umem)) {
 			ret = PTR_ERR(cq->umem);
@@ -144,6 +148,8 @@ int pvrdma_create_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
 
 		npages = ib_umem_page_count(cq->umem);
 	} else {
+		cq->is_kernel = true;
+
 		/* One extra page for shared ring state */
 		npages = 1 + (entries * sizeof(struct pvrdma_cqe) +
 			      PAGE_SIZE - 1) / PAGE_SIZE;
@@ -172,14 +178,15 @@ int pvrdma_create_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
 	else
 		pvrdma_page_dir_insert_umem(&cq->pdir, cq->umem, 0);
 
-	refcount_set(&cq->refcnt, 1);
+	atomic_set(&cq->refcnt, 1);
 	init_completion(&cq->free);
 	spin_lock_init(&cq->cq_lock);
 
 	memset(cmd, 0, sizeof(*cmd));
 	cmd->hdr.cmd = PVRDMA_CMD_CREATE_CQ;
 	cmd->nchunks = npages;
-	cmd->ctx_handle = context ? context->ctx_handle : 0;
+	cmd->ctx_handle = (context) ?
+		(u64)to_vucontext(context)->ctx_handle : 0;
 	cmd->cqe = entries;
 	cmd->pdir_dma = cq->pdir.dir_dma;
 	ret = pvrdma_cmd_post(dev, &req, &rsp, PVRDMA_CMD_CREATE_CQ_RESP);
@@ -191,51 +198,56 @@ int pvrdma_create_cq(struct ib_cq *ibcq, const struct ib_cq_init_attr *attr,
 
 	cq->ibcq.cqe = resp->cqe;
 	cq->cq_handle = resp->cq_handle;
-	cq_resp.cqn = resp->cq_handle;
 	spin_lock_irqsave(&dev->cq_tbl_lock, flags);
 	dev->cq_tbl[cq->cq_handle % dev->dsr->caps.max_cq] = cq;
 	spin_unlock_irqrestore(&dev->cq_tbl_lock, flags);
 
-	if (!cq->is_kernel) {
-		cq->uar = &context->uar;
+	if (context) {
+		cq->uar = &(to_vucontext(context)->uar);
 
 		/* Copy udata back. */
-		if (ib_copy_to_udata(udata, &cq_resp, sizeof(cq_resp))) {
+		if (ib_copy_to_udata(udata, &cq->cq_handle, sizeof(__u32))) {
 			dev_warn(&dev->pdev->dev,
 				 "failed to copy back udata\n");
-			pvrdma_destroy_cq(&cq->ibcq, udata);
-			return -EINVAL;
+			pvrdma_destroy_cq(&cq->ibcq);
+			return ERR_PTR(-EINVAL);
 		}
 	}
 
-	return 0;
+	return &cq->ibcq;
 
 err_page_dir:
 	pvrdma_page_dir_cleanup(dev, &cq->pdir);
 err_umem:
-	ib_umem_release(cq->umem);
+	if (context)
+		ib_umem_release(cq->umem);
 err_cq:
 	atomic_dec(&dev->num_cqs);
-	return ret;
+	kfree(cq);
+
+	return ERR_PTR(ret);
 }
 
 static void pvrdma_free_cq(struct pvrdma_dev *dev, struct pvrdma_cq *cq)
 {
-	if (refcount_dec_and_test(&cq->refcnt))
+	if (atomic_dec_and_test(&cq->refcnt))
 		complete(&cq->free);
 	wait_for_completion(&cq->free);
 
-	ib_umem_release(cq->umem);
+	if (!cq->is_kernel)
+		ib_umem_release(cq->umem);
 
 	pvrdma_page_dir_cleanup(dev, &cq->pdir);
+	kfree(cq);
 }
 
 /**
  * pvrdma_destroy_cq - destroy completion queue
  * @cq: the completion queue to destroy.
- * @udata: user data or null for kernel object
+ *
+ * @return: 0 for success.
  */
-void pvrdma_destroy_cq(struct ib_cq *cq, struct ib_udata *udata)
+int pvrdma_destroy_cq(struct ib_cq *cq)
 {
 	struct pvrdma_cq *vcq = to_vcq(cq);
 	union pvrdma_cmd_req req;
@@ -261,6 +273,21 @@ void pvrdma_destroy_cq(struct ib_cq *cq, struct ib_udata *udata)
 
 	pvrdma_free_cq(dev, vcq);
 	atomic_dec(&dev->num_cqs);
+
+	return ret;
+}
+
+/**
+ * pvrdma_modify_cq - modify the CQ moderation parameters
+ * @ibcq: the CQ to modify
+ * @cq_count: number of CQEs that will trigger an event
+ * @cq_period: max period of time in usec before triggering an event
+ *
+ * @return: -EOPNOTSUPP as CQ resize is not supported.
+ */
+int pvrdma_modify_cq(struct ib_cq *cq, u16 cq_count, u16 cq_period)
+{
+	return -EOPNOTSUPP;
 }
 
 static inline struct pvrdma_cqe *get_cqe(struct pvrdma_cq *cq, int i)
@@ -399,4 +426,17 @@ int pvrdma_poll_cq(struct ib_cq *ibcq, int num_entries, struct ib_wc *wc)
 
 	/* Ensure we do not return errors from poll_cq */
 	return npolled;
+}
+
+/**
+ * pvrdma_resize_cq - resize CQ
+ * @ibcq: the completion queue
+ * @entries: CQ entries
+ * @udata: user data
+ *
+ * @return: -EOPNOTSUPP as CQ resize is not supported.
+ */
+int pvrdma_resize_cq(struct ib_cq *ibcq, int entries, struct ib_udata *udata)
+{
+	return -EOPNOTSUPP;
 }

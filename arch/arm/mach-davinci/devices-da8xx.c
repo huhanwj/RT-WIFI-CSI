@@ -1,32 +1,35 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * DA8XX/OMAP L1XX platform device data
  *
  * Copyright (c) 2007-2009, MontaVista Software, Inc. <source@mvista.com>
  * Derived from code that was:
  *	Copyright (C) 2006 Komal Shah <komal_shah802003@yahoo.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  */
-#include <linux/ahci_platform.h>
-#include <linux/clk-provider.h>
-#include <linux/clk.h>
-#include <linux/clkdev.h>
-#include <linux/dma-contiguous.h>
-#include <linux/dmaengine.h>
 #include <linux/init.h>
-#include <linux/io.h>
+#include <linux/platform_data/syscon.h>
 #include <linux/platform_device.h>
-#include <linux/reboot.h>
+#include <linux/dma-contiguous.h>
 #include <linux/serial_8250.h>
+#include <linux/ahci_platform.h>
+#include <linux/clk.h>
+#include <linux/reboot.h>
+#include <linux/dmaengine.h>
 
-#include <mach/common.h>
 #include <mach/cputype.h>
-#include <mach/da8xx.h>
+#include <mach/common.h>
 #include <mach/time.h>
-
-#include "asp.h"
+#include <mach/da8xx.h>
+#include <mach/clock.h>
 #include "cpuidle.h"
-#include "irqs.h"
 #include "sram.h"
+
+#include "clock.h"
+#include "asp.h"
 
 #define DA8XX_TPCC_BASE			0x01c00000
 #define DA8XX_TPTC0_BASE		0x01c08000
@@ -62,7 +65,7 @@ void __iomem *da8xx_syscfg1_base;
 static struct plat_serial8250_port da8xx_serial0_pdata[] = {
 	{
 		.mapbase	= DA8XX_UART0_BASE,
-		.irq		= DAVINCI_INTC_IRQ(IRQ_DA8XX_UARTINT0),
+		.irq		= IRQ_DA8XX_UARTINT0,
 		.flags		= UPF_BOOT_AUTOCONF | UPF_SKIP_TEST |
 					UPF_IOREMAP,
 		.iotype		= UPIO_MEM,
@@ -75,7 +78,7 @@ static struct plat_serial8250_port da8xx_serial0_pdata[] = {
 static struct plat_serial8250_port da8xx_serial1_pdata[] = {
 	{
 		.mapbase	= DA8XX_UART1_BASE,
-		.irq		= DAVINCI_INTC_IRQ(IRQ_DA8XX_UARTINT1),
+		.irq		= IRQ_DA8XX_UARTINT1,
 		.flags		= UPF_BOOT_AUTOCONF | UPF_SKIP_TEST |
 					UPF_IOREMAP,
 		.iotype		= UPIO_MEM,
@@ -88,7 +91,7 @@ static struct plat_serial8250_port da8xx_serial1_pdata[] = {
 static struct plat_serial8250_port da8xx_serial2_pdata[] = {
 	{
 		.mapbase	= DA8XX_UART2_BASE,
-		.irq		= DAVINCI_INTC_IRQ(IRQ_DA8XX_UARTINT2),
+		.irq		= IRQ_DA8XX_UARTINT2,
 		.flags		= UPF_BOOT_AUTOCONF | UPF_SKIP_TEST |
 					UPF_IOREMAP,
 		.iotype		= UPIO_MEM,
@@ -169,12 +172,12 @@ static struct resource da8xx_edma0_resources[] = {
 	},
 	{
 		.name	= "edma3_ccint",
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_CCINT0),
+		.start	= IRQ_DA8XX_CCINT0,
 		.flags	= IORESOURCE_IRQ,
 	},
 	{
 		.name	= "edma3_ccerrint",
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_CCERRINT),
+		.start	= IRQ_DA8XX_CCERRINT,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -194,12 +197,12 @@ static struct resource da850_edma1_resources[] = {
 	},
 	{
 		.name	= "edma3_ccint",
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA850_CCINT1),
+		.start	= IRQ_DA850_CCINT1,
 		.flags	= IORESOURCE_IRQ,
 	},
 	{
 		.name	= "edma3_ccerrint",
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA850_CCERRINT1),
+		.start	= IRQ_DA850_CCERRINT1,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -249,7 +252,7 @@ int __init da830_register_edma(struct edma_rsv_info *rsv)
 	da8xx_edma0_pdata.slavecnt = ARRAY_SIZE(da830_edma_map);
 
 	edma_pdev = platform_device_register_full(&da8xx_edma0_device);
-	return PTR_ERR_OR_ZERO(edma_pdev);
+	return IS_ERR(edma_pdev) ? PTR_ERR(edma_pdev) : 0;
 }
 
 static const struct dma_slave_map da850_edma0_map[] = {
@@ -294,7 +297,7 @@ int __init da850_register_edma(struct edma_rsv_info *rsv[2])
 	da850_edma1_pdata.slavecnt = ARRAY_SIZE(da850_edma1_map);
 
 	edma_pdev = platform_device_register_full(&da850_edma1_device);
-	return PTR_ERR_OR_ZERO(edma_pdev);
+	return IS_ERR(edma_pdev) ? PTR_ERR(edma_pdev) : 0;
 }
 
 static struct resource da8xx_i2c_resources0[] = {
@@ -304,8 +307,8 @@ static struct resource da8xx_i2c_resources0[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	{
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_I2CINT0),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_I2CINT0),
+		.start	= IRQ_DA8XX_I2CINT0,
+		.end	= IRQ_DA8XX_I2CINT0,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -324,8 +327,8 @@ static struct resource da8xx_i2c_resources1[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	{
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_I2CINT1),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_I2CINT1),
+		.start	= IRQ_DA8XX_I2CINT1,
+		.end	= IRQ_DA8XX_I2CINT1,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -368,6 +371,19 @@ static struct platform_device da8xx_wdt_device = {
 	.resource	= da8xx_watchdog_resources,
 };
 
+void da8xx_restart(enum reboot_mode mode, const char *cmd)
+{
+	struct device *dev;
+
+	dev = bus_find_device_by_name(&platform_bus_type, NULL, "davinci-wdt");
+	if (!dev) {
+		pr_err("%s: failed to find watchdog device\n", __func__);
+		return;
+	}
+
+	davinci_watchdog_reset(to_platform_device(dev));
+}
+
 int __init da8xx_register_watchdog(void)
 {
 	return platform_device_register(&da8xx_wdt_device);
@@ -380,23 +396,23 @@ static struct resource da8xx_emac_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	{
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_C0_RX_THRESH_PULSE),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_C0_RX_THRESH_PULSE),
+		.start	= IRQ_DA8XX_C0_RX_THRESH_PULSE,
+		.end	= IRQ_DA8XX_C0_RX_THRESH_PULSE,
 		.flags	= IORESOURCE_IRQ,
 	},
 	{
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_C0_RX_PULSE),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_C0_RX_PULSE),
+		.start	= IRQ_DA8XX_C0_RX_PULSE,
+		.end	= IRQ_DA8XX_C0_RX_PULSE,
 		.flags	= IORESOURCE_IRQ,
 	},
 	{
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_C0_TX_PULSE),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_C0_TX_PULSE),
+		.start	= IRQ_DA8XX_C0_TX_PULSE,
+		.end	= IRQ_DA8XX_C0_TX_PULSE,
 		.flags	= IORESOURCE_IRQ,
 	},
 	{
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_C0_MISC_PULSE),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_C0_MISC_PULSE),
+		.start	= IRQ_DA8XX_C0_MISC_PULSE,
+		.end	= IRQ_DA8XX_C0_MISC_PULSE,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -468,7 +484,7 @@ static struct resource da830_mcasp1_resources[] = {
 	},
 	{
 		.name	= "common",
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_MCASPINT),
+		.start	= IRQ_DA8XX_MCASPINT,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -503,7 +519,7 @@ static struct resource da830_mcasp2_resources[] = {
 	},
 	{
 		.name	= "common",
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_MCASPINT),
+		.start	= IRQ_DA8XX_MCASPINT,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -538,7 +554,7 @@ static struct resource da850_mcasp_resources[] = {
 	},
 	{
 		.name	= "common",
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_MCASPINT),
+		.start	= IRQ_DA8XX_MCASPINT,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -586,43 +602,43 @@ static struct resource da8xx_pruss_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	{
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_EVTOUT0),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_EVTOUT0),
+		.start	= IRQ_DA8XX_EVTOUT0,
+		.end	= IRQ_DA8XX_EVTOUT0,
 		.flags	= IORESOURCE_IRQ,
 	},
 	{
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_EVTOUT1),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_EVTOUT1),
+		.start	= IRQ_DA8XX_EVTOUT1,
+		.end	= IRQ_DA8XX_EVTOUT1,
 		.flags	= IORESOURCE_IRQ,
 	},
 	{
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_EVTOUT2),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_EVTOUT2),
+		.start	= IRQ_DA8XX_EVTOUT2,
+		.end	= IRQ_DA8XX_EVTOUT2,
 		.flags	= IORESOURCE_IRQ,
 	},
 	{
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_EVTOUT3),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_EVTOUT3),
+		.start	= IRQ_DA8XX_EVTOUT3,
+		.end	= IRQ_DA8XX_EVTOUT3,
 		.flags	= IORESOURCE_IRQ,
 	},
 	{
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_EVTOUT4),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_EVTOUT4),
+		.start	= IRQ_DA8XX_EVTOUT4,
+		.end	= IRQ_DA8XX_EVTOUT4,
 		.flags	= IORESOURCE_IRQ,
 	},
 	{
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_EVTOUT5),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_EVTOUT5),
+		.start	= IRQ_DA8XX_EVTOUT5,
+		.end	= IRQ_DA8XX_EVTOUT5,
 		.flags	= IORESOURCE_IRQ,
 	},
 	{
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_EVTOUT6),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_EVTOUT6),
+		.start	= IRQ_DA8XX_EVTOUT6,
+		.end	= IRQ_DA8XX_EVTOUT6,
 		.flags	= IORESOURCE_IRQ,
 	},
 	{
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_EVTOUT7),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_EVTOUT7),
+		.start	= IRQ_DA8XX_EVTOUT7,
+		.end	= IRQ_DA8XX_EVTOUT7,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -672,8 +688,8 @@ static struct resource da8xx_lcdc_resources[] = {
 		.flags  = IORESOURCE_MEM,
 	},
 	[1] = { /* interrupt */
-		.start  = DAVINCI_INTC_IRQ(IRQ_DA8XX_LCDINT),
-		.end    = DAVINCI_INTC_IRQ(IRQ_DA8XX_LCDINT),
+		.start  = IRQ_DA8XX_LCDINT,
+		.end    = IRQ_DA8XX_LCDINT,
 		.flags  = IORESOURCE_IRQ,
 	},
 };
@@ -683,9 +699,6 @@ static struct platform_device da8xx_lcdc_device = {
 	.id		= 0,
 	.num_resources	= ARRAY_SIZE(da8xx_lcdc_resources),
 	.resource	= da8xx_lcdc_resources,
-	.dev		= {
-		.coherent_dma_mask	= DMA_BIT_MASK(32),
-	}
 };
 
 int __init da8xx_register_lcdc(struct da8xx_lcdc_platform_data *pdata)
@@ -701,48 +714,8 @@ static struct resource da8xx_gpio_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	{ /* interrupt */
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_GPIO0),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_GPIO0),
-		.flags	= IORESOURCE_IRQ,
-	},
-	{
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_GPIO1),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_GPIO1),
-		.flags	= IORESOURCE_IRQ,
-	},
-	{
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_GPIO2),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_GPIO2),
-		.flags	= IORESOURCE_IRQ,
-	},
-	{
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_GPIO3),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_GPIO3),
-		.flags	= IORESOURCE_IRQ,
-	},
-	{
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_GPIO4),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_GPIO4),
-		.flags	= IORESOURCE_IRQ,
-	},
-	{
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_GPIO5),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_GPIO5),
-		.flags	= IORESOURCE_IRQ,
-	},
-	{
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_GPIO6),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_GPIO6),
-		.flags	= IORESOURCE_IRQ,
-	},
-	{
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_GPIO7),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_GPIO7),
-		.flags	= IORESOURCE_IRQ,
-	},
-	{
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_GPIO8),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_GPIO8),
+		.start	= IRQ_DA8XX_GPIO0,
+		.end	= IRQ_DA8XX_GPIO8,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -767,8 +740,8 @@ static struct resource da8xx_mmcsd0_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	{		/* interrupt */
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_MMCSDINT0),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_MMCSDINT0),
+		.start	= IRQ_DA8XX_MMCSDINT0,
+		.end	= IRQ_DA8XX_MMCSDINT0,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -794,8 +767,8 @@ static struct resource da850_mmcsd1_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	{		/* interrupt */
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA850_MMCSDINT0_1),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA850_MMCSDINT0_1),
+		.start	= IRQ_DA850_MMCSDINT0_1,
+		.end	= IRQ_DA850_MMCSDINT0_1,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -846,8 +819,8 @@ static struct resource da8xx_rproc_resources[] = {
 		.flags		= IORESOURCE_MEM,
 	},
 	{ /* dsp irq */
-		.start		= DAVINCI_INTC_IRQ(IRQ_DA8XX_CHIPINT0),
-		.end		= DAVINCI_INTC_IRQ(IRQ_DA8XX_CHIPINT0),
+		.start		= IRQ_DA8XX_CHIPINT0,
+		.end		= IRQ_DA8XX_CHIPINT0,
 		.flags		= IORESOURCE_IRQ,
 	},
 };
@@ -937,13 +910,13 @@ static struct resource da8xx_rtc_resources[] = {
 		.flags		= IORESOURCE_MEM,
 	},
 	{ /* timer irq */
-		.start		= DAVINCI_INTC_IRQ(IRQ_DA8XX_RTC),
-		.end		= DAVINCI_INTC_IRQ(IRQ_DA8XX_RTC),
+		.start		= IRQ_DA8XX_RTC,
+		.end		= IRQ_DA8XX_RTC,
 		.flags		= IORESOURCE_IRQ,
 	},
 	{ /* alarm irq */
-		.start		= DAVINCI_INTC_IRQ(IRQ_DA8XX_RTC),
-		.end		= DAVINCI_INTC_IRQ(IRQ_DA8XX_RTC),
+		.start		= IRQ_DA8XX_RTC,
+		.end		= IRQ_DA8XX_RTC,
 		.flags		= IORESOURCE_IRQ,
 	},
 };
@@ -1010,8 +983,8 @@ static struct resource da8xx_spi0_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_SPINT0),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_SPINT0),
+		.start	= IRQ_DA8XX_SPINT0,
+		.end	= IRQ_DA8XX_SPINT0,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -1023,8 +996,8 @@ static struct resource da8xx_spi1_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA8XX_SPINT1),
-		.end	= DAVINCI_INTC_IRQ(IRQ_DA8XX_SPINT1),
+		.start	= IRQ_DA8XX_SPINT1,
+		.end	= IRQ_DA8XX_SPINT1,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -1081,15 +1054,26 @@ int __init da8xx_register_spi_bus(int instance, unsigned num_chipselect)
 }
 
 #ifdef CONFIG_ARCH_DAVINCI_DA850
+static struct clk sata_refclk = {
+	.name		= "sata_refclk",
+	.set_rate	= davinci_simple_set_rate,
+};
+
+static struct clk_lookup sata_refclk_lookup =
+		CLK("ahci_da850", "refclk", &sata_refclk);
+
 int __init da850_register_sata_refclk(int rate)
 {
-	struct clk *clk;
+	int ret;
 
-	clk = clk_register_fixed_rate(NULL, "sata_refclk", NULL, 0, rate);
-	if (IS_ERR(clk))
-		return PTR_ERR(clk);
+	sata_refclk.rate = rate;
+	ret = clk_register(&sata_refclk);
+	if (ret)
+		return ret;
 
-	return clk_register_clkdev(clk, "refclk", "ahci_da850");
+	clkdev_add(&sata_refclk_lookup);
+
+	return 0;
 }
 
 static struct resource da850_sata_resources[] = {
@@ -1104,7 +1088,7 @@ static struct resource da850_sata_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	{
-		.start	= DAVINCI_INTC_IRQ(IRQ_DA850_SATAINT),
+		.start	= IRQ_DA850_SATAINT,
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -1134,30 +1118,29 @@ int __init da850_register_sata(unsigned long refclkpn)
 }
 #endif
 
-static struct regmap *da8xx_cfgchip;
-
-static const struct regmap_config da8xx_cfgchip_config __initconst = {
-	.name		= "cfgchip",
-	.reg_bits	= 32,
-	.val_bits	= 32,
-	.reg_stride	= 4,
-	.max_register	= DA8XX_CFGCHIP4_REG - DA8XX_CFGCHIP0_REG,
+static struct syscon_platform_data da8xx_cfgchip_platform_data = {
+	.label	= "cfgchip",
 };
 
-/**
- * da8xx_get_cfgchip - Lazy gets CFGCHIP as regmap
- *
- * This is for use on non-DT boards only. For DT boards, use
- * syscon_regmap_lookup_by_compatible("ti,da830-cfgchip")
- *
- * Returns: Pointer to the CFGCHIP regmap or negative error code.
- */
-struct regmap * __init da8xx_get_cfgchip(void)
-{
-	if (IS_ERR_OR_NULL(da8xx_cfgchip))
-		da8xx_cfgchip = regmap_init_mmio(NULL,
-					DA8XX_SYSCFG0_VIRT(DA8XX_CFGCHIP0_REG),
-					&da8xx_cfgchip_config);
+static struct resource da8xx_cfgchip_resources[] = {
+	{
+		.start	= DA8XX_SYSCFG0_BASE + DA8XX_CFGCHIP0_REG,
+		.end	= DA8XX_SYSCFG0_BASE + DA8XX_CFGCHIP4_REG + 3,
+		.flags	= IORESOURCE_MEM,
+	},
+};
 
-	return da8xx_cfgchip;
+static struct platform_device da8xx_cfgchip_device = {
+	.name	= "syscon",
+	.id	= -1,
+	.dev	= {
+		.platform_data	= &da8xx_cfgchip_platform_data,
+	},
+	.num_resources	= ARRAY_SIZE(da8xx_cfgchip_resources),
+	.resource	= da8xx_cfgchip_resources,
+};
+
+int __init da8xx_register_cfgchip(void)
+{
+	return platform_device_register(&da8xx_cfgchip_device);
 }

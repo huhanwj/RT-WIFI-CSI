@@ -430,6 +430,7 @@ int jsm_uart_port_init(struct jsm_board *brd)
 {
 	int i, rc;
 	unsigned int line;
+	struct jsm_channel *ch;
 
 	if (!brd)
 		return -ENXIO;
@@ -443,7 +444,7 @@ int jsm_uart_port_init(struct jsm_board *brd)
 	brd->nasync = brd->maxports;
 
 	/* Set up channel variables */
-	for (i = 0; i < brd->nasync; i++) {
+	for (i = 0; i < brd->nasync; i++, ch = brd->channels[i]) {
 
 		if (!brd->channels[i])
 			continue;
@@ -521,6 +522,9 @@ void jsm_input(struct jsm_channel *ch)
 	int i = 0;
 
 	jsm_dbg(READ, &ch->ch_bd->pci_dev, "start\n");
+
+	if (!ch)
+		return;
 
 	port = &ch->uart_port.state->port;
 	tp = port->tty;
@@ -644,8 +648,11 @@ static void jsm_carrier(struct jsm_channel *ch)
 	int phys_carrier = 0;
 
 	jsm_dbg(CARR, &ch->ch_bd->pci_dev, "start\n");
+	if (!ch)
+		return;
 
 	bd = ch->ch_bd;
+
 	if (!bd)
 		return;
 

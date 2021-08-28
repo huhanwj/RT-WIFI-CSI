@@ -27,51 +27,24 @@
 
 #include "dm_services_types.h"
 
-/* If HW itself ever powered down it will be 0.
- * fwDmcuInit will write to 1.
- * Driver will only call MCP init if current state is 1,
- * and the MCP command will transition this to 2.
- */
-enum dmcu_state {
-	DMCU_UNLOADED = 0,
-	DMCU_LOADED_UNINITIALIZED = 1,
-	DMCU_RUNNING = 2,
-};
-
-struct dmcu_version {
-	unsigned int interface_version;
-	unsigned int abm_version;
-	unsigned int psr_version;
-	unsigned int build_version;
-};
-
 struct dmcu {
 	struct dc_context *ctx;
 	const struct dmcu_funcs *funcs;
-
-	enum dmcu_state dmcu_state;
-	struct dmcu_version dmcu_version;
-	unsigned int cached_wait_loop_number;
 };
 
 struct dmcu_funcs {
-	bool (*dmcu_init)(struct dmcu *dmcu);
 	bool (*load_iram)(struct dmcu *dmcu,
 			unsigned int start_offset,
 			const char *src,
 			unsigned int bytes);
 	void (*set_psr_enable)(struct dmcu *dmcu, bool enable, bool wait);
-	bool (*setup_psr)(struct dmcu *dmcu,
+	void (*setup_psr)(struct dmcu *dmcu,
 			struct dc_link *link,
 			struct psr_context *psr_context);
 	void (*get_psr_state)(struct dmcu *dmcu, uint32_t *psr_state);
 	void (*set_psr_wait_loop)(struct dmcu *dmcu,
 			unsigned int wait_loop_number);
-	void (*get_psr_wait_loop)(struct dmcu *dmcu,
-			unsigned int *psr_wait_loop_number);
-	bool (*is_dmcu_initialized)(struct dmcu *dmcu);
-	bool (*lock_phy)(struct dmcu *dmcu);
-	bool (*unlock_phy)(struct dmcu *dmcu);
+	void (*get_psr_wait_loop)(unsigned int *psr_wait_loop_number);
 };
 
 #endif

@@ -1,7 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0 OR MIT
 /**************************************************************************
  *
- * Copyright 2009-2015 VMware, Inc., Palo Alto, CA., USA
+ * Copyright © 2009-2015 VMware, Inc., Palo Alto, CA., USA
+ * All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the
@@ -25,8 +25,7 @@
  *
  **************************************************************************/
 
-#include <linux/sched/signal.h>
-
+#include <drm/drmP.h>
 #include "vmwgfx_drv.h"
 
 #define VMW_FENCE_WRAP (1 << 24)

@@ -41,16 +41,29 @@
 #include <linux/workqueue.h>
 #include <linux/list.h>
 #include <linux/pci.h>
-#include <rdma/ib_verbs.h>
 
 #include "usnic_log.h"
 #include "usnic_uiom.h"
 #include "usnic_uiom_interval_tree.h"
 
+static struct workqueue_struct *usnic_uiom_wq;
+
 #define USNIC_UIOM_PAGE_CHUNK						\
 	((PAGE_SIZE - offsetof(struct usnic_uiom_chunk, page_list))	/\
 	((void *) &((struct usnic_uiom_chunk *) 0)->page_list[1] -	\
 	(void *) &((struct usnic_uiom_chunk *) 0)->page_list[0]))
+
+static void usnic_uiom_reg_account(struct work_struct *work)
+{
+	struct usnic_uiom_reg *umem = container_of(work,
+						struct usnic_uiom_reg, work);
+
+	down_write(&umem->mm->mmap_sem);
+	umem->mm->locked_vm -= umem->diff;
+	up_write(&umem->mm->mmap_sem);
+	mmput(umem->mm);
+	kfree(umem);
+}
 
 static int usnic_uiom_dma_fault(struct iommu_domain *domain,
 				struct device *dev,
@@ -75,7 +88,9 @@ static void usnic_uiom_put_pages(struct list_head *chunk_list, int dirty)
 		for_each_sg(chunk->page_list, sg, chunk->nents, i) {
 			page = sg_page(sg);
 			pa = sg_phys(sg);
-			put_user_pages_dirty_lock(&page, 1, dirty);
+			if (dirty)
+				set_page_dirty_lock(page);
+			put_page(page);
 			usnic_dbg("pa: %pa\n", &pa);
 		}
 		kfree(chunk);
@@ -83,9 +98,8 @@ static void usnic_uiom_put_pages(struct list_head *chunk_list, int dirty)
 }
 
 static int usnic_uiom_get_pages(unsigned long addr, size_t size, int writable,
-				int dmasync, struct usnic_uiom_reg *uiomr)
+				int dmasync, struct list_head *chunk_list)
 {
-	struct list_head *chunk_list = &uiomr->chunk_list;
 	struct page **page_list;
 	struct scatterlist *sg;
 	struct usnic_uiom_chunk *chunk;
@@ -99,17 +113,6 @@ static int usnic_uiom_get_pages(unsigned long addr, size_t size, int writable,
 	int flags;
 	dma_addr_t pa;
 	unsigned int gup_flags;
-	struct mm_struct *mm;
-
-	/*
-	 * If the combination of the addr and size requested for this memory
-	 * region causes an integer overflow, return error.
-	 */
-	if (((addr + size) < addr) || PAGE_ALIGN(addr + size) < (addr + size))
-		return -EINVAL;
-
-	if (!size)
-		return -EINVAL;
 
 	if (!can_do_mlock())
 		return -EPERM;
@@ -122,10 +125,9 @@ static int usnic_uiom_get_pages(unsigned long addr, size_t size, int writable,
 
 	npages = PAGE_ALIGN(size + (addr & ~PAGE_MASK)) >> PAGE_SHIFT;
 
-	uiomr->owning_mm = mm = current->mm;
-	down_read(&mm->mmap_sem);
+	down_write(&current->mm->mmap_sem);
 
-	locked = atomic64_add_return(npages, &current->mm->pinned_vm);
+	locked = npages + current->mm->locked_vm;
 	lock_limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
 
 	if ((locked > lock_limit) && !capable(CAP_IPC_LOCK)) {
@@ -142,10 +144,9 @@ static int usnic_uiom_get_pages(unsigned long addr, size_t size, int writable,
 
 	while (npages) {
 		ret = get_user_pages(cur_base,
-				     min_t(unsigned long, npages,
-				     PAGE_SIZE / sizeof(struct page *)),
-				     gup_flags | FOLL_LONGTERM,
-				     page_list, NULL);
+					min_t(unsigned long, npages,
+					PAGE_SIZE / sizeof(struct page *)),
+					gup_flags, page_list, NULL);
 
 		if (ret < 0)
 			goto out;
@@ -154,8 +155,9 @@ static int usnic_uiom_get_pages(unsigned long addr, size_t size, int writable,
 		off = 0;
 
 		while (ret) {
-			chunk = kmalloc(struct_size(chunk, page_list,
-					min_t(int, ret, USNIC_UIOM_PAGE_CHUNK)),
+			chunk = kmalloc(sizeof(*chunk) +
+					sizeof(struct scatterlist) *
+					min_t(int, ret, USNIC_UIOM_PAGE_CHUNK),
 					GFP_KERNEL);
 			if (!chunk) {
 				ret = -ENOMEM;
@@ -181,13 +183,12 @@ static int usnic_uiom_get_pages(unsigned long addr, size_t size, int writable,
 	}
 
 out:
-	if (ret < 0) {
+	if (ret < 0)
 		usnic_uiom_put_pages(chunk_list, 0);
-		atomic64_sub(npages, &current->mm->pinned_vm);
-	} else
-		mmgrab(uiomr->owning_mm);
+	else
+		current->mm->locked_vm = locked;
 
-	up_read(&mm->mmap_sem);
+	up_write(&current->mm->mmap_sem);
 	free_page((unsigned long) page_list);
 	return ret;
 }
@@ -367,7 +368,7 @@ struct usnic_uiom_reg *usnic_uiom_reg_get(struct usnic_uiom_pd *pd,
 	uiomr->pd = pd;
 
 	err = usnic_uiom_get_pages(addr, size, writable, dmasync,
-				   uiomr);
+					&uiomr->chunk_list);
 	if (err) {
 		usnic_err("Failed get_pages vpn [0x%lx,0x%lx] err %d\n",
 				vpn_start, vpn_last, err);
@@ -414,29 +415,50 @@ out_put_intervals:
 out_put_pages:
 	usnic_uiom_put_pages(&uiomr->chunk_list, 0);
 	spin_unlock(&pd->lock);
-	mmdrop(uiomr->owning_mm);
 out_free_uiomr:
 	kfree(uiomr);
 	return ERR_PTR(err);
 }
 
-static void __usnic_uiom_release_tail(struct usnic_uiom_reg *uiomr)
+void usnic_uiom_reg_release(struct usnic_uiom_reg *uiomr, int closing)
 {
-	mmdrop(uiomr->owning_mm);
-	kfree(uiomr);
-}
+	struct mm_struct *mm;
+	unsigned long diff;
 
-static inline size_t usnic_uiom_num_pages(struct usnic_uiom_reg *uiomr)
-{
-	return PAGE_ALIGN(uiomr->length + uiomr->offset) >> PAGE_SHIFT;
-}
-
-void usnic_uiom_reg_release(struct usnic_uiom_reg *uiomr)
-{
 	__usnic_uiom_reg_release(uiomr->pd, uiomr, 1);
 
-	atomic64_sub(usnic_uiom_num_pages(uiomr), &uiomr->owning_mm->pinned_vm);
-	__usnic_uiom_release_tail(uiomr);
+	mm = get_task_mm(current);
+	if (!mm) {
+		kfree(uiomr);
+		return;
+	}
+
+	diff = PAGE_ALIGN(uiomr->length + uiomr->offset) >> PAGE_SHIFT;
+
+	/*
+	 * We may be called with the mm's mmap_sem already held.  This
+	 * can happen when a userspace munmap() is the call that drops
+	 * the last reference to our file and calls our release
+	 * method.  If there are memory regions to destroy, we'll end
+	 * up here and not be able to take the mmap_sem.  In that case
+	 * we defer the vm_locked accounting to the system workqueue.
+	 */
+	if (closing) {
+		if (!down_write_trylock(&mm->mmap_sem)) {
+			INIT_WORK(&uiomr->work, usnic_uiom_reg_account);
+			uiomr->mm = mm;
+			uiomr->diff = diff;
+
+			queue_work(usnic_uiom_wq, &uiomr->work);
+			return;
+		}
+	} else
+		down_write(&mm->mmap_sem);
+
+	current->mm->locked_vm -= diff;
+	up_write(&mm->mmap_sem);
+	mmput(mm);
+	kfree(uiomr);
 }
 
 struct usnic_uiom_pd *usnic_uiom_alloc_pd(void)
@@ -564,5 +586,17 @@ int usnic_uiom_init(char *drv_name)
 		return -EPERM;
 	}
 
+	usnic_uiom_wq = create_workqueue(drv_name);
+	if (!usnic_uiom_wq) {
+		usnic_err("Unable to alloc wq for drv %s\n", drv_name);
+		return -ENOMEM;
+	}
+
 	return 0;
+}
+
+void usnic_uiom_fini(void)
+{
+	flush_workqueue(usnic_uiom_wq);
+	destroy_workqueue(usnic_uiom_wq);
 }

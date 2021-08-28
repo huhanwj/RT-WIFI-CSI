@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * EP93xx ethernet network device driver
  * Copyright (C) 2006 Lennert Buytenhek <buytenh@wantstofly.org>
  * Dedicated to Marija Kulikova.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ":%s: " fmt, __func__
@@ -21,7 +25,7 @@
 #include <linux/io.h>
 #include <linux/slab.h>
 
-#include <linux/platform_data/eth-ep93xx.h>
+#include <mach/hardware.h>
 
 #define DRV_MODULE_NAME		"ep93xx-eth"
 #define DRV_MODULE_VERSION	"0.1"
@@ -328,7 +332,7 @@ static int ep93xx_poll(struct napi_struct *napi, int budget)
 	return rx;
 }
 
-static netdev_tx_t ep93xx_xmit(struct sk_buff *skb, struct net_device *dev)
+static int ep93xx_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct ep93xx_priv *ep = netdev_priv(dev);
 	struct ep93xx_tdesc *txd;
@@ -763,7 +767,6 @@ static int ep93xx_eth_remove(struct platform_device *pdev)
 {
 	struct net_device *dev;
 	struct ep93xx_priv *ep;
-	struct resource *mem;
 
 	dev = platform_get_drvdata(pdev);
 	if (dev == NULL)
@@ -779,8 +782,8 @@ static int ep93xx_eth_remove(struct platform_device *pdev)
 		iounmap(ep->base_addr);
 
 	if (ep->res != NULL) {
-		mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-		release_mem_region(mem->start, resource_size(mem));
+		release_resource(ep->res);
+		kfree(ep->res);
 	}
 
 	free_netdev(dev);

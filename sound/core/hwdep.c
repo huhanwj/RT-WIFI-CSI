@@ -1,7 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Hardware dependent layer
  *  Copyright (c) by Jaroslav Kysela <perex@perex.cz>
+ *
+ *
+ *   This program is free software; you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation; either version 2 of the License, or
+ *   (at your option) any later version.
+ *
+ *   This program is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with this program; if not, write to the Free Software
+ *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+ *
  */
 
 #include <linux/major.h>
@@ -162,7 +177,7 @@ static int snd_hwdep_release(struct inode *inode, struct file * file)
 	return err;
 }
 
-static __poll_t snd_hwdep_poll(struct file * file, poll_table * wait)
+static unsigned int snd_hwdep_poll(struct file * file, poll_table * wait)
 {
 	struct snd_hwdep *hw = file->private_data;
 	if (hw->ops.poll)
@@ -218,6 +233,8 @@ static int snd_hwdep_dsp_load(struct snd_hwdep *hw,
 	/* check whether the dsp was already loaded */
 	if (hw->dsp_loaded & (1 << info.index))
 		return -EBUSY;
+	if (!access_ok(VERIFY_READ, info.image, info.length))
+		return -EFAULT;
 	err = hw->ops.dsp_load(hw, &info);
 	if (err < 0)
 		return err;

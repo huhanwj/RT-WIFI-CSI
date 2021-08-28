@@ -1,8 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0+
-/*
- * Driver for Realtek PCI-Express card reader
+/* Driver for Realtek PCI-Express card reader
  *
  * Copyright(c) 2009-2013 Realtek Semiconductor Corp. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2, or (at your option) any
+ * later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, see <http://www.gnu.org/licenses/>.
  *
  * Author:
  *   Wei WANG (wei_wang@realsil.com.cn)
@@ -226,6 +237,12 @@ static struct scsi_host_template rtsx_host_template = {
 	/* limit the total size of a transfer to 120 KB */
 	.max_sectors =                  240,
 
+	/* merge commands... this seems to help performance, but
+	 * periodically someone should test to see which setting is more
+	 * optimal.
+	 */
+	.use_clustering =		1,
+
 	/* emulated HBA */
 	.emulated =			1,
 
@@ -254,6 +271,23 @@ static int rtsx_acquire_irq(struct rtsx_dev *dev)
 
 	dev->irq = dev->pci->irq;
 	pci_intx(dev->pci, !chip->msi_en);
+
+	return 0;
+}
+
+int rtsx_read_pci_cfg_byte(u8 bus, u8 dev, u8 func, u8 offset, u8 *val)
+{
+	struct pci_dev *pdev;
+	u8 data;
+	u8 devfn = (dev << 3) | func;
+
+	pdev = pci_get_bus_and_slot(bus, devfn);
+	if (!pdev)
+		return -1;
+
+	pci_read_config_byte(pdev, offset, &data);
+	if (val)
+		*val = data;
 
 	return 0;
 }
@@ -840,7 +874,7 @@ static int rtsx_probe(struct pci_dev *pci,
 	dev->chip = kzalloc(sizeof(*dev->chip), GFP_KERNEL);
 	if (!dev->chip) {
 		err = -ENOMEM;
-		goto chip_alloc_fail;
+		goto errout;
 	}
 
 	spin_lock_init(&dev->reg_lock);
@@ -862,7 +896,7 @@ static int rtsx_probe(struct pci_dev *pci,
 	if (!dev->remap_addr) {
 		dev_err(&pci->dev, "ioremap error\n");
 		err = -ENXIO;
-		goto ioremap_fail;
+		goto errout;
 	}
 
 	/*
@@ -877,7 +911,7 @@ static int rtsx_probe(struct pci_dev *pci,
 	if (!dev->rtsx_resv_buf) {
 		dev_err(&pci->dev, "alloc dma buffer fail\n");
 		err = -ENXIO;
-		goto dma_alloc_fail;
+		goto errout;
 	}
 	dev->chip->host_cmds_ptr = dev->rtsx_resv_buf;
 	dev->chip->host_cmds_addr = dev->rtsx_resv_buf_addr;
@@ -898,7 +932,7 @@ static int rtsx_probe(struct pci_dev *pci,
 
 	if (rtsx_acquire_irq(dev) < 0) {
 		err = -EBUSY;
-		goto irq_acquire_fail;
+		goto errout;
 	}
 
 	pci_set_master(pci);
@@ -918,14 +952,14 @@ static int rtsx_probe(struct pci_dev *pci,
 	if (IS_ERR(th)) {
 		dev_err(&pci->dev, "Unable to start control thread\n");
 		err = PTR_ERR(th);
-		goto control_thread_fail;
+		goto errout;
 	}
 	dev->ctl_thread = th;
 
 	err = scsi_add_host(host, &pci->dev);
 	if (err) {
 		dev_err(&pci->dev, "Unable to add the scsi host\n");
-		goto scsi_add_host_fail;
+		goto errout;
 	}
 
 	/* Start up the thread for delayed SCSI-device scanning */
@@ -933,16 +967,18 @@ static int rtsx_probe(struct pci_dev *pci,
 	if (IS_ERR(th)) {
 		dev_err(&pci->dev, "Unable to start the device-scanning thread\n");
 		complete(&dev->scanning_done);
+		quiesce_and_remove_host(dev);
 		err = PTR_ERR(th);
-		goto scan_thread_fail;
+		goto errout;
 	}
 
 	/* Start up the thread for polling thread */
 	th = kthread_run(rtsx_polling_thread, dev, "rtsx-polling");
 	if (IS_ERR(th)) {
 		dev_err(&pci->dev, "Unable to start the device-polling thread\n");
+		quiesce_and_remove_host(dev);
 		err = PTR_ERR(th);
-		goto scan_thread_fail;
+		goto errout;
 	}
 	dev->polling_thread = th;
 
@@ -951,25 +987,9 @@ static int rtsx_probe(struct pci_dev *pci,
 	return 0;
 
 	/* We come here if there are any problems */
-scan_thread_fail:
-	quiesce_and_remove_host(dev);
-scsi_add_host_fail:
-	complete(&dev->cmnd_ready);
-	wait_for_completion(&dev->control_exit);
-control_thread_fail:
-	free_irq(dev->irq, (void *)dev);
-	rtsx_release_chip(dev->chip);
-irq_acquire_fail:
-	dev->chip->host_cmds_ptr = NULL;
-	dev->chip->host_sg_tbl_ptr = NULL;
-	if (dev->chip->msi_en)
-		pci_disable_msi(dev->pci);
-dma_alloc_fail:
-	iounmap(dev->remap_addr);
-ioremap_fail:
-	kfree(dev->chip);
-chip_alloc_fail:
+errout:
 	dev_err(&pci->dev, "%s failed\n", __func__);
+	release_everything(dev);
 
 	return err;
 }

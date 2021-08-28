@@ -1,23 +1,17 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <errno.h>
 #include <inttypes.h>
-#include <limits.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <linux/types.h>
 #include <sys/prctl.h>
-#include <perf/cpumap.h>
-#include <perf/evlist.h>
 
-#include "debug.h"
 #include "parse-events.h"
 #include "evlist.h"
 #include "evsel.h"
 #include "thread_map.h"
-#include "record.h"
+#include "cpumap.h"
 #include "tsc.h"
-#include "util/mmap.h"
 #include "tests/tests.h"
 
 #include "arch-tests.h"
@@ -55,10 +49,10 @@ int test__perf_time_to_tsc(struct test *test __maybe_unused, int subtest __maybe
 		},
 		.sample_time	     = true,
 	};
-	struct perf_thread_map *threads = NULL;
-	struct perf_cpu_map *cpus = NULL;
-	struct evlist *evlist = NULL;
-	struct evsel *evsel = NULL;
+	struct thread_map *threads = NULL;
+	struct cpu_map *cpus = NULL;
+	struct perf_evlist *evlist = NULL;
+	struct perf_evsel *evsel = NULL;
 	int err = -1, ret, i;
 	const char *comm1, *comm2;
 	struct perf_tsc_conversion tc;
@@ -66,34 +60,33 @@ int test__perf_time_to_tsc(struct test *test __maybe_unused, int subtest __maybe
 	union perf_event *event;
 	u64 test_tsc, comm1_tsc, comm2_tsc;
 	u64 test_time, comm1_time = 0, comm2_time = 0;
-	struct mmap *md;
 
 	threads = thread_map__new(-1, getpid(), UINT_MAX);
 	CHECK_NOT_NULL__(threads);
 
-	cpus = perf_cpu_map__new(NULL);
+	cpus = cpu_map__new(NULL);
 	CHECK_NOT_NULL__(cpus);
 
-	evlist = evlist__new();
+	evlist = perf_evlist__new();
 	CHECK_NOT_NULL__(evlist);
 
-	perf_evlist__set_maps(&evlist->core, cpus, threads);
+	perf_evlist__set_maps(evlist, cpus, threads);
 
 	CHECK__(parse_events(evlist, "cycles:u", NULL));
 
 	perf_evlist__config(evlist, &opts, NULL);
 
-	evsel = evlist__first(evlist);
+	evsel = perf_evlist__first(evlist);
 
-	evsel->core.attr.comm = 1;
-	evsel->core.attr.disabled = 1;
-	evsel->core.attr.enable_on_exec = 0;
+	evsel->attr.comm = 1;
+	evsel->attr.disabled = 1;
+	evsel->attr.enable_on_exec = 0;
 
-	CHECK__(evlist__open(evlist));
+	CHECK__(perf_evlist__open(evlist));
 
-	CHECK__(evlist__mmap(evlist, UINT_MAX));
+	CHECK__(perf_evlist__mmap(evlist, UINT_MAX, false));
 
-	pc = evlist->mmap[0].core.base;
+	pc = evlist->mmap[0].base;
 	ret = perf_read_tsc_conversion(pc, &tc);
 	if (ret) {
 		if (ret == -EOPNOTSUPP) {
@@ -103,7 +96,7 @@ int test__perf_time_to_tsc(struct test *test __maybe_unused, int subtest __maybe
 		goto out_err;
 	}
 
-	evlist__enable(evlist);
+	perf_evlist__enable(evlist);
 
 	comm1 = "Test COMM 1";
 	CHECK__(prctl(PR_SET_NAME, (unsigned long)comm1, 0, 0, 0));
@@ -113,14 +106,10 @@ int test__perf_time_to_tsc(struct test *test __maybe_unused, int subtest __maybe
 	comm2 = "Test COMM 2";
 	CHECK__(prctl(PR_SET_NAME, (unsigned long)comm2, 0, 0, 0));
 
-	evlist__disable(evlist);
+	perf_evlist__disable(evlist);
 
-	for (i = 0; i < evlist->core.nr_mmaps; i++) {
-		md = &evlist->mmap[i];
-		if (perf_mmap__read_init(md) < 0)
-			continue;
-
-		while ((event = perf_mmap__read_event(md)) != NULL) {
+	for (i = 0; i < evlist->nr_mmaps; i++) {
+		while ((event = perf_evlist__mmap_read(evlist, i)) != NULL) {
 			struct perf_sample sample;
 
 			if (event->header.type != PERF_RECORD_COMM ||
@@ -139,9 +128,8 @@ int test__perf_time_to_tsc(struct test *test __maybe_unused, int subtest __maybe
 				comm2_time = sample.time;
 			}
 next_event:
-			perf_mmap__consume(md);
+			perf_evlist__mmap_consume(evlist, i);
 		}
-		perf_mmap__read_done(md);
 	}
 
 	if (!comm1_time || !comm2_time)
@@ -169,6 +157,6 @@ next_event:
 	err = 0;
 
 out_err:
-	evlist__delete(evlist);
+	perf_evlist__delete(evlist);
 	return err;
 }

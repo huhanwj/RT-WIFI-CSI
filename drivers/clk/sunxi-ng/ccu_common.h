@@ -1,6 +1,14 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2016 Maxime Ripard. All rights reserved.
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #ifndef _COMMON_H_
@@ -22,6 +30,35 @@
 #define CCU_MMC_NEW_TIMING_MODE		BIT(30)
 
 struct device_node;
+
+#define CLK_HW_INIT(_name, _parent, _ops, _flags)			\
+	&(struct clk_init_data) {					\
+		.flags		= _flags,				\
+		.name		= _name,				\
+		.parent_names	= (const char *[]) { _parent },		\
+		.num_parents	= 1,					\
+		.ops 		= _ops,					\
+	}
+
+#define CLK_HW_INIT_PARENTS(_name, _parents, _ops, _flags)		\
+	&(struct clk_init_data) {					\
+		.flags		= _flags,				\
+		.name		= _name,				\
+		.parent_names	= _parents,				\
+		.num_parents	= ARRAY_SIZE(_parents),			\
+		.ops 		= _ops,					\
+	}
+
+#define CLK_FIXED_FACTOR(_struct, _name, _parent,			\
+			_div, _mult, _flags)				\
+	struct clk_fixed_factor _struct = {				\
+		.div		= _div,					\
+		.mult		= _mult,				\
+		.hw.init	= CLK_HW_INIT(_name,			\
+					      _parent,			\
+					      &clk_fixed_factor_ops,	\
+					      _flags),			\
+	}
 
 struct ccu_common {
 	void __iomem	*base;

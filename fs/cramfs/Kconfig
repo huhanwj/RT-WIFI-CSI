@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 config CRAMFS
 	tristate "Compressed ROM file system support (cramfs)"
 	select ZLIB_INFLATE
@@ -34,7 +33,8 @@ config CRAMFS_BLOCKDEV
 
 config CRAMFS_MTD
 	bool "Support CramFs image directly mapped in physical memory"
-	depends on CRAMFS && CRAMFS <= MTD
+	depends on CRAMFS && MTD
+	depends on CRAMFS=m || MTD=y
 	default y if !CRAMFS_BLOCKDEV
 	help
 	  This option allows the CramFs driver to load data directly from

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2005 Intel Corporation
  * Copyright (C) 2009 Hewlett-Packard Development Company, L.P.
@@ -206,7 +205,6 @@ phys_cpuid_t acpi_get_phys_id(acpi_handle handle, int type, u32 acpi_id)
 
 	return phys_id;
 }
-EXPORT_SYMBOL_GPL(acpi_get_phys_id);
 
 int acpi_map_cpuid(phys_cpuid_t phys_id, u32 acpi_id)
 {

@@ -1,7 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *
  * Copyright (C) 2011 Novell Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
  */
 
 #include <uapi/linux/magic.h>
@@ -14,7 +17,6 @@
 #include <linux/statfs.h>
 #include <linux/seq_file.h>
 #include <linux/posix_acl_xattr.h>
-#include <linux/exportfs.h>
 #include "overlayfs.h"
 
 MODULE_AUTHOR("Miklos Szeredi <miklos@szeredi.hu>");
@@ -28,30 +30,20 @@ struct ovl_dir_cache;
 
 static bool ovl_redirect_dir_def = IS_ENABLED(CONFIG_OVERLAY_FS_REDIRECT_DIR);
 module_param_named(redirect_dir, ovl_redirect_dir_def, bool, 0644);
-MODULE_PARM_DESC(redirect_dir,
+MODULE_PARM_DESC(ovl_redirect_dir_def,
 		 "Default to on or off for the redirect_dir feature");
 
 static bool ovl_redirect_always_follow =
 	IS_ENABLED(CONFIG_OVERLAY_FS_REDIRECT_ALWAYS_FOLLOW);
 module_param_named(redirect_always_follow, ovl_redirect_always_follow,
 		   bool, 0644);
-MODULE_PARM_DESC(redirect_always_follow,
+MODULE_PARM_DESC(ovl_redirect_always_follow,
 		 "Follow redirects even if redirect_dir feature is turned off");
 
 static bool ovl_index_def = IS_ENABLED(CONFIG_OVERLAY_FS_INDEX);
 module_param_named(index, ovl_index_def, bool, 0644);
-MODULE_PARM_DESC(index,
+MODULE_PARM_DESC(ovl_index_def,
 		 "Default to on or off for the inodes index feature");
-
-static bool ovl_nfs_export_def = IS_ENABLED(CONFIG_OVERLAY_FS_NFS_EXPORT);
-module_param_named(nfs_export, ovl_nfs_export_def, bool, 0644);
-MODULE_PARM_DESC(nfs_export,
-		 "Default to on or off for the NFS export feature");
-
-static bool ovl_xino_auto_def = IS_ENABLED(CONFIG_OVERLAY_FS_XINO_AUTO);
-module_param_named(xino_auto, ovl_xino_auto_def, bool, 0644);
-MODULE_PARM_DESC(xino_auto,
-		 "Auto enable xino feature");
 
 static void ovl_entry_stack_free(struct ovl_entry *oe)
 {
@@ -60,11 +52,6 @@ static void ovl_entry_stack_free(struct ovl_entry *oe)
 	for (i = 0; i < oe->numlower; i++)
 		dput(oe->lowerstack[i].dentry);
 }
-
-static bool ovl_metacopy_def = IS_ENABLED(CONFIG_OVERLAY_FS_METACOPY);
-module_param_named(metacopy, ovl_metacopy_def, bool, 0644);
-MODULE_PARM_DESC(metacopy,
-		 "Default to on or off for the metadata only copy up feature");
 
 static void ovl_dentry_release(struct dentry *dentry)
 {
@@ -76,14 +63,31 @@ static void ovl_dentry_release(struct dentry *dentry)
 	}
 }
 
+static int ovl_check_append_only(struct inode *inode, int flag)
+{
+	/*
+	 * This test was moot in vfs may_open() because overlay inode does
+	 * not have the S_APPEND flag, so re-check on real upper inode
+	 */
+	if (IS_APPEND(inode)) {
+		if  ((flag & O_ACCMODE) != O_RDONLY && !(flag & O_APPEND))
+			return -EPERM;
+		if (flag & O_TRUNC)
+			return -EPERM;
+	}
+
+	return 0;
+}
+
 static struct dentry *ovl_d_real(struct dentry *dentry,
-				 const struct inode *inode)
+				 const struct inode *inode,
+				 unsigned int open_flags, unsigned int flags)
 {
 	struct dentry *real;
+	int err;
 
-	/* It's an overlay file */
-	if (inode && d_inode(dentry) == inode)
-		return dentry;
+	if (flags & D_REAL_UPPER)
+		return ovl_dentry_upper(dentry);
 
 	if (!d_is_reg(dentry)) {
 		if (!inode || inode == d_inode(dentry))
@@ -91,19 +95,28 @@ static struct dentry *ovl_d_real(struct dentry *dentry,
 		goto bug;
 	}
 
+	if (open_flags) {
+		err = ovl_open_maybe_copy_up(dentry, open_flags);
+		if (err)
+			return ERR_PTR(err);
+	}
+
 	real = ovl_dentry_upper(dentry);
-	if (real && (inode == d_inode(real)))
+	if (real && (!inode || inode == d_inode(real))) {
+		if (!inode) {
+			err = ovl_check_append_only(d_inode(real), open_flags);
+			if (err)
+				return ERR_PTR(err);
+		}
 		return real;
+	}
 
-	if (real && !inode && ovl_has_upperdata(d_inode(dentry)))
-		return real;
-
-	real = ovl_dentry_lowerdata(dentry);
+	real = ovl_dentry_lower(dentry);
 	if (!real)
 		goto bug;
 
 	/* Handle recursion */
-	real = d_real(real, inode);
+	real = d_real(real, inode, open_flags, 0);
 
 	if (!inode || inode == d_inode(real))
 		return real;
@@ -181,19 +194,16 @@ static struct inode *ovl_alloc_inode(struct super_block *sb)
 	oi->flags = 0;
 	oi->__upperdentry = NULL;
 	oi->lower = NULL;
-	oi->lowerdata = NULL;
 	mutex_init(&oi->lock);
 
 	return &oi->vfs_inode;
 }
 
-static void ovl_free_inode(struct inode *inode)
+static void ovl_i_callback(struct rcu_head *head)
 {
-	struct ovl_inode *oi = OVL_I(inode);
+	struct inode *inode = container_of(head, struct inode, i_rcu);
 
-	kfree(oi->redirect);
-	mutex_destroy(&oi->lock);
-	kmem_cache_free(ovl_inode_cachep, oi);
+	kmem_cache_free(ovl_inode_cachep, OVL_I(inode));
 }
 
 static void ovl_destroy_inode(struct inode *inode)
@@ -201,21 +211,17 @@ static void ovl_destroy_inode(struct inode *inode)
 	struct ovl_inode *oi = OVL_I(inode);
 
 	dput(oi->__upperdentry);
-	iput(oi->lower);
-	if (S_ISDIR(inode->i_mode))
-		ovl_dir_cache_free(inode);
-	else
-		iput(oi->lowerdata);
+	kfree(oi->redirect);
+	ovl_dir_cache_free(inode);
+	mutex_destroy(&oi->lock);
+
+	call_rcu(&inode->i_rcu, ovl_i_callback);
 }
 
 static void ovl_free_fs(struct ovl_fs *ofs)
 {
 	unsigned i;
 
-	iput(ofs->workbasedir_trap);
-	iput(ofs->indexdir_trap);
-	iput(ofs->workdir_trap);
-	iput(ofs->upperdir_trap);
 	dput(ofs->indexdir);
 	dput(ofs->workdir);
 	if (ofs->workdir_locked)
@@ -225,13 +231,10 @@ static void ovl_free_fs(struct ovl_fs *ofs)
 		ovl_inuse_unlock(ofs->upper_mnt->mnt_root);
 	mntput(ofs->upper_mnt);
 	for (i = 0; i < ofs->numlower; i++) {
-		iput(ofs->lower_layers[i].trap);
 		mntput(ofs->lower_layers[i].mnt);
+		free_anon_bdev(ofs->lower_layers[i].pseudo_dev);
 	}
-	for (i = 0; i < ofs->numlowerfs; i++)
-		free_anon_bdev(ofs->lower_fs[i].pseudo_dev);
 	kfree(ofs->lower_layers);
-	kfree(ofs->lower_fs);
 
 	kfree(ofs->config.lowerdir);
 	kfree(ofs->config.upperdir);
@@ -316,23 +319,6 @@ static const char *ovl_redirect_mode_def(void)
 	return ovl_redirect_dir_def ? "on" : "off";
 }
 
-enum {
-	OVL_XINO_OFF,
-	OVL_XINO_AUTO,
-	OVL_XINO_ON,
-};
-
-static const char * const ovl_xino_str[] = {
-	"off",
-	"auto",
-	"on",
-};
-
-static inline int ovl_xino_def(void)
-{
-	return ovl_xino_auto_def ? OVL_XINO_AUTO : OVL_XINO_OFF;
-}
-
 /**
  * ovl_show_options
  *
@@ -355,14 +341,6 @@ static int ovl_show_options(struct seq_file *m, struct dentry *dentry)
 		seq_printf(m, ",redirect_dir=%s", ofs->config.redirect_mode);
 	if (ofs->config.index != ovl_index_def)
 		seq_printf(m, ",index=%s", ofs->config.index ? "on" : "off");
-	if (ofs->config.nfs_export != ovl_nfs_export_def)
-		seq_printf(m, ",nfs_export=%s", ofs->config.nfs_export ?
-						"on" : "off");
-	if (ofs->config.xino != ovl_xino_def())
-		seq_printf(m, ",xino=%s", ovl_xino_str[ofs->config.xino]);
-	if (ofs->config.metacopy != ovl_metacopy_def)
-		seq_printf(m, ",metacopy=%s",
-			   ofs->config.metacopy ? "on" : "off");
 	return 0;
 }
 
@@ -378,7 +356,6 @@ static int ovl_remount(struct super_block *sb, int *flags, char *data)
 
 static const struct super_operations ovl_super_operations = {
 	.alloc_inode	= ovl_alloc_inode,
-	.free_inode	= ovl_free_inode,
 	.destroy_inode	= ovl_destroy_inode,
 	.drop_inode	= generic_delete_inode,
 	.put_super	= ovl_put_super,
@@ -396,13 +373,6 @@ enum {
 	OPT_REDIRECT_DIR,
 	OPT_INDEX_ON,
 	OPT_INDEX_OFF,
-	OPT_NFS_EXPORT_ON,
-	OPT_NFS_EXPORT_OFF,
-	OPT_XINO_ON,
-	OPT_XINO_OFF,
-	OPT_XINO_AUTO,
-	OPT_METACOPY_ON,
-	OPT_METACOPY_OFF,
 	OPT_ERR,
 };
 
@@ -414,13 +384,6 @@ static const match_table_t ovl_tokens = {
 	{OPT_REDIRECT_DIR,		"redirect_dir=%s"},
 	{OPT_INDEX_ON,			"index=on"},
 	{OPT_INDEX_OFF,			"index=off"},
-	{OPT_NFS_EXPORT_ON,		"nfs_export=on"},
-	{OPT_NFS_EXPORT_OFF,		"nfs_export=off"},
-	{OPT_XINO_ON,			"xino=on"},
-	{OPT_XINO_OFF,			"xino=off"},
-	{OPT_XINO_AUTO,			"xino=auto"},
-	{OPT_METACOPY_ON,		"metacopy=on"},
-	{OPT_METACOPY_OFF,		"metacopy=off"},
 	{OPT_ERR,			NULL}
 };
 
@@ -473,8 +436,6 @@ static int ovl_parse_redirect_mode(struct ovl_config *config, const char *mode)
 static int ovl_parse_opt(char *opt, struct ovl_config *config)
 {
 	char *p;
-	int err;
-	bool metacopy_opt = false, redirect_opt = false;
 
 	config->redirect_mode = kstrdup(ovl_redirect_mode_def(), GFP_KERNEL);
 	if (!config->redirect_mode)
@@ -519,7 +480,6 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 			config->redirect_mode = match_strdup(&args[0]);
 			if (!config->redirect_mode)
 				return -ENOMEM;
-			redirect_opt = true;
 			break;
 
 		case OPT_INDEX_ON:
@@ -528,35 +488,6 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 
 		case OPT_INDEX_OFF:
 			config->index = false;
-			break;
-
-		case OPT_NFS_EXPORT_ON:
-			config->nfs_export = true;
-			break;
-
-		case OPT_NFS_EXPORT_OFF:
-			config->nfs_export = false;
-			break;
-
-		case OPT_XINO_ON:
-			config->xino = OVL_XINO_ON;
-			break;
-
-		case OPT_XINO_OFF:
-			config->xino = OVL_XINO_OFF;
-			break;
-
-		case OPT_XINO_AUTO:
-			config->xino = OVL_XINO_AUTO;
-			break;
-
-		case OPT_METACOPY_ON:
-			config->metacopy = true;
-			metacopy_opt = true;
-			break;
-
-		case OPT_METACOPY_OFF:
-			config->metacopy = false;
 			break;
 
 		default:
@@ -573,39 +504,7 @@ static int ovl_parse_opt(char *opt, struct ovl_config *config)
 		config->workdir = NULL;
 	}
 
-	err = ovl_parse_redirect_mode(config, config->redirect_mode);
-	if (err)
-		return err;
-
-	/*
-	 * This is to make the logic below simpler.  It doesn't make any other
-	 * difference, since config->redirect_dir is only used for upper.
-	 */
-	if (!config->upperdir && config->redirect_follow)
-		config->redirect_dir = true;
-
-	/* Resolve metacopy -> redirect_dir dependency */
-	if (config->metacopy && !config->redirect_dir) {
-		if (metacopy_opt && redirect_opt) {
-			pr_err("overlayfs: conflicting options: metacopy=on,redirect_dir=%s\n",
-			       config->redirect_mode);
-			return -EINVAL;
-		}
-		if (redirect_opt) {
-			/*
-			 * There was an explicit redirect_dir=... that resulted
-			 * in this conflict.
-			 */
-			pr_info("overlayfs: disabling metacopy due to redirect_dir=%s\n",
-				config->redirect_mode);
-			config->metacopy = false;
-		} else {
-			/* Automatically enable redirect otherwise. */
-			config->redirect_follow = config->redirect_dir = true;
-		}
-	}
-
-	return 0;
+	return ovl_parse_redirect_mode(config, config->redirect_mode);
 }
 
 #define OVL_WORKDIR_NAME "work"
@@ -620,6 +519,10 @@ static struct dentry *ovl_workdir_create(struct ovl_fs *ofs,
 	int err;
 	bool retried = false;
 	bool locked = false;
+
+	err = mnt_want_write(mnt);
+	if (err)
+		goto out_err;
 
 	inode_lock_nested(dir, I_MUTEX_PARENT);
 	locked = true;
@@ -647,10 +550,11 @@ retry:
 			goto retry;
 		}
 
-		work = ovl_create_real(dir, work, OVL_CATTR(attr.ia_mode));
-		err = PTR_ERR(work);
-		if (IS_ERR(work))
-			goto out_err;
+		err = ovl_create_real(dir, work,
+				      &(struct cattr){.mode = S_IFDIR | 0},
+				      NULL, true);
+		if (err)
+			goto out_dput;
 
 		/*
 		 * Try to remove POSIX ACL xattrs from workdir.  We are good if:
@@ -684,6 +588,7 @@ retry:
 		goto out_err;
 	}
 out_unlock:
+	mnt_drop_write(mnt);
 	if (locked)
 		inode_unlock(dir);
 
@@ -779,7 +684,6 @@ static int ovl_check_namelen(struct path *path, struct ovl_fs *ofs,
 static int ovl_lower_dir(const char *name, struct path *path,
 			 struct ovl_fs *ofs, int *stack_depth, bool *remote)
 {
-	int fh_type;
 	int err;
 
 	err = ovl_mount_dir_noesc(name, path);
@@ -796,21 +700,13 @@ static int ovl_lower_dir(const char *name, struct path *path,
 		*remote = true;
 
 	/*
-	 * The inodes index feature and NFS export need to encode and decode
-	 * file handles, so they require that all layers support them.
+	 * The inodes index feature needs to encode and decode file
+	 * handles, so it requires that all layers support them.
 	 */
-	fh_type = ovl_can_decode_fh(path->dentry->d_sb);
-	if ((ofs->config.nfs_export ||
-	     (ofs->config.index && ofs->config.upperdir)) && !fh_type) {
+	if (ofs->config.index && !ovl_can_decode_fh(path->dentry->d_sb)) {
 		ofs->config.index = false;
-		ofs->config.nfs_export = false;
-		pr_warn("overlayfs: fs on '%s' does not support file handles, falling back to index=off,nfs_export=off.\n",
-			name);
+		pr_warn("overlayfs: fs on '%s' does not support file handles, falling back to index=off.\n", name);
 	}
-
-	/* Check if lower fs has 32bit inode numbers */
-	if (fh_type != FILEID_INO32_GEN)
-		ofs->xino_bits = 0;
 
 	return 0;
 
@@ -986,45 +882,7 @@ static const struct xattr_handler *ovl_xattr_handlers[] = {
 	NULL
 };
 
-static int ovl_setup_trap(struct super_block *sb, struct dentry *dir,
-			  struct inode **ptrap, const char *name)
-{
-	struct inode *trap;
-	int err;
-
-	trap = ovl_get_trap_inode(sb, dir);
-	err = PTR_ERR_OR_ZERO(trap);
-	if (err) {
-		if (err == -ELOOP)
-			pr_err("overlayfs: conflicting %s path\n", name);
-		return err;
-	}
-
-	*ptrap = trap;
-	return 0;
-}
-
-/*
- * Determine how we treat concurrent use of upperdir/workdir based on the
- * index feature. This is papering over mount leaks of container runtimes,
- * for example, an old overlay mount is leaked and now its upperdir is
- * attempted to be used as a lower layer in a new overlay mount.
- */
-static int ovl_report_in_use(struct ovl_fs *ofs, const char *name)
-{
-	if (ofs->config.index) {
-		pr_err("overlayfs: %s is in-use as upperdir/workdir of another mount, mount with '-o index=off' to override exclusive upperdir protection.\n",
-		       name);
-		return -EBUSY;
-	} else {
-		pr_warn("overlayfs: %s is in-use as upperdir/workdir of another mount, accessing files from both mounts will result in undefined behavior.\n",
-			name);
-		return 0;
-	}
-}
-
-static int ovl_get_upper(struct super_block *sb, struct ovl_fs *ofs,
-			 struct path *upperpath)
+static int ovl_get_upper(struct ovl_fs *ofs, struct path *upperpath)
 {
 	struct vfsmount *upper_mnt;
 	int err;
@@ -1044,10 +902,15 @@ static int ovl_get_upper(struct super_block *sb, struct ovl_fs *ofs,
 	if (err)
 		goto out;
 
-	err = ovl_setup_trap(sb, upperpath->dentry, &ofs->upperdir_trap,
-			     "upperdir");
-	if (err)
+	err = -EBUSY;
+	if (ovl_inuse_trylock(upperpath->dentry)) {
+		ofs->upperdir_locked = true;
+	} else if (ofs->config.index) {
+		pr_err("overlayfs: upperdir is in-use by another mount, mount with '-o index=off' to override exclusive upperdir protection.\n");
 		goto out;
+	} else {
+		pr_warn("overlayfs: upperdir is in-use by another mount, accessing files from both mounts will result in undefined behavior.\n");
+	}
 
 	upper_mnt = clone_private_mount(upperpath);
 	err = PTR_ERR(upper_mnt);
@@ -1059,39 +922,19 @@ static int ovl_get_upper(struct super_block *sb, struct ovl_fs *ofs,
 	/* Don't inherit atime flags */
 	upper_mnt->mnt_flags &= ~(MNT_NOATIME | MNT_NODIRATIME | MNT_RELATIME);
 	ofs->upper_mnt = upper_mnt;
-
-	if (ovl_inuse_trylock(ofs->upper_mnt->mnt_root)) {
-		ofs->upperdir_locked = true;
-	} else {
-		err = ovl_report_in_use(ofs, "upperdir");
-		if (err)
-			goto out;
-	}
-
 	err = 0;
 out:
 	return err;
 }
 
-static int ovl_make_workdir(struct super_block *sb, struct ovl_fs *ofs,
-			    struct path *workpath)
+static int ovl_make_workdir(struct ovl_fs *ofs, struct path *workpath)
 {
-	struct vfsmount *mnt = ofs->upper_mnt;
 	struct dentry *temp;
-	int fh_type;
 	int err;
-
-	err = mnt_want_write(mnt);
-	if (err)
-		return err;
 
 	ofs->workdir = ovl_workdir_create(ofs, OVL_WORKDIR_NAME, false);
 	if (!ofs->workdir)
-		goto out;
-
-	err = ovl_setup_trap(sb, ofs->workdir, &ofs->workdir_trap, "workdir");
-	if (err)
-		goto out;
+		return 0;
 
 	/*
 	 * Upper should support d_type, else whiteouts are visible.  Given
@@ -1101,7 +944,7 @@ static int ovl_make_workdir(struct super_block *sb, struct ovl_fs *ofs,
 	 */
 	err = ovl_check_d_type_supported(workpath);
 	if (err < 0)
-		goto out;
+		return err;
 
 	/*
 	 * We allowed this configuration and don't want to break users over
@@ -1124,37 +967,22 @@ static int ovl_make_workdir(struct super_block *sb, struct ovl_fs *ofs,
 	err = ovl_do_setxattr(ofs->workdir, OVL_XATTR_OPAQUE, "0", 1, 0);
 	if (err) {
 		ofs->noxattr = true;
-		ofs->config.index = false;
-		ofs->config.metacopy = false;
-		pr_warn("overlayfs: upper fs does not support xattr, falling back to index=off and metacopy=off.\n");
-		err = 0;
+		pr_warn("overlayfs: upper fs does not support xattr.\n");
 	} else {
 		vfs_removexattr(ofs->workdir, OVL_XATTR_OPAQUE);
 	}
 
 	/* Check if upper/work fs supports file handles */
-	fh_type = ovl_can_decode_fh(ofs->workdir->d_sb);
-	if (ofs->config.index && !fh_type) {
+	if (ofs->config.index &&
+	    !ovl_can_decode_fh(ofs->workdir->d_sb)) {
 		ofs->config.index = false;
 		pr_warn("overlayfs: upper fs does not support file handles, falling back to index=off.\n");
 	}
 
-	/* Check if upper fs has 32bit inode numbers */
-	if (fh_type != FILEID_INO32_GEN)
-		ofs->xino_bits = 0;
-
-	/* NFS export of r/w mount depends on index */
-	if (ofs->config.nfs_export && !ofs->config.index) {
-		pr_warn("overlayfs: NFS export requires \"index=on\", falling back to nfs_export=off.\n");
-		ofs->config.nfs_export = false;
-	}
-out:
-	mnt_drop_write(mnt);
-	return err;
+	return 0;
 }
 
-static int ovl_get_workdir(struct super_block *sb, struct ovl_fs *ofs,
-			   struct path *upperpath)
+static int ovl_get_workdir(struct ovl_fs *ofs, struct path *upperpath)
 {
 	int err;
 	struct path workpath = { };
@@ -1173,42 +1001,36 @@ static int ovl_get_workdir(struct super_block *sb, struct ovl_fs *ofs,
 		goto out;
 	}
 
-	ofs->workbasedir = dget(workpath.dentry);
-
-	if (ovl_inuse_trylock(ofs->workbasedir)) {
+	err = -EBUSY;
+	if (ovl_inuse_trylock(workpath.dentry)) {
 		ofs->workdir_locked = true;
+	} else if (ofs->config.index) {
+		pr_err("overlayfs: workdir is in-use by another mount, mount with '-o index=off' to override exclusive workdir protection.\n");
+		goto out;
 	} else {
-		err = ovl_report_in_use(ofs, "workdir");
-		if (err)
-			goto out;
+		pr_warn("overlayfs: workdir is in-use by another mount, accessing files from both mounts will result in undefined behavior.\n");
 	}
 
-	err = ovl_setup_trap(sb, ofs->workbasedir, &ofs->workbasedir_trap,
-			     "workdir");
+	ofs->workbasedir = dget(workpath.dentry);
+	err = ovl_make_workdir(ofs, &workpath);
 	if (err)
 		goto out;
 
-	err = ovl_make_workdir(sb, ofs, &workpath);
-
+	err = 0;
 out:
 	path_put(&workpath);
 
 	return err;
 }
 
-static int ovl_get_indexdir(struct super_block *sb, struct ovl_fs *ofs,
-			    struct ovl_entry *oe, struct path *upperpath)
+static int ovl_get_indexdir(struct ovl_fs *ofs, struct ovl_entry *oe,
+			    struct path *upperpath)
 {
-	struct vfsmount *mnt = ofs->upper_mnt;
 	int err;
-
-	err = mnt_want_write(mnt);
-	if (err)
-		return err;
 
 	/* Verify lower root is upper root origin */
 	err = ovl_verify_origin(upperpath->dentry, oe->lowerstack[0].dentry,
-				true);
+				false, true);
 	if (err) {
 		pr_err("overlayfs: failed to verify upper root origin\n");
 		goto out;
@@ -1216,100 +1038,28 @@ static int ovl_get_indexdir(struct super_block *sb, struct ovl_fs *ofs,
 
 	ofs->indexdir = ovl_workdir_create(ofs, OVL_INDEXDIR_NAME, true);
 	if (ofs->indexdir) {
-		err = ovl_setup_trap(sb, ofs->indexdir, &ofs->indexdir_trap,
-				     "indexdir");
+		/* Verify upper root is index dir origin */
+		err = ovl_verify_origin(ofs->indexdir, upperpath->dentry,
+					true, true);
 		if (err)
-			goto out;
-
-		/*
-		 * Verify upper root is exclusively associated with index dir.
-		 * Older kernels stored upper fh in "trusted.overlay.origin"
-		 * xattr. If that xattr exists, verify that it is a match to
-		 * upper dir file handle. In any case, verify or set xattr
-		 * "trusted.overlay.upper" to indicate that index may have
-		 * directory entries.
-		 */
-		if (ovl_check_origin_xattr(ofs->indexdir)) {
-			err = ovl_verify_set_fh(ofs->indexdir, OVL_XATTR_ORIGIN,
-						upperpath->dentry, true, false);
-			if (err)
-				pr_err("overlayfs: failed to verify index dir 'origin' xattr\n");
-		}
-		err = ovl_verify_upper(ofs->indexdir, upperpath->dentry, true);
-		if (err)
-			pr_err("overlayfs: failed to verify index dir 'upper' xattr\n");
+			pr_err("overlayfs: failed to verify index dir origin\n");
 
 		/* Cleanup bad/stale/orphan index entries */
 		if (!err)
-			err = ovl_indexdir_cleanup(ofs);
+			err = ovl_indexdir_cleanup(ofs->indexdir,
+						   ofs->upper_mnt,
+						   oe->lowerstack,
+						   oe->numlower);
 	}
 	if (err || !ofs->indexdir)
 		pr_warn("overlayfs: try deleting index dir or mounting with '-o index=off' to disable inodes index.\n");
 
 out:
-	mnt_drop_write(mnt);
 	return err;
 }
 
-static bool ovl_lower_uuid_ok(struct ovl_fs *ofs, const uuid_t *uuid)
-{
-	unsigned int i;
-
-	if (!ofs->config.nfs_export && !(ofs->config.index && ofs->upper_mnt))
-		return true;
-
-	for (i = 0; i < ofs->numlowerfs; i++) {
-		/*
-		 * We use uuid to associate an overlay lower file handle with a
-		 * lower layer, so we can accept lower fs with null uuid as long
-		 * as all lower layers with null uuid are on the same fs.
-		 */
-		if (uuid_equal(&ofs->lower_fs[i].sb->s_uuid, uuid))
-			return false;
-	}
-	return true;
-}
-
-/* Get a unique fsid for the layer */
-static int ovl_get_fsid(struct ovl_fs *ofs, const struct path *path)
-{
-	struct super_block *sb = path->mnt->mnt_sb;
-	unsigned int i;
-	dev_t dev;
-	int err;
-
-	/* fsid 0 is reserved for upper fs even with non upper overlay */
-	if (ofs->upper_mnt && ofs->upper_mnt->mnt_sb == sb)
-		return 0;
-
-	for (i = 0; i < ofs->numlowerfs; i++) {
-		if (ofs->lower_fs[i].sb == sb)
-			return i + 1;
-	}
-
-	if (!ovl_lower_uuid_ok(ofs, &sb->s_uuid)) {
-		ofs->config.index = false;
-		ofs->config.nfs_export = false;
-		pr_warn("overlayfs: %s uuid detected in lower fs '%pd2', falling back to index=off,nfs_export=off.\n",
-			uuid_is_null(&sb->s_uuid) ? "null" : "conflicting",
-			path->dentry);
-	}
-
-	err = get_anon_bdev(&dev);
-	if (err) {
-		pr_err("overlayfs: failed to get anonymous bdev for lowerpath\n");
-		return err;
-	}
-
-	ofs->lower_fs[ofs->numlowerfs].sb = sb;
-	ofs->lower_fs[ofs->numlowerfs].pseudo_dev = dev;
-	ofs->numlowerfs++;
-
-	return ofs->numlowerfs;
-}
-
-static int ovl_get_lower_layers(struct super_block *sb, struct ovl_fs *ofs,
-				struct path *stack, unsigned int numlower)
+static int ovl_get_lower_layers(struct ovl_fs *ofs, struct path *stack,
+				unsigned int numlower)
 {
 	int err;
 	unsigned int i;
@@ -1319,82 +1069,39 @@ static int ovl_get_lower_layers(struct super_block *sb, struct ovl_fs *ofs,
 				    GFP_KERNEL);
 	if (ofs->lower_layers == NULL)
 		goto out;
-
-	ofs->lower_fs = kcalloc(numlower, sizeof(struct ovl_sb),
-				GFP_KERNEL);
-	if (ofs->lower_fs == NULL)
-		goto out;
-
 	for (i = 0; i < numlower; i++) {
 		struct vfsmount *mnt;
-		struct inode *trap;
-		int fsid;
+		dev_t dev;
 
-		err = fsid = ovl_get_fsid(ofs, &stack[i]);
-		if (err < 0)
+		err = get_anon_bdev(&dev);
+		if (err) {
+			pr_err("overlayfs: failed to get anonymous bdev for lowerpath\n");
 			goto out;
-
-		err = ovl_setup_trap(sb, stack[i].dentry, &trap, "lowerdir");
-		if (err)
-			goto out;
-
-		if (ovl_is_inuse(stack[i].dentry)) {
-			err = ovl_report_in_use(ofs, "lowerdir");
-			if (err)
-				goto out;
 		}
 
 		mnt = clone_private_mount(&stack[i]);
 		err = PTR_ERR(mnt);
 		if (IS_ERR(mnt)) {
 			pr_err("overlayfs: failed to clone lowerpath\n");
-			iput(trap);
+			free_anon_bdev(dev);
 			goto out;
 		}
-
 		/*
 		 * Make lower layers R/O.  That way fchmod/fchown on lower file
 		 * will fail instead of modifying lower fs.
 		 */
 		mnt->mnt_flags |= MNT_READONLY | MNT_NOATIME;
 
-		ofs->lower_layers[ofs->numlower].trap = trap;
 		ofs->lower_layers[ofs->numlower].mnt = mnt;
-		ofs->lower_layers[ofs->numlower].idx = i + 1;
-		ofs->lower_layers[ofs->numlower].fsid = fsid;
-		if (fsid) {
-			ofs->lower_layers[ofs->numlower].fs =
-				&ofs->lower_fs[fsid - 1];
-		}
+		ofs->lower_layers[ofs->numlower].pseudo_dev = dev;
 		ofs->numlower++;
-	}
 
-	/*
-	 * When all layers on same fs, overlay can use real inode numbers.
-	 * With mount option "xino=on", mounter declares that there are enough
-	 * free high bits in underlying fs to hold the unique fsid.
-	 * If overlayfs does encounter underlying inodes using the high xino
-	 * bits reserved for fsid, it emits a warning and uses the original
-	 * inode number.
-	 */
-	if (!ofs->numlowerfs || (ofs->numlowerfs == 1 && !ofs->upper_mnt)) {
-		ofs->xino_bits = 0;
-		ofs->config.xino = OVL_XINO_OFF;
-	} else if (ofs->config.xino == OVL_XINO_ON && !ofs->xino_bits) {
-		/*
-		 * This is a roundup of number of bits needed for numlowerfs+1
-		 * (i.e. ilog2(numlowerfs+1 - 1) + 1). fsid 0 is reserved for
-		 * upper fs even with non upper overlay.
-		 */
-		BUILD_BUG_ON(ilog2(OVL_MAX_STACK) > 31);
-		ofs->xino_bits = ilog2(ofs->numlowerfs) + 1;
+		/* Check if all lower layers are on same sb */
+		if (i == 0)
+			ofs->same_sb = mnt->mnt_sb;
+		else if (ofs->same_sb != mnt->mnt_sb)
+			ofs->same_sb = NULL;
 	}
-
-	if (ofs->xino_bits) {
-		pr_info("overlayfs: \"xino\" feature enabled using %d upper inode bits.\n",
-			ofs->xino_bits);
-	}
-
 	err = 0;
 out:
 	return err;
@@ -1424,10 +1131,6 @@ static struct ovl_entry *ovl_get_lowerstack(struct super_block *sb,
 	} else if (!ofs->config.upperdir && stacklen == 1) {
 		pr_err("overlayfs: at least 2 lowerdir are needed while upperdir nonexistent\n");
 		goto out_err;
-	} else if (!ofs->config.upperdir && ofs->config.nfs_export &&
-		   ofs->config.redirect_follow) {
-		pr_warn("overlayfs: NFS export requires \"redirect_dir=nofollow\" on non-upper mount, falling back to nfs_export=off.\n");
-		ofs->config.nfs_export = false;
 	}
 
 	err = -ENOMEM;
@@ -1453,7 +1156,7 @@ static struct ovl_entry *ovl_get_lowerstack(struct super_block *sb,
 		goto out_err;
 	}
 
-	err = ovl_get_lower_layers(sb, ofs, stack, numlower);
+	err = ovl_get_lower_layers(ofs, stack, numlower);
 	if (err)
 		goto out_err;
 
@@ -1485,77 +1188,6 @@ out_err:
 	goto out;
 }
 
-/*
- * Check if this layer root is a descendant of:
- * - another layer of this overlayfs instance
- * - upper/work dir of any overlayfs instance
- */
-static int ovl_check_layer(struct super_block *sb, struct ovl_fs *ofs,
-			   struct dentry *dentry, const char *name)
-{
-	struct dentry *next = dentry, *parent;
-	int err = 0;
-
-	if (!dentry)
-		return 0;
-
-	parent = dget_parent(next);
-
-	/* Walk back ancestors to root (inclusive) looking for traps */
-	while (!err && parent != next) {
-		if (ovl_lookup_trap_inode(sb, parent)) {
-			err = -ELOOP;
-			pr_err("overlayfs: overlapping %s path\n", name);
-		} else if (ovl_is_inuse(parent)) {
-			err = ovl_report_in_use(ofs, name);
-		}
-		next = parent;
-		parent = dget_parent(next);
-		dput(next);
-	}
-
-	dput(parent);
-
-	return err;
-}
-
-/*
- * Check if any of the layers or work dirs overlap.
- */
-static int ovl_check_overlapping_layers(struct super_block *sb,
-					struct ovl_fs *ofs)
-{
-	int i, err;
-
-	if (ofs->upper_mnt) {
-		err = ovl_check_layer(sb, ofs, ofs->upper_mnt->mnt_root,
-				      "upperdir");
-		if (err)
-			return err;
-
-		/*
-		 * Checking workbasedir avoids hitting ovl_is_inuse(parent) of
-		 * this instance and covers overlapping work and index dirs,
-		 * unless work or index dir have been moved since created inside
-		 * workbasedir.  In that case, we already have their traps in
-		 * inode cache and we will catch that case on lookup.
-		 */
-		err = ovl_check_layer(sb, ofs, ofs->workbasedir, "workdir");
-		if (err)
-			return err;
-	}
-
-	for (i = 0; i < ofs->numlower; i++) {
-		err = ovl_check_layer(sb, ofs,
-				      ofs->lower_layers[i].mnt->mnt_root,
-				      "lowerdir");
-		if (err)
-			return err;
-	}
-
-	return 0;
-}
-
 static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 {
 	struct path upperpath = { };
@@ -1575,9 +1207,6 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 		goto out_err;
 
 	ofs->config.index = ovl_index_def;
-	ofs->config.nfs_export = ovl_nfs_export_def;
-	ofs->config.xino = ovl_xino_def();
-	ofs->config.metacopy = ovl_metacopy_def;
 	err = ovl_parse_opt((char *) data, &ofs->config);
 	if (err)
 		goto out_err;
@@ -1591,24 +1220,17 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 
 	sb->s_stack_depth = 0;
 	sb->s_maxbytes = MAX_LFS_FILESIZE;
-	/* Assume underlaying fs uses 32bit inodes unless proven otherwise */
-	if (ofs->config.xino != OVL_XINO_OFF)
-		ofs->xino_bits = BITS_PER_LONG - 32;
-
-	/* alloc/destroy_inode needed for setting up traps in inode cache */
-	sb->s_op = &ovl_super_operations;
-
 	if (ofs->config.upperdir) {
 		if (!ofs->config.workdir) {
 			pr_err("overlayfs: missing 'workdir'\n");
 			goto out_err;
 		}
 
-		err = ovl_get_upper(sb, ofs, &upperpath);
+		err = ovl_get_upper(ofs, &upperpath);
 		if (err)
 			goto out_err;
 
-		err = ovl_get_workdir(sb, ofs, &upperpath);
+		err = ovl_get_workdir(ofs, &upperpath);
 		if (err)
 			goto out_err;
 
@@ -1627,70 +1249,49 @@ static int ovl_fill_super(struct super_block *sb, void *data, int silent)
 	/* If the upper fs is nonexistent, we mark overlayfs r/o too */
 	if (!ofs->upper_mnt)
 		sb->s_flags |= SB_RDONLY;
+	else if (ofs->upper_mnt->mnt_sb != ofs->same_sb)
+		ofs->same_sb = NULL;
 
 	if (!(ovl_force_readonly(ofs)) && ofs->config.index) {
-		err = ovl_get_indexdir(sb, ofs, oe, &upperpath);
+		err = ovl_get_indexdir(ofs, oe, &upperpath);
 		if (err)
 			goto out_free_oe;
 
-		/* Force r/o mount with no index dir */
-		if (!ofs->indexdir) {
-			dput(ofs->workdir);
-			ofs->workdir = NULL;
+		if (!ofs->indexdir)
 			sb->s_flags |= SB_RDONLY;
-		}
-
 	}
 
-	err = ovl_check_overlapping_layers(sb, ofs);
-	if (err)
-		goto out_free_oe;
-
-	/* Show index=off in /proc/mounts for forced r/o mount */
-	if (!ofs->indexdir) {
+	/* Show index=off/on in /proc/mounts for any of the reasons above */
+	if (!ofs->indexdir)
 		ofs->config.index = false;
-		if (ofs->upper_mnt && ofs->config.nfs_export) {
-			pr_warn("overlayfs: NFS export requires an index dir, falling back to nfs_export=off.\n");
-			ofs->config.nfs_export = false;
-		}
-	}
-
-	if (ofs->config.metacopy && ofs->config.nfs_export) {
-		pr_warn("overlayfs: NFS export is not supported with metadata only copy up, falling back to nfs_export=off.\n");
-		ofs->config.nfs_export = false;
-	}
-
-	if (ofs->config.nfs_export)
-		sb->s_export_op = &ovl_export_operations;
 
 	/* Never override disk quota limits or use reserved space */
 	cap_lower(cred->cap_effective, CAP_SYS_RESOURCE);
 
 	sb->s_magic = OVERLAYFS_SUPER_MAGIC;
+	sb->s_op = &ovl_super_operations;
 	sb->s_xattr = ovl_xattr_handlers;
 	sb->s_fs_info = ofs;
-	sb->s_flags |= SB_POSIXACL;
+	sb->s_flags |= SB_POSIXACL | SB_NOREMOTELOCK;
 
 	err = -ENOMEM;
 	root_dentry = d_make_root(ovl_new_inode(sb, S_IFDIR, 0));
 	if (!root_dentry)
 		goto out_free_oe;
 
-	root_dentry->d_fsdata = oe;
-
 	mntput(upperpath.mnt);
 	if (upperpath.dentry) {
-		ovl_dentry_set_upper_alias(root_dentry);
+		oe->has_upper = true;
 		if (ovl_is_impuredir(upperpath.dentry))
 			ovl_set_flag(OVL_IMPURE, d_inode(root_dentry));
 	}
 
+	root_dentry->d_fsdata = oe;
+
 	/* Root is always merge -> can have whiteouts */
 	ovl_set_flag(OVL_WHITEOUTS, d_inode(root_dentry));
-	ovl_dentry_set_flag(OVL_E_CONNECTED, root_dentry);
-	ovl_set_upperdata(d_inode(root_dentry));
 	ovl_inode_init(d_inode(root_dentry), upperpath.dentry,
-		       ovl_dentry_lower(root_dentry), NULL);
+		       ovl_dentry_lower(root_dentry));
 
 	sb->s_root = root_dentry;
 

@@ -6,11 +6,10 @@
  *	    Laurent Pinchart (laurent.pinchart@ideasonboard.com)
  */
 
+#include <linux/kernel.h>
 #include <linux/device.h>
 #include <linux/errno.h>
-#include <linux/kernel.h>
 #include <linux/list.h>
-#include <linux/usb/g_uvc.h>
 #include <linux/videodev2.h>
 #include <linux/vmalloc.h>
 #include <linux/wait.h>
@@ -71,6 +70,10 @@ uvc_v4l2_querycap(struct file *file, void *fh, struct v4l2_capability *cap)
 	strlcpy(cap->card, cdev->gadget->name, sizeof(cap->card));
 	strlcpy(cap->bus_info, dev_name(&cdev->gadget->dev),
 		sizeof(cap->bus_info));
+
+	cap->device_caps = V4L2_CAP_VIDEO_OUTPUT | V4L2_CAP_STREAMING;
+	cap->capabilities = cap->device_caps | V4L2_CAP_DEVICE_CAPS;
+
 	return 0;
 }
 
@@ -111,8 +114,8 @@ uvc_v4l2_set_format(struct file *file, void *fh, struct v4l2_format *fmt)
 	}
 
 	if (i == ARRAY_SIZE(uvc_formats)) {
-		uvcg_info(&uvc->func, "Unsupported format 0x%08x.\n",
-			  fmt->fmt.pix.pixelformat);
+		printk(KERN_INFO "Unsupported format 0x%08x.\n",
+			fmt->fmt.pix.pixelformat);
 		return -EINVAL;
 	}
 
@@ -326,7 +329,7 @@ uvc_v4l2_mmap(struct file *file, struct vm_area_struct *vma)
 	return uvcg_queue_mmap(&uvc->video.queue, vma);
 }
 
-static __poll_t
+static unsigned int
 uvc_v4l2_poll(struct file *file, poll_table *wait)
 {
 	struct video_device *vdev = video_devdata(file);

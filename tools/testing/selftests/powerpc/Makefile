@@ -17,6 +17,7 @@ SUB_DIRS = alignment		\
 	   benchmarks		\
 	   cache_shape		\
 	   copyloops		\
+	   context_switch	\
 	   dscr			\
 	   mm			\
 	   pmu			\
@@ -26,11 +27,9 @@ SUB_DIRS = alignment		\
 	   switch_endian	\
 	   syscalls		\
 	   tm			\
-	   eeh			\
 	   vphn         \
 	   math		\
-	   ptrace	\
-	   security
+	   ptrace
 
 endif
 

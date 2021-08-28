@@ -35,20 +35,6 @@ struct dpp {
 	int inst;
 	struct dpp_caps *caps;
 	struct pwl_params regamma_params;
-	struct pwl_params degamma_params;
-#if defined(CONFIG_DRM_AMD_DC_DCN2_0)
-	struct dpp_cursor_attributes cur_attr;
-#endif
-
-#if defined(CONFIG_DRM_AMD_DC_DCN2_0)
-	struct pwl_params shaper_params;
-	bool cm_bypass_mode;
-#endif
-};
-
-struct dpp_input_csc_matrix {
-	enum dc_color_space color_space;
-	uint16_t regval[12];
 };
 
 struct dpp_grph_csc_adjustment {
@@ -56,67 +42,7 @@ struct dpp_grph_csc_adjustment {
 	enum graphics_gamut_adjust_type gamut_adjust_type;
 };
 
-#ifdef CONFIG_DRM_AMD_DC_DCN2_0
-struct cnv_color_keyer_params {
-	int color_keyer_en;
-	int color_keyer_mode;
-	int color_keyer_alpha_low;
-	int color_keyer_alpha_high;
-	int color_keyer_red_low;
-	int color_keyer_red_high;
-	int color_keyer_green_low;
-	int color_keyer_green_high;
-	int color_keyer_blue_low;
-	int color_keyer_blue_high;
-};
-
-/* new for dcn2: set the 8bit alpha values based on the 2 bit alpha
- *ALPHA_2BIT_LUT. ALPHA_2BIT_LUT0   default: 0b00000000
- *ALPHA_2BIT_LUT. ALPHA_2BIT_LUT1   default: 0b01010101
- *ALPHA_2BIT_LUT. ALPHA_2BIT_LUT2   default: 0b10101010
- *ALPHA_2BIT_LUT. ALPHA_2BIT_LUT3   default: 0b11111111
- */
-struct cnv_alpha_2bit_lut {
-	int lut0;
-	int lut1;
-	int lut2;
-	int lut3;
-};
-#endif
-
-struct dcn_dpp_state {
-	uint32_t is_enabled;
-	uint32_t igam_lut_mode;
-	uint32_t igam_input_format;
-	uint32_t dgam_lut_mode;
-	uint32_t rgam_lut_mode;
-	uint32_t gamut_remap_mode;
-	uint32_t gamut_remap_c11_c12;
-	uint32_t gamut_remap_c13_c14;
-	uint32_t gamut_remap_c21_c22;
-	uint32_t gamut_remap_c23_c24;
-	uint32_t gamut_remap_c31_c32;
-	uint32_t gamut_remap_c33_c34;
-};
-
-struct CM_bias_params {
-	uint32_t cm_bias_cr_r;
-	uint32_t cm_bias_y_g;
-	uint32_t cm_bias_cb_b;
-	uint32_t cm_bias_format;
-};
-
 struct dpp_funcs {
-
-	void (*dpp_program_cm_dealpha)(struct dpp *dpp_base,
-		uint32_t enable, uint32_t additive_blending);
-
-	void (*dpp_program_cm_bias)(
-		struct dpp *dpp_base,
-		struct CM_bias_params *bias_params);
-
-	void (*dpp_read_state)(struct dpp *dpp, struct dcn_dpp_state *s);
-
 	void (*dpp_reset)(struct dpp *dpp);
 
 	void (*dpp_set_scaler)(struct dpp *dpp,
@@ -136,108 +62,71 @@ struct dpp_funcs {
 			struct dpp *dpp,
 			const struct dpp_grph_csc_adjustment *adjust);
 
-	void (*dpp_set_csc_default)(
+	void (*opp_set_csc_default)(
 		struct dpp *dpp,
 		enum dc_color_space colorspace);
 
-	void (*dpp_set_csc_adjustment)(
+	void (*opp_set_csc_adjustment)(
 		struct dpp *dpp,
-		const uint16_t *regval);
+		const struct out_csc_color_matrix *tbl_entry);
 
-	void (*dpp_power_on_regamma_lut)(
+	void (*opp_power_on_regamma_lut)(
 		struct dpp *dpp,
 		bool power_on);
 
-	void (*dpp_program_regamma_lut)(
+	void (*opp_program_regamma_lut)(
 			struct dpp *dpp,
 			const struct pwl_result_data *rgb,
 			uint32_t num);
 
-	void (*dpp_configure_regamma_lut)(
+	void (*opp_configure_regamma_lut)(
 			struct dpp *dpp,
 			bool is_ram_a);
 
-	void (*dpp_program_regamma_lutb_settings)(
+	void (*opp_program_regamma_lutb_settings)(
 			struct dpp *dpp,
 			const struct pwl_params *params);
 
-	void (*dpp_program_regamma_luta_settings)(
+	void (*opp_program_regamma_luta_settings)(
 			struct dpp *dpp,
 			const struct pwl_params *params);
 
-	void (*dpp_program_regamma_pwl)(
-		struct dpp *dpp,
-		const struct pwl_params *params,
-		enum opp_regamma mode);
+	void (*opp_program_regamma_pwl)(
+		struct dpp *dpp, const struct pwl_params *params);
 
-	void (*dpp_program_bias_and_scale)(
-			struct dpp *dpp,
-			struct dc_bias_and_scale *params);
+	void (*opp_set_regamma_mode)(
+			struct dpp *dpp_base,
+			enum opp_regamma mode);
 
-	void (*dpp_set_degamma)(
+	void (*ipp_set_degamma)(
 			struct dpp *dpp_base,
 			enum ipp_degamma_mode mode);
 
-	void (*dpp_program_input_lut)(
+	void (*ipp_program_input_lut)(
 			struct dpp *dpp_base,
 			const struct dc_gamma *gamma);
 
-	void (*dpp_program_degamma_pwl)(struct dpp *dpp_base,
+	void (*ipp_program_degamma_pwl)(struct dpp *dpp_base,
 									 const struct pwl_params *params);
 
-	void (*dpp_setup)(
+	void (*ipp_setup)(
 			struct dpp *dpp_base,
-			enum surface_pixel_format format,
-			enum expansion_mode mode,
-			struct dc_csc_transform input_csc_color_matrix,
-#ifdef CONFIG_DRM_AMD_DC_DCN2_0
-			enum dc_color_space input_color_space,
-			struct cnv_alpha_2bit_lut *alpha_2bit_lut);
-#else
-			enum dc_color_space input_color_space);
-#endif
+			enum surface_pixel_format input_format,
+			enum expansion_mode mode);
 
-	void (*dpp_full_bypass)(struct dpp *dpp_base);
+	void (*ipp_full_bypass)(struct dpp *dpp_base);
 
 	void (*set_cursor_attributes)(
 			struct dpp *dpp_base,
-			struct dc_cursor_attributes *cursor_attributes);
+			const struct dc_cursor_attributes *attr);
 
 	void (*set_cursor_position)(
 			struct dpp *dpp_base,
 			const struct dc_cursor_position *pos,
 			const struct dc_cursor_mi_param *param,
-			uint32_t width,
-			uint32_t height
+			uint32_t width
 			);
 
-	void (*dpp_set_hdr_multiplier)(
-			struct dpp *dpp_base,
-			uint32_t multiplier);
-
-	void (*set_optional_cursor_attributes)(
-			struct dpp *dpp_base,
-			struct dpp_cursor_attributes *attr);
-
-	void (*dpp_dppclk_control)(
-			struct dpp *dpp_base,
-			bool dppclk_div,
-			bool enable);
-
-#if defined(CONFIG_DRM_AMD_DC_DCN2_0)
-	bool (*dpp_program_blnd_lut)(
-			struct dpp *dpp,
-			const struct pwl_params *params);
-	bool (*dpp_program_shaper_lut)(
-			struct dpp *dpp,
-			const struct pwl_params *params);
-	bool (*dpp_program_3dlut)(
-			struct dpp *dpp,
-			struct tetrahedral_params *params);
-	void (*dpp_cnv_set_alpha_keyer)(
-			struct dpp *dpp_base,
-			struct cnv_color_keyer_params *color_keyer);
-#endif
 };
 
 

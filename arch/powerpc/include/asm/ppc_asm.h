@@ -9,7 +9,6 @@
 #include <asm/processor.h>
 #include <asm/ppc-opcode.h>
 #include <asm/firmware.h>
-#include <asm/feature-fixups.h>
 
 #ifdef __ASSEMBLY__
 
@@ -81,8 +80,10 @@ END_FW_FTR_SECTION_IFSET(FW_FEATURE_SPLPAR)
 #else
 #define SAVE_GPR(n, base)	stw	n,GPR0+4*(n)(base)
 #define REST_GPR(n, base)	lwz	n,GPR0+4*(n)(base)
-#define SAVE_NVGPRS(base)	stmw	13, GPR0+4*13(base)
-#define REST_NVGPRS(base)	lmw	13, GPR0+4*13(base)
+#define SAVE_NVGPRS(base)	SAVE_GPR(13, base); SAVE_8GPRS(14, base); \
+				SAVE_10GPRS(22, base)
+#define REST_NVGPRS(base)	REST_GPR(13, base); REST_8GPRS(14, base); \
+				REST_10GPRS(22, base)
 #endif
 
 #define SAVE_2GPRS(n, base)	SAVE_GPR(n, base); SAVE_GPR(n+1, base)
@@ -311,48 +312,18 @@ n:
 	addis	reg,reg,(name - 0b)@ha;		\
 	addi	reg,reg,(name - 0b)@l;
 
-#if defined(__powerpc64__) && defined(HAVE_AS_ATHIGH)
+#ifdef __powerpc64__
+#ifdef HAVE_AS_ATHIGH
 #define __AS_ATHIGH high
 #else
 #define __AS_ATHIGH h
 #endif
-
-.macro __LOAD_REG_IMMEDIATE_32 r, x
-	.if (\x) >= 0x8000 || (\x) < -0x8000
-		lis \r, (\x)@__AS_ATHIGH
-		.if (\x) & 0xffff != 0
-			ori \r, \r, (\x)@l
-		.endif
-	.else
-		li \r, (\x)@l
-	.endif
-.endm
-
-.macro __LOAD_REG_IMMEDIATE r, x
-	.if (\x) >= 0x80000000 || (\x) < -0x80000000
-		__LOAD_REG_IMMEDIATE_32 \r, (\x) >> 32
-		sldi	\r, \r, 32
-		.if (\x) & 0xffff0000 != 0
-			oris \r, \r, (\x)@__AS_ATHIGH
-		.endif
-		.if (\x) & 0xffff != 0
-			ori \r, \r, (\x)@l
-		.endif
-	.else
-		__LOAD_REG_IMMEDIATE_32 \r, \x
-	.endif
-.endm
-
-#ifdef __powerpc64__
-
-#define LOAD_REG_IMMEDIATE(reg, expr) __LOAD_REG_IMMEDIATE reg, expr
-
-#define LOAD_REG_IMMEDIATE_SYM(reg, tmp, expr)	\
-	lis	tmp, (expr)@highest;		\
-	lis	reg, (expr)@__AS_ATHIGH;	\
-	ori	tmp, tmp, (expr)@higher;	\
-	ori	reg, reg, (expr)@l;		\
-	rldimi	reg, tmp, 32, 0
+#define LOAD_REG_IMMEDIATE(reg,expr)		\
+	lis     reg,(expr)@highest;		\
+	ori     reg,reg,(expr)@higher;	\
+	rldicr  reg,reg,32,31;		\
+	oris    reg,reg,(expr)@__AS_ATHIGH;	\
+	ori     reg,reg,(expr)@l;
 
 #define LOAD_REG_ADDR(reg,name)			\
 	ld	reg,name@got(r2)
@@ -365,13 +336,11 @@ n:
 
 #else /* 32-bit */
 
-#define LOAD_REG_IMMEDIATE(reg, expr) __LOAD_REG_IMMEDIATE_32 reg, expr
-
-#define LOAD_REG_IMMEDIATE_SYM(reg,expr)		\
+#define LOAD_REG_IMMEDIATE(reg,expr)		\
 	lis	reg,(expr)@ha;		\
 	addi	reg,reg,(expr)@l;
 
-#define LOAD_REG_ADDR(reg,name)		LOAD_REG_IMMEDIATE_SYM(reg, name)
+#define LOAD_REG_ADDR(reg,name)		LOAD_REG_IMMEDIATE(reg, name)
 
 #define LOAD_REG_ADDRBASE(reg, name)	lis	reg,name@ha
 #define ADDROFF(name)			name@l
@@ -383,9 +352,19 @@ n:
 
 /* various errata or part fixups */
 #ifdef CONFIG_PPC601_SYNC_FIX
-#define SYNC		sync; isync
-#define SYNC_601	sync
-#define ISYNC_601	isync
+#define SYNC				\
+BEGIN_FTR_SECTION			\
+	sync;				\
+	isync;				\
+END_FTR_SECTION_IFSET(CPU_FTR_601)
+#define SYNC_601			\
+BEGIN_FTR_SECTION			\
+	sync;				\
+END_FTR_SECTION_IFSET(CPU_FTR_601)
+#define ISYNC_601			\
+BEGIN_FTR_SECTION			\
+	isync;				\
+END_FTR_SECTION_IFSET(CPU_FTR_601)
 #else
 #define	SYNC
 #define SYNC_601
@@ -411,11 +390,15 @@ END_FTR_SECTION_NESTED(CPU_FTR_CELL_TB_BUG, CPU_FTR_CELL_TB_BUG, 96)
 #define MFTBU(dest)			mfspr dest, SPRN_TBRU
 #endif
 
-/* tlbsync is not implemented on 601 */
-#if !defined(CONFIG_SMP) || defined(CONFIG_PPC_BOOK3S_601)
+#ifndef CONFIG_SMP
 #define TLBSYNC
-#else
-#define TLBSYNC		tlbsync; sync
+#else /* CONFIG_SMP */
+/* tlbsync is not implemented on 601 */
+#define TLBSYNC				\
+BEGIN_FTR_SECTION			\
+	tlbsync;			\
+	sync;				\
+END_FTR_SECTION_IFCLR(CPU_FTR_601)
 #endif
 
 #ifdef CONFIG_PPC64
@@ -456,11 +439,14 @@ END_FTR_SECTION_NESTED(CPU_FTR_CELL_TB_BUG, CPU_FTR_CELL_TB_BUG, 96)
 
 /* The following stops all load and store data streams associated with stream
  * ID (ie. streams created explicitly).  The embedded and server mnemonics for
- * dcbt are different so this must only be used for server.
+ * dcbt are different so we use machine "power4" here explicitly.
  */
-#define DCBT_BOOK3S_STOP_ALL_STREAM_IDS(scratch)	\
-       lis     scratch,0x60000000@h;			\
-       dcbt    0,scratch,0b01010
+#define DCBT_STOP_ALL_STREAM_IDS(scratch)	\
+.machine push ;					\
+.machine "power4" ;				\
+       lis     scratch,0x60000000@h;		\
+       dcbt    0,scratch,0b01010;		\
+.machine pop
 
 /*
  * toreal/fromreal/tophys/tovirt macros. 32-bit BookE makes them
@@ -498,11 +484,26 @@ END_FTR_SECTION_NESTED(CPU_FTR_CELL_TB_BUG, CPU_FTR_CELL_TB_BUG, 96)
 	ori	rd,rd,((KERNELBASE>>48)&0xFFFF);\
 	rotldi	rd,rd,48
 #else
+/*
+ * On APUS (Amiga PowerPC cpu upgrade board), we don't know the
+ * physical base address of RAM at compile time.
+ */
 #define toreal(rd)	tophys(rd,rd)
 #define fromreal(rd)	tovirt(rd,rd)
 
-#define tophys(rd, rs)	addis	rd, rs, -PAGE_OFFSET@h
-#define tovirt(rd, rs)	addis	rd, rs, PAGE_OFFSET@h
+#define tophys(rd,rs)				\
+0:	addis	rd,rs,-PAGE_OFFSET@h;		\
+	.section ".vtop_fixup","aw";		\
+	.align  1;				\
+	.long   0b;				\
+	.previous
+
+#define tovirt(rd,rs)				\
+0:	addis	rd,rs,PAGE_OFFSET@h;		\
+	.section ".ptov_fixup","aw";		\
+	.align  1;				\
+	.long   0b;				\
+	.previous
 #endif
 
 #ifdef CONFIG_PPC_BOOK3S_64
@@ -823,15 +824,5 @@ END_FTR_SECTION_NESTED(CPU_FTR_CELL_TB_BUG, CPU_FTR_CELL_TB_BUG, 96)
 	stringify_in_c(.long (_fault) - . ;)	\
 	stringify_in_c(.long (_target) - . ;)	\
 	stringify_in_c(.previous)
-
-#ifdef CONFIG_PPC_FSL_BOOK3E
-#define BTB_FLUSH(reg)			\
-	lis reg,BUCSR_INIT@h;		\
-	ori reg,reg,BUCSR_INIT@l;	\
-	mtspr SPRN_BUCSR,reg;		\
-	isync;
-#else
-#define BTB_FLUSH(reg)
-#endif /* CONFIG_PPC_FSL_BOOK3E */
 
 #endif /* _ASM_POWERPC_PPC_ASM_H */

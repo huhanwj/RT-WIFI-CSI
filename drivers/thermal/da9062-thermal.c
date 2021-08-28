@@ -1,7 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Thermal device driver for DA9062 and DA9061
  * Copyright (C) 2017  Dialog Semiconductor
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 /* When over-temperature is reached, an interrupt from the device will be
@@ -97,7 +106,7 @@ static void da9062_thermal_poll_on(struct work_struct *work)
 					   THERMAL_EVENT_UNSPECIFIED);
 
 		delay = msecs_to_jiffies(thermal->zone->passive_delay);
-		queue_delayed_work(system_freezable_wq, &thermal->work, delay);
+		schedule_delayed_work(&thermal->work, delay);
 		return;
 	}
 
@@ -116,7 +125,7 @@ static irqreturn_t da9062_thermal_irq_handler(int irq, void *data)
 	struct da9062_thermal *thermal = data;
 
 	disable_irq_nosync(thermal->irq);
-	queue_delayed_work(system_freezable_wq, &thermal->work, 0);
+	schedule_delayed_work(&thermal->work, 0);
 
 	return IRQ_HANDLED;
 }

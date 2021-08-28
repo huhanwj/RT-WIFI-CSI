@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * ALSA SoC I2S Audio Layer for Broadcom BCM2835 SoC
  *
@@ -21,6 +20,15 @@
  *	Freescale SSI ALSA SoC Digital Audio Interface (DAI) driver
  *	Author: Timur Tabi <timur@freescale.com>
  *	Copyright 2007-2010 Freescale Semiconductor, Inc.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
  */
 
 #include <linux/bitops.h>
@@ -122,7 +130,6 @@ struct bcm2835_i2s_dev {
 	struct regmap				*i2s_regmap;
 	struct clk				*clk;
 	bool					clk_prepared;
-	int					clk_rate;
 };
 
 static void bcm2835_i2s_start_clock(struct bcm2835_i2s_dev *dev)
@@ -412,19 +419,10 @@ static int bcm2835_i2s_hw_params(struct snd_pcm_substream *substream,
 	}
 
 	/* Clock should only be set up here if CPU is clock master */
-	if (bit_clock_master &&
-	    (!dev->clk_prepared || dev->clk_rate != bclk_rate)) {
-		if (dev->clk_prepared)
-			bcm2835_i2s_stop_clock(dev);
-
-		if (dev->clk_rate != bclk_rate) {
-			ret = clk_set_rate(dev->clk, bclk_rate);
-			if (ret)
-				return ret;
-			dev->clk_rate = bclk_rate;
-		}
-
-		bcm2835_i2s_start_clock(dev);
+	if (bit_clock_master) {
+		ret = clk_set_rate(dev->clk, bclk_rate);
+		if (ret)
+			return ret;
 	}
 
 	/* Setup the frame format */
@@ -619,6 +617,8 @@ static int bcm2835_i2s_prepare(struct snd_pcm_substream *substream,
 {
 	struct bcm2835_i2s_dev *dev = snd_soc_dai_get_drvdata(dai);
 	uint32_t cs_reg;
+
+	bcm2835_i2s_start_clock(dev);
 
 	/*
 	 * Clear both FIFOs if the one that should be started
@@ -828,6 +828,7 @@ static int bcm2835_i2s_probe(struct platform_device *pdev)
 {
 	struct bcm2835_i2s_dev *dev;
 	int ret;
+	struct resource *mem;
 	void __iomem *base;
 	const __be32 *addr;
 	dma_addr_t dma_base;
@@ -847,7 +848,8 @@ static int bcm2835_i2s_probe(struct platform_device *pdev)
 	}
 
 	/* Request ioarea */
-	base = devm_platform_ioremap_resource(pdev, 0);
+	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	base = devm_ioremap_resource(&pdev->dev, mem);
 	if (IS_ERR(base))
 		return PTR_ERR(base);
 

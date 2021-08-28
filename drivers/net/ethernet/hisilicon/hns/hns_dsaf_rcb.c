@@ -1,6 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (c) 2014-2015 Hisilicon Limited.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  */
 
 #include <linux/cdev.h>
@@ -60,29 +64,6 @@ void hns_rcb_wait_fbd_clean(struct hnae_queue **qs, int q_num, u32 flag)
 	if (i < q_num)
 		dev_err(qs[i]->handle->owner_dev,
 			"queue(%d) wait fbd(%d) clean fail!!\n", i, fbd_num);
-}
-
-int hns_rcb_wait_tx_ring_clean(struct hnae_queue *qs)
-{
-	u32 head, tail;
-	int wait_cnt;
-
-	tail = dsaf_read_dev(&qs->tx_ring, RCB_REG_TAIL);
-	wait_cnt = 0;
-	while (wait_cnt++ < HNS_MAX_WAIT_CNT) {
-		head = dsaf_read_dev(&qs->tx_ring, RCB_REG_HEAD);
-		if (tail == head)
-			break;
-
-		usleep_range(100, 200);
-	}
-
-	if (wait_cnt >= HNS_MAX_WAIT_CNT) {
-		dev_err(qs->dev->dev, "rcb wait timeout, head not equal to tail.\n");
-		return -EBUSY;
-	}
-
-	return 0;
 }
 
 /**
@@ -454,7 +435,7 @@ static void hns_rcb_ring_get_cfg(struct hnae_queue *q, int ring_type)
 		mdnum_ppkt = HNS_RCB_RING_MAX_BD_PER_PKT;
 	} else {
 		ring = &q->tx_ring;
-		ring->io_base = ring_pair_cb->q.io_base +
+		ring->io_base = (u8 __iomem *)ring_pair_cb->q.io_base +
 			HNS_RCB_TX_REG_OFFSET;
 		irq_idx = HNS_RCB_IRQ_IDX_TX;
 		mdnum_ppkt = is_ver1 ? HNS_RCB_RING_MAX_TXBD_PER_PKT :
@@ -724,7 +705,7 @@ void hns_rcb_get_queue_mode(enum dsaf_mode dsaf_mode, u16 *max_vfn,
 	}
 }
 
-static int hns_rcb_get_ring_num(struct dsaf_device *dsaf_dev)
+int hns_rcb_get_ring_num(struct dsaf_device *dsaf_dev)
 {
 	switch (dsaf_dev->dsaf_mode) {
 	case DSAF_MODE_ENABLE_FIX:
@@ -760,7 +741,7 @@ static int hns_rcb_get_ring_num(struct dsaf_device *dsaf_dev)
 	}
 }
 
-static u8 __iomem *hns_rcb_common_get_vaddr(struct rcb_common_cb *rcb_common)
+void __iomem *hns_rcb_common_get_vaddr(struct rcb_common_cb *rcb_common)
 {
 	struct dsaf_device *dsaf_dev = rcb_common->dsaf_dev;
 
@@ -784,9 +765,8 @@ int hns_rcb_common_get_cfg(struct dsaf_device *dsaf_dev,
 	int ring_num = hns_rcb_get_ring_num(dsaf_dev);
 
 	rcb_common =
-		devm_kzalloc(dsaf_dev->dev,
-			     struct_size(rcb_common, ring_pair_cb, ring_num),
-			     GFP_KERNEL);
+		devm_kzalloc(dsaf_dev->dev, sizeof(*rcb_common) +
+			ring_num * sizeof(struct ring_pair_cb), GFP_KERNEL);
 	if (!rcb_common) {
 		dev_err(dsaf_dev->dev, "rcb common devm_kzalloc fail!\n");
 		return -ENOMEM;
@@ -896,7 +876,7 @@ void hns_rcb_get_stats(struct hnae_queue *queue, u64 *data)
  */
 int hns_rcb_get_ring_sset_count(int stringset)
 {
-	if (stringset == ETH_SS_STATS)
+	if (stringset == ETH_SS_STATS || stringset == ETH_SS_PRIV_FLAGS)
 		return HNS_RING_STATIC_REG_NUM;
 
 	return 0;

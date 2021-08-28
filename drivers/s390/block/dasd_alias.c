@@ -383,20 +383,6 @@ suborder_not_supported(struct dasd_ccw_req *cqr)
 	char msg_format;
 	char msg_no;
 
-	/*
-	 * intrc values ENODEV, ENOLINK and EPERM
-	 * will be optained from sleep_on to indicate that no
-	 * IO operation can be started
-	 */
-	if (cqr->intrc == -ENODEV)
-		return 1;
-
-	if (cqr->intrc == -ENOLINK)
-		return 1;
-
-	if (cqr->intrc == -EPERM)
-		return 1;
-
 	sense = dasd_get_sense(&cqr->irb);
 	if (!sense)
 		return 0;
@@ -421,9 +407,9 @@ static int read_unit_address_configuration(struct dasd_device *device,
 	int rc;
 	unsigned long flags;
 
-	cqr = dasd_smalloc_request(DASD_ECKD_MAGIC, 1 /* PSF */	+ 1 /* RSSD */,
+	cqr = dasd_kmalloc_request(DASD_ECKD_MAGIC, 1 /* PSF */	+ 1 /* RSSD */,
 				   (sizeof(struct dasd_psf_prssd_data)),
-				   device, NULL);
+				   device);
 	if (IS_ERR(cqr))
 		return PTR_ERR(cqr);
 	cqr->startdev = device;
@@ -461,13 +447,17 @@ static int read_unit_address_configuration(struct dasd_device *device,
 	lcu->flags &= ~NEED_UAC_UPDATE;
 	spin_unlock_irqrestore(&lcu->lock, flags);
 
-	rc = dasd_sleep_on(cqr);
-	if (rc && !suborder_not_supported(cqr)) {
+	do {
+		rc = dasd_sleep_on(cqr);
+		if (rc && suborder_not_supported(cqr))
+			return -EOPNOTSUPP;
+	} while (rc && (cqr->retries > 0));
+	if (rc) {
 		spin_lock_irqsave(&lcu->lock, flags);
 		lcu->flags |= NEED_UAC_UPDATE;
 		spin_unlock_irqrestore(&lcu->lock, flags);
 	}
-	dasd_sfree_request(cqr, cqr->memdev);
+	dasd_kfree_request(cqr, cqr->memdev);
 	return rc;
 }
 
@@ -602,22 +592,13 @@ static int _schedule_lcu_update(struct alias_lcu *lcu,
 int dasd_alias_add_device(struct dasd_device *device)
 {
 	struct dasd_eckd_private *private = device->private;
-	__u8 uaddr = private->uid.real_unit_addr;
-	struct alias_lcu *lcu = private->lcu;
+	struct alias_lcu *lcu;
 	unsigned long flags;
 	int rc;
 
+	lcu = private->lcu;
 	rc = 0;
 	spin_lock_irqsave(&lcu->lock, flags);
-	/*
-	 * Check if device and lcu type differ. If so, the uac data may be
-	 * outdated and needs to be updated.
-	 */
-	if (private->uid.type !=  lcu->uac->unit[uaddr].ua_type) {
-		lcu->flags |= UPDATE_PENDING;
-		DBF_DEV_EVENT(DBF_WARNING, device, "%s",
-			      "uid type mismatch - trigger rescan");
-	}
 	if (!(lcu->flags & UPDATE_PENDING)) {
 		rc = _add_device_to_lcu(lcu, device, device);
 		if (rc)
@@ -718,7 +699,7 @@ static int reset_summary_unit_check(struct alias_lcu *lcu,
 	struct ccw1 *ccw;
 
 	cqr = lcu->rsu_cqr;
-	memcpy((char *) &cqr->magic, "ECKD", 4);
+	strncpy((char *) &cqr->magic, "ECKD", 4);
 	ASCEBC((char *) &cqr->magic, 4);
 	ccw = cqr->cpaddr;
 	ccw->cmd_code = DASD_ECKD_CCW_RSCK;

@@ -5,18 +5,13 @@
 #include <linux/refcount.h>
 #include <linux/rbtree.h>
 #include <linux/list.h>
-#include <stdio.h>
 #include <unistd.h>
 #include <sys/types.h>
-#include "srccode.h"
-#include "symbol_conf.h"
+#include "symbol.h"
 #include <strlist.h>
 #include <intlist.h>
 #include "rwsem.h"
 
-struct addr_location;
-struct map;
-struct perf_record_namespaces;
 struct thread_stack;
 struct unwind_libunwind_ops;
 
@@ -31,6 +26,7 @@ struct thread {
 	pid_t			ppid;
 	int			cpu;
 	refcount_t		refcnt;
+	char			shortname[3];
 	bool			comm_set;
 	int			comm_len;
 	bool			dead; /* if set thread has exited */
@@ -43,9 +39,10 @@ struct thread {
 	void			*priv;
 	struct thread_stack	*ts;
 	struct nsinfo		*nsinfo;
-	struct srccode_state	srccode_state;
-	bool			filter;
-	int			filter_entry_depth;
+#ifdef HAVE_LIBUNWIND_SUPPORT
+	void				*addr_space;
+	struct unwind_libunwind_ops	*unwind_libunwind_ops;
+#endif
 };
 
 struct machine;
@@ -72,9 +69,9 @@ static inline void thread__exited(struct thread *thread)
 	thread->dead = true;
 }
 
-struct namespaces *thread__namespaces(struct thread *thread);
+struct namespaces *thread__namespaces(const struct thread *thread);
 int thread__set_namespaces(struct thread *thread, u64 timestamp,
-			   struct perf_record_namespaces *event);
+			   struct namespaces_event *event);
 
 int __thread__set_comm(struct thread *thread, const char *comm, u64 timestamp,
 		       bool exec);
@@ -89,28 +86,24 @@ int thread__set_comm_from_proc(struct thread *thread);
 int thread__comm_len(struct thread *thread);
 struct comm *thread__comm(const struct thread *thread);
 struct comm *thread__exec_comm(const struct thread *thread);
-const char *thread__comm_str(struct thread *thread);
+const char *thread__comm_str(const struct thread *thread);
 int thread__insert_map(struct thread *thread, struct map *map);
-int thread__fork(struct thread *thread, struct thread *parent, u64 timestamp, bool do_maps_clone);
+int thread__fork(struct thread *thread, struct thread *parent, u64 timestamp);
 size_t thread__fprintf(struct thread *thread, FILE *fp);
 
 struct thread *thread__main_thread(struct machine *machine, struct thread *thread);
 
-struct map *thread__find_map(struct thread *thread, u8 cpumode, u64 addr,
-			     struct addr_location *al);
-struct map *thread__find_map_fb(struct thread *thread, u8 cpumode, u64 addr,
+void thread__find_addr_map(struct thread *thread,
+			   u8 cpumode, enum map_type type, u64 addr,
+			   struct addr_location *al);
+
+void thread__find_addr_location(struct thread *thread,
+				u8 cpumode, enum map_type type, u64 addr,
 				struct addr_location *al);
 
-struct symbol *thread__find_symbol(struct thread *thread, u8 cpumode,
-				   u64 addr, struct addr_location *al);
-struct symbol *thread__find_symbol_fb(struct thread *thread, u8 cpumode,
-				      u64 addr, struct addr_location *al);
-
-void thread__find_cpumode_addr_location(struct thread *thread, u64 addr,
+void thread__find_cpumode_addr_location(struct thread *thread,
+					enum map_type type, u64 addr,
 					struct addr_location *al);
-
-int thread__memcpy(struct thread *thread, struct machine *machine,
-		   void *buf, u64 ip, int len, bool *is64bit);
 
 static inline void *thread__priv(struct thread *thread)
 {

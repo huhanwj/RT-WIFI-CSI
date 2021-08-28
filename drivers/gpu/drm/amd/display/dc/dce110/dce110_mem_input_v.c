@@ -229,26 +229,38 @@ static void program_tiling(
 static void program_size_and_rotation(
 	struct dce_mem_input *mem_input110,
 	enum dc_rotation_angle rotation,
-	const struct plane_size *plane_size)
+	const union plane_size *plane_size)
 {
 	uint32_t value = 0;
-	struct plane_size local_size = *plane_size;
+	union plane_size local_size = *plane_size;
 
 	if (rotation == ROTATION_ANGLE_90 ||
 		rotation == ROTATION_ANGLE_270) {
 
-		swap(local_size.surface_size.x,
-		     local_size.surface_size.y);
-		swap(local_size.surface_size.width,
-		     local_size.surface_size.height);
-		swap(local_size.chroma_size.x,
-		     local_size.chroma_size.y);
-		swap(local_size.chroma_size.width,
-		     local_size.chroma_size.height);
+		uint32_t swap;
+		swap = local_size.video.luma_size.x;
+		local_size.video.luma_size.x =
+			local_size.video.luma_size.y;
+		local_size.video.luma_size.y  = swap;
+
+		swap = local_size.video.luma_size.width;
+		local_size.video.luma_size.width =
+			local_size.video.luma_size.height;
+		local_size.video.luma_size.height = swap;
+
+		swap = local_size.video.chroma_size.x;
+		local_size.video.chroma_size.x =
+			local_size.video.chroma_size.y;
+		local_size.video.chroma_size.y  = swap;
+
+		swap = local_size.video.chroma_size.width;
+		local_size.video.chroma_size.width =
+			local_size.video.chroma_size.height;
+		local_size.video.chroma_size.height = swap;
 	}
 
 	value = 0;
-	set_reg_field_value(value, local_size.surface_pitch,
+	set_reg_field_value(value, local_size.video.luma_pitch,
 			UNP_GRPH_PITCH_L, GRPH_PITCH_L);
 
 	dm_write_reg(
@@ -257,7 +269,7 @@ static void program_size_and_rotation(
 		value);
 
 	value = 0;
-	set_reg_field_value(value, local_size.chroma_pitch,
+	set_reg_field_value(value, local_size.video.chroma_pitch,
 			UNP_GRPH_PITCH_C, GRPH_PITCH_C);
 	dm_write_reg(
 		mem_input110->base.ctx,
@@ -297,8 +309,8 @@ static void program_size_and_rotation(
 		value);
 
 	value = 0;
-	set_reg_field_value(value, local_size.surface_size.x +
-			local_size.surface_size.width,
+	set_reg_field_value(value, local_size.video.luma_size.x +
+			local_size.video.luma_size.width,
 			UNP_GRPH_X_END_L, GRPH_X_END_L);
 	dm_write_reg(
 		mem_input110->base.ctx,
@@ -306,8 +318,8 @@ static void program_size_and_rotation(
 		value);
 
 	value = 0;
-	set_reg_field_value(value, local_size.chroma_size.x +
-			local_size.chroma_size.width,
+	set_reg_field_value(value, local_size.video.chroma_size.x +
+			local_size.video.chroma_size.width,
 			UNP_GRPH_X_END_C, GRPH_X_END_C);
 	dm_write_reg(
 		mem_input110->base.ctx,
@@ -315,8 +327,8 @@ static void program_size_and_rotation(
 		value);
 
 	value = 0;
-	set_reg_field_value(value, local_size.surface_size.y +
-			local_size.surface_size.height,
+	set_reg_field_value(value, local_size.video.luma_size.y +
+			local_size.video.luma_size.height,
 			UNP_GRPH_Y_END_L, GRPH_Y_END_L);
 	dm_write_reg(
 		mem_input110->base.ctx,
@@ -324,8 +336,8 @@ static void program_size_and_rotation(
 		value);
 
 	value = 0;
-	set_reg_field_value(value, local_size.chroma_size.y +
-			local_size.chroma_size.height,
+	set_reg_field_value(value, local_size.video.chroma_size.y +
+			local_size.video.chroma_size.height,
 			UNP_GRPH_Y_END_C, GRPH_Y_END_C);
 	dm_write_reg(
 		mem_input110->base.ctx,
@@ -637,7 +649,7 @@ void dce_mem_input_v_program_surface_config(
 	struct mem_input *mem_input,
 	enum surface_pixel_format format,
 	union dc_tiling_info *tiling_info,
-	struct plane_size *plane_size,
+	union plane_size *plane_size,
 	enum dc_rotation_angle rotation,
 	struct dc_plane_dcc_param *dcc,
 	bool horizotal_mirror)
@@ -923,7 +935,6 @@ void dce_mem_input_v_program_display_marks(
 	struct mem_input *mem_input,
 	struct dce_watermarks nbp,
 	struct dce_watermarks stutter,
-	struct dce_watermarks stutter_enter,
 	struct dce_watermarks urgent,
 	uint32_t total_dest_line_time_ns)
 {
@@ -1011,7 +1022,7 @@ void dce110_free_mem_input_v(
 {
 }
 
-static const struct mem_input_funcs dce110_mem_input_v_funcs = {
+static struct mem_input_funcs dce110_mem_input_v_funcs = {
 	.mem_input_program_display_marks =
 			dce_mem_input_v_program_display_marks,
 	.mem_input_program_chroma_display_marks =

@@ -173,7 +173,6 @@
 #define ATH9K_NUM_QUEUES            10
 
 #define MAX_RATE_POWER              63
-#define MAX_COMBINED_POWER          254 /* 128 dBm, chosen to fit in u8 */
 #define AH_WAIT_TIMEOUT             100000 /* (us) */
 #define AH_TSF_WRITE_TIMEOUT        100    /* (us) */
 #define AH_TIME_QUANTUM             10
@@ -755,8 +754,6 @@ struct ath_nf_limits {
 	s16 max;
 	s16 min;
 	s16 nominal;
-	s16 cal[AR5416_MAX_CHAINS];
-	s16 pwr[AR5416_MAX_CHAINS];
 };
 
 enum ath_cal_list {
@@ -980,9 +977,6 @@ struct ath_hw {
 	bool tpc_enabled;
 	u8 tx_power[Ar5416RateSize];
 	u8 tx_power_stbc[Ar5416RateSize];
-	bool msi_enabled;
-	u32 msi_mask;
-	u32 msi_reg;
 };
 
 struct ath_bus_ops {
@@ -1061,7 +1055,7 @@ u32 ath9k_hw_gettsf32(struct ath_hw *ah);
 u64 ath9k_hw_gettsf64(struct ath_hw *ah);
 void ath9k_hw_settsf64(struct ath_hw *ah, u64 tsf64);
 void ath9k_hw_reset_tsf(struct ath_hw *ah);
-u32 ath9k_hw_get_tsf_offset(struct timespec64 *last, struct timespec64 *cur);
+u32 ath9k_hw_get_tsf_offset(struct timespec *last, struct timespec *cur);
 void ath9k_hw_set_tsfadjust(struct ath_hw *ah, bool set);
 void ath9k_hw_init_global_settings(struct ath_hw *ah);
 u32 ar9003_get_pll_sqsum_dvc(struct ath_hw *ah);
@@ -1147,10 +1141,6 @@ void ar9002_hw_load_ani_reg(struct ath_hw *ah, struct ath9k_channel *chan);
 
 void ath9k_ani_reset(struct ath_hw *ah, bool is_scanning);
 void ath9k_hw_ani_monitor(struct ath_hw *ah, struct ath9k_channel *chan);
-void ath9k_hw_gen_timer_start_absolute(struct ath_hw *ah,
-			      struct ath_gen_timer *timer,
-			      u32 trig_timeout,
-			      u32 timer_period);
 
 void ath9k_hw_set_ack_timeout(struct ath_hw *ah, u32 us);
 void ath9k_hw_set_cts_timeout(struct ath_hw *ah, u32 us);

@@ -1,6 +1,4 @@
-﻿.. _process_statement_kernel:
-
-Linux Kernel Enforcement Statement
+﻿Linux Kernel Enforcement Statement
 ----------------------------------
 
 As developers of the Linux kernel, we have a keen interest in how our software
@@ -70,7 +68,6 @@ we might work for today, have in the past, or will in the future.
   - Paul Burton
   - Javier Martinez Canillas
   - Rob Clark
-  - Kees Cook (Google)
   - Jonathan Corbet
   - Dennis Dalessandro
   - Vivien Didelot (Savoir-faire Linux)
@@ -121,7 +118,6 @@ we might work for today, have in the past, or will in the future.
   - Mike Marshall
   - Chris Mason
   - Paul E. McKenney
-  - Arnaldo Carvalho de Melo
   - David S. Miller
   - Ingo Molnar
   - Kuninori Morimoto
@@ -140,7 +136,6 @@ we might work for today, have in the past, or will in the future.
   - Anna Schumaker
   - Jes Sorensen
   - K.Y. Srinivasan
-  - David Sterba (SUSE)
   - Heiko Stuebner
   - Jiri Kosina (SUSE)
   - Willy Tarreau
@@ -148,7 +143,6 @@ we might work for today, have in the past, or will in the future.
   - Linus Torvalds
   - Thierry Reding
   - Rik van Riel
-  - Luis R. Rodriguez
   - Geert Uytterhoeven (Glider bvba)
   - Eduardo Valentin (Amazon.com)
   - Daniel Vetter

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * nf_nat_pptp.c
  *
@@ -38,7 +37,7 @@
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Harald Welte <laforge@gnumonks.org>");
 MODULE_DESCRIPTION("Netfilter NAT helper module for PPTP");
-MODULE_ALIAS_NF_NAT_HELPER("pptp");
+MODULE_ALIAS("ip_nat_pptp");
 
 static void pptp_nat_expected(struct nf_conn *ct,
 			      struct nf_conntrack_expect *exp)
@@ -49,7 +48,7 @@ static void pptp_nat_expected(struct nf_conn *ct,
 	struct nf_conntrack_tuple t = {};
 	const struct nf_ct_pptp_master *ct_pptp_info;
 	const struct nf_nat_pptp *nat_pptp_info;
-	struct nf_nat_range2 range;
+	struct nf_nat_range range;
 	struct nf_conn_nat *nat;
 
 	nat = nf_ct_nat_ext_add(ct);
@@ -300,6 +299,8 @@ pptp_inbound_pkt(struct sk_buff *skb,
 
 static int __init nf_nat_helper_pptp_init(void)
 {
+	nf_nat_need_gre();
+
 	BUG_ON(nf_nat_pptp_hook_outbound != NULL);
 	RCU_INIT_POINTER(nf_nat_pptp_hook_outbound, pptp_outbound_pkt);
 

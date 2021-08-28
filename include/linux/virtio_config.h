@@ -12,11 +12,6 @@ struct irq_affinity;
 
 /**
  * virtio_config_ops - operations for configuring a virtio device
- * Note: Do not assume that a transport implements all of the operations
- *       getting/setting a value as a simple read/write! Generally speaking,
- *       any of @get/@set, @get_status/@set_status, or @get_features/
- *       @finalize_features are NOT safe to be called from an atomic
- *       context.
  * @get: read the value of a configuration field
  *	vdev: the virtio_device
  *	offset: the offset of the configuration field
@@ -27,7 +22,7 @@ struct irq_affinity;
  *	offset: the offset of the configuration field
  *	buf: the buffer to read the field value from.
  *	len: the length of the buffer
- * @generation: config generation counter (optional)
+ * @generation: config generation counter
  *	vdev: the virtio_device
  *	Returns the config generation counter
  * @get_status: read the status byte
@@ -53,17 +48,17 @@ struct irq_affinity;
  * @del_vqs: free virtqueues found by find_vqs().
  * @get_features: get the array of feature bits for this device.
  *	vdev: the virtio_device
- *	Returns the first 64 feature bits (all we currently need).
+ *	Returns the first 32 feature bits (all we currently need).
  * @finalize_features: confirm what device features we'll be using.
  *	vdev: the virtio_device
  *	This gives the final feature bits for the device: it can change
  *	the dev->feature bits if it wants.
  *	Returns 0 on success or error status
- * @bus_name: return the bus name associated with the device (optional)
+ * @bus_name: return the bus name associated with the device
  *	vdev: the virtio_device
  *      This returns a pointer to the bus name a la pci_name from which
  *      the caller can then copy.
- * @set_vq_affinity: set the affinity for a virtqueue (optional).
+ * @set_vq_affinity: set the affinity for a virtqueue.
  * @get_vq_affinity: get the affinity for a virtqueue (optional).
  */
 typedef void vq_callback_t(struct virtqueue *);
@@ -84,8 +79,7 @@ struct virtio_config_ops {
 	u64 (*get_features)(struct virtio_device *vdev);
 	int (*finalize_features)(struct virtio_device *vdev);
 	const char *(*bus_name)(struct virtio_device *vdev);
-	int (*set_vq_affinity)(struct virtqueue *vq,
-			       const struct cpumask *cpu_mask);
+	int (*set_vq_affinity)(struct virtqueue *vq, int cpu);
 	const struct cpumask *(*get_vq_affinity)(struct virtio_device *vdev,
 			int index);
 };
@@ -242,11 +236,11 @@ const char *virtio_bus_name(struct virtio_device *vdev)
  *
  */
 static inline
-int virtqueue_set_affinity(struct virtqueue *vq, const struct cpumask *cpu_mask)
+int virtqueue_set_affinity(struct virtqueue *vq, int cpu)
 {
 	struct virtio_device *vdev = vq->vdev;
 	if (vdev->config->set_vq_affinity)
-		return vdev->config->set_vq_affinity(vq, cpu_mask);
+		return vdev->config->set_vq_affinity(vq, cpu);
 	return 0;
 }
 
@@ -290,7 +284,6 @@ static inline __virtio64 cpu_to_virtio64(struct virtio_device *vdev, u64 val)
 /* Config space accessors. */
 #define virtio_cread(vdev, structname, member, ptr)			\
 	do {								\
-		might_sleep();						\
 		/* Must match the member's type, and be integer */	\
 		if (!typecheck(typeof((((structname*)0)->member)), *(ptr))) \
 			(*ptr) = 1;					\
@@ -320,7 +313,6 @@ static inline __virtio64 cpu_to_virtio64(struct virtio_device *vdev, u64 val)
 /* Config space accessors. */
 #define virtio_cwrite(vdev, structname, member, ptr)			\
 	do {								\
-		might_sleep();						\
 		/* Must match the member's type, and be integer */	\
 		if (!typecheck(typeof((((structname*)0)->member)), *(ptr))) \
 			BUG_ON((*ptr) == 1);				\
@@ -360,7 +352,6 @@ static inline void __virtio_cread_many(struct virtio_device *vdev,
 		vdev->config->generation(vdev) : 0;
 	int i;
 
-	might_sleep();
 	do {
 		old = gen;
 
@@ -383,8 +374,6 @@ static inline void virtio_cread_bytes(struct virtio_device *vdev,
 static inline u8 virtio_cread8(struct virtio_device *vdev, unsigned int offset)
 {
 	u8 ret;
-
-	might_sleep();
 	vdev->config->get(vdev, offset, &ret, sizeof(ret));
 	return ret;
 }
@@ -392,7 +381,6 @@ static inline u8 virtio_cread8(struct virtio_device *vdev, unsigned int offset)
 static inline void virtio_cwrite8(struct virtio_device *vdev,
 				  unsigned int offset, u8 val)
 {
-	might_sleep();
 	vdev->config->set(vdev, offset, &val, sizeof(val));
 }
 
@@ -400,8 +388,6 @@ static inline u16 virtio_cread16(struct virtio_device *vdev,
 				 unsigned int offset)
 {
 	u16 ret;
-
-	might_sleep();
 	vdev->config->get(vdev, offset, &ret, sizeof(ret));
 	return virtio16_to_cpu(vdev, (__force __virtio16)ret);
 }
@@ -409,7 +395,6 @@ static inline u16 virtio_cread16(struct virtio_device *vdev,
 static inline void virtio_cwrite16(struct virtio_device *vdev,
 				   unsigned int offset, u16 val)
 {
-	might_sleep();
 	val = (__force u16)cpu_to_virtio16(vdev, val);
 	vdev->config->set(vdev, offset, &val, sizeof(val));
 }
@@ -418,8 +403,6 @@ static inline u32 virtio_cread32(struct virtio_device *vdev,
 				 unsigned int offset)
 {
 	u32 ret;
-
-	might_sleep();
 	vdev->config->get(vdev, offset, &ret, sizeof(ret));
 	return virtio32_to_cpu(vdev, (__force __virtio32)ret);
 }
@@ -427,7 +410,6 @@ static inline u32 virtio_cread32(struct virtio_device *vdev,
 static inline void virtio_cwrite32(struct virtio_device *vdev,
 				   unsigned int offset, u32 val)
 {
-	might_sleep();
 	val = (__force u32)cpu_to_virtio32(vdev, val);
 	vdev->config->set(vdev, offset, &val, sizeof(val));
 }
@@ -443,7 +425,6 @@ static inline u64 virtio_cread64(struct virtio_device *vdev,
 static inline void virtio_cwrite64(struct virtio_device *vdev,
 				   unsigned int offset, u64 val)
 {
-	might_sleep();
 	val = (__force u64)cpu_to_virtio64(vdev, val);
 	vdev->config->set(vdev, offset, &val, sizeof(val));
 }

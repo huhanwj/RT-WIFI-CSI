@@ -45,7 +45,7 @@ static inline void scsi_log_completion(struct scsi_cmnd *cmd, int disposition)
 /* scsi_devinfo.c */
 
 /* list of keys for the lists */
-enum scsi_devinfo_key {
+enum {
 	SCSI_DEVINFO_GLOBAL = 0,
 	SCSI_DEVINFO_SPI,
 };
@@ -56,15 +56,13 @@ extern blist_flags_t scsi_get_device_flags(struct scsi_device *sdev,
 extern blist_flags_t scsi_get_device_flags_keyed(struct scsi_device *sdev,
 						 const unsigned char *vendor,
 						 const unsigned char *model,
-						 enum scsi_devinfo_key key);
+						 int key);
 extern int scsi_dev_info_list_add_keyed(int compatible, char *vendor,
 					char *model, char *strflags,
-					blist_flags_t flags,
-					enum scsi_devinfo_key key);
-extern int scsi_dev_info_list_del_keyed(char *vendor, char *model,
-					enum scsi_devinfo_key key);
-extern int scsi_dev_info_add_list(enum scsi_devinfo_key key, const char *name);
-extern int scsi_dev_info_remove_list(enum scsi_devinfo_key key);
+					blist_flags_t flags, int key);
+extern int scsi_dev_info_list_del_keyed(char *vendor, char *model, int key);
+extern int scsi_dev_info_add_list(int key, const char *name);
+extern int scsi_dev_info_remove_list(int key);
 
 extern int __init scsi_init_devinfo(void);
 extern void scsi_exit_devinfo(void);
@@ -92,6 +90,7 @@ extern void scsi_queue_insert(struct scsi_cmnd *cmd, int reason);
 extern void scsi_io_completion(struct scsi_cmnd *, unsigned int);
 extern void scsi_run_host_queues(struct Scsi_Host *shost);
 extern void scsi_requeue_run_queue(struct work_struct *work);
+extern struct request_queue *scsi_old_alloc_queue(struct scsi_device *sdev);
 extern struct request_queue *scsi_mq_alloc_queue(struct scsi_device *sdev);
 extern void scsi_start_queue(struct scsi_device *sdev);
 extern int scsi_mq_setup_tags(struct Scsi_Host *shost);
@@ -175,6 +174,7 @@ static inline void scsi_autopm_put_host(struct Scsi_Host *h) {}
 #endif /* CONFIG_PM */
 
 extern struct async_domain scsi_sd_pm_domain;
+extern struct async_domain scsi_sd_probe_domain;
 
 /* scsi_dh.c */
 #ifdef CONFIG_SCSI_DH
@@ -184,6 +184,7 @@ void scsi_dh_release_device(struct scsi_device *sdev);
 static inline void scsi_dh_add_device(struct scsi_device *sdev) { }
 static inline void scsi_dh_release_device(struct scsi_device *sdev) { }
 #endif
+static inline void scsi_dh_remove_device(struct scsi_device *sdev) { }
 
 /* 
  * internal scsi timeout functions: for use by mid-layer and transport

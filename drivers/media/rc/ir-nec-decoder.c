@@ -1,7 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0
-// ir-nec-decoder.c - handle NEC IR Pulse/Space protocol
-//
-// Copyright (C) 2010 by Mauro Carvalho Chehab
+/* ir-nec-decoder.c - handle NEC IR Pulse/Space protocol
+ *
+ * Copyright (C) 2010 by Mauro Carvalho Chehab
+ *
+ * This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation version 2 of the License.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ */
 
 #include <linux/bitrev.h>
 #include <linux/module.h>
@@ -49,8 +58,8 @@ static int ir_nec_decode(struct rc_dev *dev, struct ir_raw_event ev)
 		return 0;
 	}
 
-	dev_dbg(&dev->dev, "NEC decode started at state %d (%uus %s)\n",
-		data->state, TO_US(ev.duration), TO_STR(ev.pulse));
+	IR_dprintk(2, "NEC decode started at state %d (%uus %s)\n",
+		   data->state, TO_US(ev.duration), TO_STR(ev.pulse));
 
 	switch (data->state) {
 
@@ -99,11 +108,13 @@ static int ir_nec_decode(struct rc_dev *dev, struct ir_raw_event ev)
 			break;
 
 		if (data->necx_repeat && data->count == NECX_REPEAT_BITS &&
-		    geq_margin(ev.duration, NEC_TRAILER_SPACE, NEC_UNIT / 2)) {
-			dev_dbg(&dev->dev, "Repeat last key\n");
-			rc_repeat(dev);
-			data->state = STATE_INACTIVE;
-			return 0;
+			geq_margin(ev.duration,
+			NEC_TRAILER_SPACE, NEC_UNIT / 2)) {
+				IR_dprintk(1, "Repeat last key\n");
+				rc_repeat(dev);
+				data->state = STATE_INACTIVE;
+				return 0;
+
 		} else if (data->count > NECX_REPEAT_BITS)
 			data->necx_repeat = false;
 
@@ -162,8 +173,8 @@ static int ir_nec_decode(struct rc_dev *dev, struct ir_raw_event ev)
 		return 0;
 	}
 
-	dev_dbg(&dev->dev, "NEC decode failed at count %d state %d (%uus %s)\n",
-		data->count, data->state, TO_US(ev.duration), TO_STR(ev.pulse));
+	IR_dprintk(1, "NEC decode failed at count %d state %d (%uus %s)\n",
+		   data->count, data->state, TO_US(ev.duration), TO_STR(ev.pulse));
 	data->state = STATE_INACTIVE;
 	return -EINVAL;
 }
@@ -252,8 +263,6 @@ static struct ir_raw_handler nec_handler = {
 							RC_PROTO_BIT_NEC32,
 	.decode		= ir_nec_decode,
 	.encode		= ir_nec_encode,
-	.carrier	= 38000,
-	.min_timeout	= NEC_TRAILER_SPACE,
 };
 
 static int __init ir_nec_decode_init(void)
@@ -272,7 +281,7 @@ static void __exit ir_nec_decode_exit(void)
 module_init(ir_nec_decode_init);
 module_exit(ir_nec_decode_exit);
 
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Mauro Carvalho Chehab");
 MODULE_AUTHOR("Red Hat Inc. (http://www.redhat.com)");
 MODULE_DESCRIPTION("NEC IR protocol decoder");

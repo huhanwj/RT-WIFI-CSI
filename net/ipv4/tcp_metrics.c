@@ -512,6 +512,16 @@ reset:
 
 		inet_csk(sk)->icsk_rto = TCP_TIMEOUT_FALLBACK;
 	}
+	/* Cut cwnd down to 1 per RFC5681 if SYN or SYN-ACK has been
+	 * retransmitted. In light of RFC6298 more aggressive 1sec
+	 * initRTO, we only reset cwnd when more than 1 SYN/SYN-ACK
+	 * retransmission has occurred.
+	 */
+	if (tp->total_retrans > 1)
+		tp->snd_cwnd = 1;
+	else
+		tp->snd_cwnd = tcp_init_cwnd(tp, dst);
+	tp->snd_cwnd_stamp = tcp_jiffies32;
 }
 
 bool tcp_peer_is_proven(struct request_sock *req, struct dst_entry *dst)
@@ -536,7 +546,8 @@ bool tcp_peer_is_proven(struct request_sock *req, struct dst_entry *dst)
 static DEFINE_SEQLOCK(fastopen_seqlock);
 
 void tcp_fastopen_cache_get(struct sock *sk, u16 *mss,
-			    struct tcp_fastopen_cookie *cookie)
+			    struct tcp_fastopen_cookie *cookie,
+			    int *syn_loss, unsigned long *last_syn_loss)
 {
 	struct tcp_metrics_block *tm;
 
@@ -553,6 +564,8 @@ void tcp_fastopen_cache_get(struct sock *sk, u16 *mss,
 			*cookie = tfom->cookie;
 			if (cookie->len <= 0 && tfom->try_exp == 1)
 				cookie->exp = true;
+			*syn_loss = tfom->syn_loss;
+			*last_syn_loss = *syn_loss ? tfom->last_syn_loss : 0;
 		} while (read_seqretry(&fastopen_seqlock, seq));
 	}
 	rcu_read_unlock();
@@ -648,7 +661,7 @@ static int tcp_metrics_fill_info(struct sk_buff *msg,
 	{
 		int n = 0;
 
-		nest = nla_nest_start_noflag(msg, TCP_METRICS_ATTR_VALS);
+		nest = nla_nest_start(msg, TCP_METRICS_ATTR_VALS);
 		if (!nest)
 			goto nla_put_failure;
 		for (i = 0; i < TCP_METRIC_MAX_KERNEL + 1; i++) {
@@ -882,7 +895,7 @@ static void tcp_metrics_flush_all(struct net *net)
 		pp = &hb->chain;
 		for (tm = deref_locked(*pp); tm; tm = deref_locked(*pp)) {
 			match = net ? net_eq(tm_net(tm), net) :
-				!refcount_read(&tm_net(tm)->count);
+				!atomic_read(&tm_net(tm)->count);
 			if (match) {
 				*pp = tm->tcpm_next;
 				kfree_rcu(tm, rcu_head);
@@ -941,14 +954,14 @@ static int tcp_metrics_nl_cmd_del(struct sk_buff *skb, struct genl_info *info)
 static const struct genl_ops tcp_metrics_nl_ops[] = {
 	{
 		.cmd = TCP_METRICS_CMD_GET,
-		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.doit = tcp_metrics_nl_cmd_get,
 		.dumpit = tcp_metrics_nl_dump,
+		.policy = tcp_metrics_nl_policy,
 	},
 	{
 		.cmd = TCP_METRICS_CMD_DEL,
-		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.doit = tcp_metrics_nl_cmd_del,
+		.policy = tcp_metrics_nl_policy,
 		.flags = GENL_ADMIN_PERM,
 	},
 };
@@ -958,7 +971,6 @@ static struct genl_family tcp_metrics_nl_family __ro_after_init = {
 	.name		= TCP_METRICS_GENL_NAME,
 	.version	= TCP_METRICS_GENL_VERSION,
 	.maxattr	= TCP_METRICS_ATTR_MAX,
-	.policy = tcp_metrics_nl_policy,
 	.netnsok	= true,
 	.module		= THIS_MODULE,
 	.ops		= tcp_metrics_nl_ops,
@@ -991,7 +1003,7 @@ static int __net_init tcp_net_metrics_init(struct net *net)
 
 	slots = tcpmhash_entries;
 	if (!slots) {
-		if (totalram_pages() >= 128 * 1024)
+		if (totalram_pages >= 128 * 1024)
 			slots = 16 * 1024;
 		else
 			slots = 8 * 1024;

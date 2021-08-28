@@ -15,4 +15,3 @@ Contents:
    buffers
    triggers
    triggered-buffers
-   hw-consumer

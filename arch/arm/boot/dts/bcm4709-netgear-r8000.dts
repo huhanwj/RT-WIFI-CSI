@@ -31,7 +31,6 @@
 	};
 
 	memory {
-		device_type = "memory";
 		reg = <0x00000000 0x08000000
 		       0x88000000 0x08000000>;
 	};
@@ -182,8 +181,4 @@
 
 &usb3 {
 	vcc-gpio = <&chipcommon 0 GPIO_ACTIVE_HIGH>;
-};
-
-&usb3_phy {
-	status = "okay";
 };

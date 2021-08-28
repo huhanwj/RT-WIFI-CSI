@@ -1,8 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 2007 Oracle.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License v2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program; if not, write to the
+ * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+ * Boston, MA 021110-1307, USA.
  */
 
+#include <linux/delay.h>
 #include <linux/kthread.h>
 #include <linux/pagemap.h>
 
@@ -11,20 +25,6 @@
 #include "free-space-cache.h"
 #include "inode-map.h"
 #include "transaction.h"
-#include "delalloc-space.h"
-
-static void fail_caching_thread(struct btrfs_root *root)
-{
-	struct btrfs_fs_info *fs_info = root->fs_info;
-
-	btrfs_warn(fs_info, "failed to start inode caching task");
-	btrfs_clear_pending_and_info(fs_info, INODE_MAP_CACHE,
-				     "disabling inode map caching");
-	spin_lock(&root->ino_cache_lock);
-	root->ino_cache_state = BTRFS_CACHE_ERROR;
-	spin_unlock(&root->ino_cache_lock);
-	wake_up(&root->ino_cache_wait);
-}
 
 static int caching_kthread(void *data)
 {
@@ -42,10 +42,8 @@ static int caching_kthread(void *data)
 		return 0;
 
 	path = btrfs_alloc_path();
-	if (!path) {
-		fail_caching_thread(root);
+	if (!path)
 		return -ENOMEM;
-	}
 
 	/* Since the commit root is read-only, we can safely skip locking. */
 	path->skip_locking = 1;
@@ -161,7 +159,6 @@ static void start_caching(struct btrfs_root *root)
 		spin_lock(&root->ino_cache_lock);
 		root->ino_cache_state = BTRFS_CACHE_FINISHED;
 		spin_unlock(&root->ino_cache_lock);
-		wake_up(&root->ino_cache_wait);
 		return;
 	}
 
@@ -176,13 +173,15 @@ static void start_caching(struct btrfs_root *root)
 	if (!ret && objectid <= BTRFS_LAST_FREE_OBJECTID) {
 		__btrfs_add_free_space(fs_info, ctl, objectid,
 				       BTRFS_LAST_FREE_OBJECTID - objectid + 1);
-		wake_up(&root->ino_cache_wait);
 	}
 
 	tsk = kthread_run(caching_kthread, root, "btrfs-ino-cache-%llu",
 			  root->root_key.objectid);
-	if (IS_ERR(tsk))
-		fail_caching_thread(root);
+	if (IS_ERR(tsk)) {
+		btrfs_warn(fs_info, "failed to start inode caching task");
+		btrfs_clear_pending_and_info(fs_info, INODE_MAP_CACHE,
+					     "disabling inode map caching");
+	}
 }
 
 int btrfs_find_free_ino(struct btrfs_root *root, u64 *objectid)
@@ -200,14 +199,11 @@ again:
 
 	wait_event(root->ino_cache_wait,
 		   root->ino_cache_state == BTRFS_CACHE_FINISHED ||
-		   root->ino_cache_state == BTRFS_CACHE_ERROR ||
 		   root->free_ino_ctl->free_space > 0);
 
 	if (root->ino_cache_state == BTRFS_CACHE_FINISHED &&
 	    root->free_ino_ctl->free_space == 0)
 		return -ENOSPC;
-	else if (root->ino_cache_state == BTRFS_CACHE_ERROR)
-		return btrfs_find_free_objectid(root, objectid);
 	else
 		goto again;
 }
@@ -261,6 +257,8 @@ void btrfs_unpin_free_ino(struct btrfs_root *root)
 		return;
 
 	while (1) {
+		bool add_to_ctl = true;
+
 		spin_lock(rbroot_lock);
 		n = rb_first(rbroot);
 		if (!n) {
@@ -272,14 +270,15 @@ void btrfs_unpin_free_ino(struct btrfs_root *root)
 		BUG_ON(info->bitmap); /* Logic error */
 
 		if (info->offset > root->ino_cache_progress)
-			count = 0;
+			add_to_ctl = false;
+		else if (info->offset + info->bytes > root->ino_cache_progress)
+			count = root->ino_cache_progress - info->offset + 1;
 		else
-			count = min(root->ino_cache_progress - info->offset + 1,
-				    info->bytes);
+			count = info->bytes;
 
 		rb_erase(&info->offset_index, rbroot);
 		spin_unlock(rbroot_lock);
-		if (count)
+		if (add_to_ctl)
 			__btrfs_add_free_space(root->fs_info, ctl,
 					       info->offset, count);
 		kmem_cache_free(btrfs_free_space_cachep, info);
@@ -436,7 +435,7 @@ int btrfs_save_ino_cache(struct btrfs_root *root,
 	 * 1 item for free space object
 	 * 3 items for pre-allocation
 	 */
-	trans->bytes_reserved = btrfs_calc_insert_metadata_size(fs_info, 10);
+	trans->bytes_reserved = btrfs_calc_trans_metadata_size(fs_info, 10);
 	ret = btrfs_block_rsv_add(root, trans->block_rsv,
 				  trans->bytes_reserved,
 				  BTRFS_RESERVE_NO_FLUSH);
@@ -502,7 +501,6 @@ again:
 					      prealloc, prealloc, &alloc_hint);
 	if (ret) {
 		btrfs_delalloc_release_extents(BTRFS_I(inode), prealloc);
-		btrfs_delalloc_release_metadata(BTRFS_I(inode), prealloc, true);
 		goto out_put;
 	}
 

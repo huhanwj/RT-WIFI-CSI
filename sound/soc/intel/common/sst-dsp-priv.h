@@ -1,8 +1,17 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Intel Smart Sound Technology
  *
  * Copyright (C) 2013, Intel Corporation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License version
+ * 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  */
 
 #ifndef __SOUND_SOC_SST_DSP_PRIV_H
@@ -144,7 +153,7 @@ struct sst_block_allocator {
 };
 
 /*
- * Runtime Module Instance - A module object can be instantiated multiple
+ * Runtime Module Instance - A module object can be instanciated multiple
  * times within the DSP FW.
  */
 struct sst_module_runtime {
@@ -184,7 +193,7 @@ enum sst_module_state {
  *
  * Each Firmware file can consist of 1..N modules. A module can span multiple
  * ADSP memory blocks. The simplest FW will be a file with 1 module. A module
- * can be instantiated multiple times in the DSP.
+ * can be instanciated multiple times in the DSP.
  */
 struct sst_module {
 	struct sst_dsp *dsp;

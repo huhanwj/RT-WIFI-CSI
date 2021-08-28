@@ -24,15 +24,11 @@
 #include <linux/completion.h>
 #include <linux/time.h>
 #include <linux/hw_random.h>
-#include <linux/kfifo.h>
+
 #include "common.h"
 #include "debug.h"
 #include "mci.h"
 #include "dfs.h"
-
-#ifdef  CONFIG_RT_WIFI
-#include "rt-wifi.h"
-#endif
 
 struct ath_node;
 struct ath_vif;
@@ -92,14 +88,9 @@ int ath_descdma_setup(struct ath_softc *sc, struct ath_descdma *dd,
 		(_l) &= ((_sz) - 1);		\
 	} while (0)
 
-/* rt-wifi: Increase buffer size */
-/*#define ATH_RXBUF               512
-#define ATH_TXBUF               512 */
-#define ATH_RXBUF               2048
-#define ATH_TXBUF               2048
-/* eom */
+#define ATH_RXBUF               512
+#define ATH_TXBUF               512
 #define ATH_TXBUF_RESERVE       5
-#define ATH_MAX_QDEPTH          (ATH_TXBUF / 4 - ATH_TXBUF_RESERVE)
 #define ATH_TXMAXTRY            13
 #define ATH_MAX_SW_RETRIES      30
 
@@ -120,6 +111,8 @@ int ath_descdma_setup(struct ath_softc *sc, struct ath_descdma *dd,
 #define ATH_HW_CHECK_POLL_INT      1000
 #define ATH_TXFIFO_DEPTH           8
 #define ATH_TX_ERROR               0x01
+
+#define ATH_AIRTIME_QUANTUM        300 /* usec */
 
 /* Stop tx traffic 1ms before the GO goes away */
 #define ATH_P2P_PS_STOP_TIME       1000
@@ -235,9 +228,6 @@ struct ath_buf {
 	dma_addr_t bf_buf_addr;	/* physical addr of data buffer, for DMA */
 	struct ieee80211_tx_rate rates[4];
 	struct ath_buf_state bf_state;
-#ifdef CONFIG_RT_WIFI
-	u32 qnum;
-#endif
 };
 
 struct ath_atx_tid {
@@ -256,8 +246,10 @@ struct ath_atx_tid {
 	s8 bar_index;
 	bool active;
 	bool clear_ps_filter;
+	bool has_queued;
 };
 
+void __ath_tx_queue_tid(struct ath_softc *sc, struct ath_atx_tid *tid);
 void ath_tx_queue_tid(struct ath_softc *sc, struct ath_atx_tid *tid);
 
 struct ath_node {
@@ -271,13 +263,16 @@ struct ath_node {
 
 	bool sleeping;
 	bool no_ps_filter;
+	s64 airtime_deficit[IEEE80211_NUM_ACS];
+	u32 airtime_rx_start;
 
 #ifdef CONFIG_ATH9K_STATION_STATISTICS
 	struct ath_rx_rate_stats rx_rate_stats;
+	struct ath_airtime_stats airtime_stats;
 #endif
 	u8 key_idx[4];
 
-	int ackto;
+	u32 ackto;
 	struct list_head list;
 };
 
@@ -347,7 +342,7 @@ struct ath_chanctx {
 
 	struct ath_beacon_config beacon;
 	struct ath9k_hw_cal_data caldata;
-	struct timespec64 tsf_ts;
+	struct timespec tsf_ts;
 	u64 tsf_val;
 	u32 last_beacon;
 
@@ -991,6 +986,11 @@ void ath_ant_comb_scan(struct ath_softc *sc, struct ath_rx_status *rs);
 
 #define ATH9K_NUM_CHANCTX  2 /* supports 2 operating channels */
 
+#define AIRTIME_USE_TX		BIT(0)
+#define AIRTIME_USE_RX		BIT(1)
+#define AIRTIME_USE_NEW_QUEUES	BIT(2)
+#define AIRTIME_ACTIVE(flags) (!!(flags & (AIRTIME_USE_TX|AIRTIME_USE_RX)))
+
 struct ath_softc {
 	struct ieee80211_hw *hw;
 	struct device *dev;
@@ -1021,7 +1021,7 @@ struct ath_softc {
 	struct ath_offchannel offchannel;
 	struct ath_chanctx *next_chan;
 	struct completion go_beacon;
-	struct timespec64 last_event_time;
+	struct timespec last_event_time;
 #endif
 
 	unsigned long driver_data;
@@ -1033,6 +1033,8 @@ struct ath_softc {
 	bool ps_idle;
 	short nbcnvifs;
 	unsigned long ps_usecount;
+
+	u16 airtime_flags; /* AIRTIME_* */
 
 	struct ath_rx rx;
 	struct ath_tx tx;
@@ -1076,34 +1078,6 @@ struct ath_softc {
 	struct sk_buff *tx99_skb;
 	bool tx99_state;
 	s16 tx99_power;
-
-#ifdef CONFIG_RT_WIFI
-	int rt_wifi_enable;
-	struct ath_gen_timer *rt_wifi_timer;
-
-	struct kfifo rt_wifi_fifo;
-	struct list_head rt_wifi_q;
-	spinlock_t rt_wifi_q_lock;
-	spinlock_t rt_wifi_fifo_lock;
-	int rt_wifi_qcount;
-
-	int rt_wifi_join;
-
-	int rt_wifi_slot_num;
-
-	int rt_wifi_slot_len;		/* in micro sec */
-	u16 rt_wifi_superframe_size;	/* in terms of time slot */
-	int rt_wifi_asn;
-	u64 rt_wifi_cur_tsf;
-	struct rt_wifi_sched *rt_wifi_superframe;
-
-	/* for AP only */
-	u64 rt_wifi_bc_tsf;		/* broadcast tsf */
-	u64 rt_wifi_bc_asn;		/* broadcast asn */
-	u64 rt_wifi_virt_start_tsf;
-	u32 rt_wifi_beacon_bfaddr;
-	u32 rt_wifi_beacon_bc;
-#endif
 
 #ifdef CONFIG_ATH9K_WOW
 	u32 wow_intr_before_sleep;

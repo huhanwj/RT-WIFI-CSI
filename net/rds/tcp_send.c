@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006, 2017 Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2006 Oracle.  All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -153,7 +153,7 @@ out:
 			 * an incoming RST.
 			 */
 			if (rds_conn_path_up(cp)) {
-				pr_warn("RDS/tcp: send to %pI6c on cp [%d]"
+				pr_warn("RDS/tcp: send to %pI4 on cp [%d]"
 					"returned %d, "
 					"disconnecting and reconnecting\n",
 					&conn->c_faddr, cp->cp_index, ret);
@@ -202,11 +202,8 @@ void rds_tcp_write_space(struct sock *sk)
 	tc->t_last_seen_una = rds_tcp_snd_una(tc);
 	rds_send_path_drop_acked(cp, rds_tcp_snd_una(tc), rds_tcp_is_acked);
 
-	rcu_read_lock();
-	if ((refcount_read(&sk->sk_wmem_alloc) << 1) <= sk->sk_sndbuf &&
-	    !rds_destroy_pending(cp->cp_conn))
+	if ((refcount_read(&sk->sk_wmem_alloc) << 1) <= sk->sk_sndbuf)
 		queue_delayed_work(rds_wq, &cp->cp_send_w, 0);
-	rcu_read_unlock();
 
 out:
 	read_unlock_bh(&sk->sk_callback_lock);

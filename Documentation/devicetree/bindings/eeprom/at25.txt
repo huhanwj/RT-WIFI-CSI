@@ -3,7 +3,6 @@ EEPROMs (SPI) compatible with Atmel at25.
 Required properties:
 - compatible : Should be "<vendor>,<type>", and generic value "atmel,at25".
   Example "<vendor>,<type>" values:
-    "anvo,anv32e61w"
     "microchip,25lc040"
     "st,m95m02"
     "st,m95256"
@@ -12,9 +11,7 @@ Required properties:
 - spi-max-frequency : max spi frequency to use
 - pagesize : size of the eeprom page
 - size : total eeprom size in bytes
-- address-width : number of address bits (one of 8, 9, 16, or 24).
-  For 9 bits, the MSB of the address is sent as bit 3 of the instruction
-  byte, before the address byte.
+- address-width : number of address bits (one of 8, 16, or 24)
 
 Optional properties:
 - spi-cpha : SPI shifted clock phase, as per spi-bus bindings.

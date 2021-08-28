@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /* AFS cell and server record management
  *
  * Copyright (C) 2002, 2017 Red Hat, Inc. All Rights Reserved.
  * Written by David Howells (dhowells@redhat.com)
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
  */
 
 #include <linux/slab.h>
@@ -11,20 +15,17 @@
 #include <linux/dns_resolver.h>
 #include <linux/sched.h>
 #include <linux/inet.h>
-#include <linux/namei.h>
 #include <keys/rxrpc-type.h>
 #include "internal.h"
 
-static unsigned __read_mostly afs_cell_gc_delay = 10;
-static unsigned __read_mostly afs_cell_min_ttl = 10 * 60;
-static unsigned __read_mostly afs_cell_max_ttl = 24 * 60 * 60;
+unsigned __read_mostly afs_cell_gc_delay = 10;
 
 static void afs_manage_cell(struct work_struct *);
 
 static void afs_dec_cells_outstanding(struct afs_net *net)
 {
 	if (atomic_dec_and_test(&net->cells_outstanding))
-		wake_up_var(&net->cells_outstanding);
+		wake_up_atomic_t(&net->cells_outstanding);
 }
 
 /*
@@ -74,8 +75,7 @@ struct afs_cell *afs_lookup_cell_rcu(struct afs_net *net,
 			cell = rcu_dereference_raw(net->ws_cell);
 			if (cell) {
 				afs_get_cell(cell);
-				ret = 0;
-				break;
+				continue;
 			}
 			ret = -EDESTADDRREQ;
 			continue;
@@ -109,9 +109,6 @@ struct afs_cell *afs_lookup_cell_rcu(struct afs_net *net,
 
 	done_seqretry(&net->cells_lock, seq);
 
-	if (ret != 0 && cell)
-		afs_put_cell(net, cell);
-
 	return ret == 0 ? cell : ERR_PTR(ret);
 }
 
@@ -121,9 +118,8 @@ struct afs_cell *afs_lookup_cell_rcu(struct afs_net *net,
  */
 static struct afs_cell *afs_alloc_cell(struct afs_net *net,
 				       const char *name, unsigned int namelen,
-				       const char *addresses)
+				       const char *vllist)
 {
-	struct afs_vlserver_list *vllist;
 	struct afs_cell *cell;
 	int i, ret;
 
@@ -134,10 +130,8 @@ static struct afs_cell *afs_alloc_cell(struct afs_net *net,
 		_leave(" = -ENAMETOOLONG");
 		return ERR_PTR(-ENAMETOOLONG);
 	}
-	if (namelen == 5 && memcmp(name, "@cell", 5) == 0)
-		return ERR_PTR(-EINVAL);
 
-	_enter("%*.*s,%s", namelen, namelen, name, addresses);
+	_enter("%*.*s,%s", namelen, namelen, name, vllist);
 
 	cell = kzalloc(sizeof(struct afs_cell), GFP_KERNEL);
 	if (!cell) {
@@ -152,40 +146,28 @@ static struct afs_cell *afs_alloc_cell(struct afs_net *net,
 
 	atomic_set(&cell->usage, 2);
 	INIT_WORK(&cell->manager, afs_manage_cell);
+	cell->flags = ((1 << AFS_CELL_FL_NOT_READY) |
+		       (1 << AFS_CELL_FL_NO_LOOKUP_YET));
 	INIT_LIST_HEAD(&cell->proc_volumes);
 	rwlock_init(&cell->proc_lock);
-	rwlock_init(&cell->vl_servers_lock);
+	rwlock_init(&cell->vl_addrs_lock);
 
-	/* Provide a VL server list, filling it in if we were given a list of
-	 * addresses to use.
+	/* Fill in the VL server list if we were given a list of addresses to
+	 * use.
 	 */
-	if (addresses) {
-		vllist = afs_parse_text_addrs(net,
-					      addresses, strlen(addresses), ':',
-					      VL_SERVICE, AFS_VL_PORT);
-		if (IS_ERR(vllist)) {
-			ret = PTR_ERR(vllist);
+	if (vllist) {
+		struct afs_addr_list *alist;
+
+		alist = afs_parse_text_addrs(vllist, strlen(vllist), ':',
+					     VL_SERVICE, AFS_VL_PORT);
+		if (IS_ERR(alist)) {
+			ret = PTR_ERR(alist);
 			goto parse_failed;
 		}
 
-		vllist->source = DNS_RECORD_FROM_CONFIG;
-		vllist->status = DNS_LOOKUP_NOT_DONE;
+		rcu_assign_pointer(cell->vl_addrs, alist);
 		cell->dns_expiry = TIME64_MAX;
-	} else {
-		ret = -ENOMEM;
-		vllist = afs_alloc_vlserver_list(0);
-		if (!vllist)
-			goto error;
-		vllist->source = DNS_RECORD_UNAVAILABLE;
-		vllist->status = DNS_LOOKUP_NOT_DONE;
-		cell->dns_expiry = ktime_get_real_seconds();
 	}
-
-	rcu_assign_pointer(cell->vl_servers, vllist);
-
-	cell->dns_source = vllist->source;
-	cell->dns_status = vllist->status;
-	smp_store_release(&cell->dns_lookup_count, 1); /* vs source/status */
 
 	_leave(" = %p", cell);
 	return cell;
@@ -193,7 +175,6 @@ static struct afs_cell *afs_alloc_cell(struct afs_net *net,
 parse_failed:
 	if (ret == -EINVAL)
 		printk(KERN_ERR "kAFS: bad VL server IP address\n");
-error:
 	kfree(cell);
 	_leave(" = %d", ret);
 	return ERR_PTR(ret);
@@ -218,7 +199,6 @@ struct afs_cell *afs_lookup_cell(struct afs_net *net,
 {
 	struct afs_cell *cell, *candidate, *cursor;
 	struct rb_node *parent, **pp;
-	enum afs_cell_state state;
 	int ret, n;
 
 	_enter("%s,%s", name, vllist);
@@ -278,16 +258,18 @@ struct afs_cell *afs_lookup_cell(struct afs_net *net,
 
 wait_for_cell:
 	_debug("wait_for_cell");
-	wait_var_event(&cell->state,
-		       ({
-			       state = smp_load_acquire(&cell->state); /* vs error */
-			       state == AFS_CELL_ACTIVE || state == AFS_CELL_FAILED;
-		       }));
+	ret = wait_on_bit(&cell->flags, AFS_CELL_FL_NOT_READY, TASK_INTERRUPTIBLE);
+	smp_rmb();
 
-	/* Check the state obtained from the wait check. */
-	if (state == AFS_CELL_FAILED) {
+	switch (READ_ONCE(cell->state)) {
+	case AFS_CELL_FAILED:
 		ret = cell->error;
 		goto error;
+	default:
+		_debug("weird %u %d", cell->state, cell->error);
+		goto error;
+	case AFS_CELL_ACTIVE:
+		break;
 	}
 
 	_leave(" = %p [cell]", cell);
@@ -352,13 +334,13 @@ int afs_cell_init(struct afs_net *net, const char *rootcell)
 		return PTR_ERR(new_root);
 	}
 
-	if (!test_and_set_bit(AFS_CELL_FL_NO_GC, &new_root->flags))
-		afs_get_cell(new_root);
+	set_bit(AFS_CELL_FL_NO_GC, &new_root->flags);
+	afs_get_cell(new_root);
 
 	/* install the new cell */
 	write_seqlock(&net->cells_lock);
-	old_root = rcu_access_pointer(net->ws_cell);
-	rcu_assign_pointer(net->ws_cell, new_root);
+	old_root = net->ws_cell;
+	net->ws_cell = new_root;
 	write_sequnlock(&net->cells_lock);
 
 	afs_put_cell(net, old_root);
@@ -369,96 +351,53 @@ int afs_cell_init(struct afs_net *net, const char *rootcell)
 /*
  * Update a cell's VL server address list from the DNS.
  */
-static int afs_update_cell(struct afs_cell *cell)
+static void afs_update_cell(struct afs_cell *cell)
 {
-	struct afs_vlserver_list *vllist, *old = NULL, *p;
-	unsigned int min_ttl = READ_ONCE(afs_cell_min_ttl);
-	unsigned int max_ttl = READ_ONCE(afs_cell_max_ttl);
-	time64_t now, expiry = 0;
-	int ret = 0;
+	struct afs_addr_list *alist, *old;
+	time64_t now, expiry;
 
 	_enter("%s", cell->name);
 
-	vllist = afs_dns_query(cell, &expiry);
-	if (IS_ERR(vllist)) {
-		ret = PTR_ERR(vllist);
-
-		_debug("%s: fail %d", cell->name, ret);
-		if (ret == -ENOMEM)
-			goto out_wake;
-
-		ret = -ENOMEM;
-		vllist = afs_alloc_vlserver_list(0);
-		if (!vllist)
-			goto out_wake;
-
-		switch (ret) {
+	alist = afs_dns_query(cell, &expiry);
+	if (IS_ERR(alist)) {
+		switch (PTR_ERR(alist)) {
 		case -ENODATA:
-		case -EDESTADDRREQ:
-			vllist->status = DNS_LOOKUP_GOT_NOT_FOUND;
+			/* The DNS said that the cell does not exist */
+			set_bit(AFS_CELL_FL_NOT_FOUND, &cell->flags);
+			clear_bit(AFS_CELL_FL_DNS_FAIL, &cell->flags);
+			cell->dns_expiry = ktime_get_real_seconds() + 61;
 			break;
+
 		case -EAGAIN:
 		case -ECONNREFUSED:
-			vllist->status = DNS_LOOKUP_GOT_TEMP_FAILURE;
-			break;
 		default:
-			vllist->status = DNS_LOOKUP_GOT_LOCAL_FAILURE;
+			set_bit(AFS_CELL_FL_DNS_FAIL, &cell->flags);
+			cell->dns_expiry = ktime_get_real_seconds() + 10;
 			break;
 		}
+
+		cell->error = -EDESTADDRREQ;
+	} else {
+		clear_bit(AFS_CELL_FL_DNS_FAIL, &cell->flags);
+		clear_bit(AFS_CELL_FL_NOT_FOUND, &cell->flags);
+
+		/* Exclusion on changing vl_addrs is achieved by a
+		 * non-reentrant work item.
+		 */
+		old = rcu_dereference_protected(cell->vl_addrs, true);
+		rcu_assign_pointer(cell->vl_addrs, alist);
+		cell->dns_expiry = expiry;
+
+		if (old)
+			afs_put_addrlist(old);
 	}
 
-	_debug("%s: got list %d %d", cell->name, vllist->source, vllist->status);
-	cell->dns_status = vllist->status;
+	if (test_and_clear_bit(AFS_CELL_FL_NO_LOOKUP_YET, &cell->flags))
+		wake_up_bit(&cell->flags, AFS_CELL_FL_NO_LOOKUP_YET);
 
 	now = ktime_get_real_seconds();
-	if (min_ttl > max_ttl)
-		max_ttl = min_ttl;
-	if (expiry < now + min_ttl)
-		expiry = now + min_ttl;
-	else if (expiry > now + max_ttl)
-		expiry = now + max_ttl;
-
-	_debug("%s: status %d", cell->name, vllist->status);
-	if (vllist->source == DNS_RECORD_UNAVAILABLE) {
-		switch (vllist->status) {
-		case DNS_LOOKUP_GOT_NOT_FOUND:
-			/* The DNS said that the cell does not exist or there
-			 * weren't any addresses to be had.
-			 */
-			cell->dns_expiry = expiry;
-			break;
-
-		case DNS_LOOKUP_BAD:
-		case DNS_LOOKUP_GOT_LOCAL_FAILURE:
-		case DNS_LOOKUP_GOT_TEMP_FAILURE:
-		case DNS_LOOKUP_GOT_NS_FAILURE:
-		default:
-			cell->dns_expiry = now + 10;
-			break;
-		}
-	} else {
-		cell->dns_expiry = expiry;
-	}
-
-	/* Replace the VL server list if the new record has servers or the old
-	 * record doesn't.
-	 */
-	write_lock(&cell->vl_servers_lock);
-	p = rcu_dereference_protected(cell->vl_servers, true);
-	if (vllist->nr_servers > 0 || p->nr_servers == 0) {
-		rcu_assign_pointer(cell->vl_servers, vllist);
-		cell->dns_source = vllist->source;
-		old = p;
-	}
-	write_unlock(&cell->vl_servers_lock);
-	afs_put_vlserverlist(cell->net, old);
-
-out_wake:
-	smp_store_release(&cell->dns_lookup_count,
-			  cell->dns_lookup_count + 1); /* vs source/status */
-	wake_up_var(&cell->dns_lookup_count);
-	_leave(" = %d", ret);
-	return ret;
+	afs_set_cell_timer(cell->net, cell->dns_expiry - now);
+	_leave("");
 }
 
 /*
@@ -472,7 +411,7 @@ static void afs_cell_destroy(struct rcu_head *rcu)
 
 	ASSERTCMP(atomic_read(&cell->usage), ==, 0);
 
-	afs_put_vlserverlist(cell->net, rcu_access_pointer(cell->vl_servers));
+	afs_put_addrlist(cell->vl_addrs);
 	key_put(cell->anonymous_key);
 	kfree(cell);
 
@@ -529,7 +468,8 @@ void afs_put_cell(struct afs_net *net, struct afs_cell *cell)
 	now = ktime_get_real_seconds();
 	cell->last_inactive = now;
 	expire_delay = 0;
-	if (cell->vl_servers->nr_servers)
+	if (!test_bit(AFS_CELL_FL_DNS_FAIL, &cell->flags) &&
+	    !test_bit(AFS_CELL_FL_NOT_FOUND, &cell->flags))
 		expire_delay = afs_cell_gc_delay;
 
 	if (atomic_dec_return(&cell->usage) > 1)
@@ -571,8 +511,6 @@ static int afs_alloc_anon_key(struct afs_cell *cell)
  */
 static int afs_activate_cell(struct afs_net *net, struct afs_cell *cell)
 {
-	struct hlist_node **p;
-	struct afs_cell *pcell;
 	int ret;
 
 	if (!cell->anonymous_key) {
@@ -584,29 +522,14 @@ static int afs_activate_cell(struct afs_net *net, struct afs_cell *cell)
 #ifdef CONFIG_AFS_FSCACHE
 	cell->cache = fscache_acquire_cookie(afs_cache_netfs.primary_index,
 					     &afs_cell_cache_index_def,
-					     cell->name, strlen(cell->name),
-					     NULL, 0,
-					     cell, 0, true);
+					     cell, true);
 #endif
-	ret = afs_proc_cell_setup(cell);
+	ret = afs_proc_cell_setup(net, cell);
 	if (ret < 0)
 		return ret;
-
-	mutex_lock(&net->proc_cells_lock);
-	for (p = &net->proc_cells.first; *p; p = &(*p)->next) {
-		pcell = hlist_entry(*p, struct afs_cell, proc_link);
-		if (strcmp(cell->name, pcell->name) < 0)
-			break;
-	}
-
-	cell->proc_link.pprev = p;
-	cell->proc_link.next = *p;
-	rcu_assign_pointer(*p, &cell->proc_link.next);
-	if (cell->proc_link.next)
-		cell->proc_link.next->pprev = &cell->proc_link.next;
-
-	afs_dynroot_mkdir(net, cell);
-	mutex_unlock(&net->proc_cells_lock);
+	spin_lock(&net->proc_cells_lock);
+	list_add_tail(&cell->proc_link, &net->proc_cells);
+	spin_unlock(&net->proc_cells_lock);
 	return 0;
 }
 
@@ -617,15 +540,14 @@ static void afs_deactivate_cell(struct afs_net *net, struct afs_cell *cell)
 {
 	_enter("%s", cell->name);
 
-	afs_proc_cell_remove(cell);
+	afs_proc_cell_remove(net, cell);
 
-	mutex_lock(&net->proc_cells_lock);
-	hlist_del_rcu(&cell->proc_link);
-	afs_dynroot_rmdir(net, cell);
-	mutex_unlock(&net->proc_cells_lock);
+	spin_lock(&net->proc_cells_lock);
+	list_del_init(&cell->proc_link);
+	spin_unlock(&net->proc_cells_lock);
 
 #ifdef CONFIG_AFS_FSCACHE
-	fscache_relinquish_cookie(cell->cache, NULL, false);
+	fscache_relinquish_cookie(cell->cache, 0);
 	cell->cache = NULL;
 #endif
 
@@ -660,13 +582,11 @@ again:
 			goto final_destruction;
 		if (cell->state == AFS_CELL_FAILED)
 			goto done;
-		smp_store_release(&cell->state, AFS_CELL_UNSET);
-		wake_up_var(&cell->state);
+		cell->state = AFS_CELL_UNSET;
 		goto again;
 
 	case AFS_CELL_UNSET:
-		smp_store_release(&cell->state, AFS_CELL_ACTIVATING);
-		wake_up_var(&cell->state);
+		cell->state = AFS_CELL_ACTIVATING;
 		goto again;
 
 	case AFS_CELL_ACTIVATING:
@@ -674,29 +594,28 @@ again:
 		if (ret < 0)
 			goto activation_failed;
 
-		smp_store_release(&cell->state, AFS_CELL_ACTIVE);
-		wake_up_var(&cell->state);
+		cell->state = AFS_CELL_ACTIVE;
+		smp_wmb();
+		clear_bit(AFS_CELL_FL_NOT_READY, &cell->flags);
+		wake_up_bit(&cell->flags, AFS_CELL_FL_NOT_READY);
 		goto again;
 
 	case AFS_CELL_ACTIVE:
 		if (atomic_read(&cell->usage) > 1) {
-			if (test_and_clear_bit(AFS_CELL_FL_DO_LOOKUP, &cell->flags)) {
-				ret = afs_update_cell(cell);
-				if (ret < 0)
-					cell->error = ret;
-			}
+			time64_t now = ktime_get_real_seconds();
+			if (cell->dns_expiry <= now && net->live)
+				afs_update_cell(cell);
 			goto done;
 		}
-		smp_store_release(&cell->state, AFS_CELL_DEACTIVATING);
-		wake_up_var(&cell->state);
+		cell->state = AFS_CELL_DEACTIVATING;
 		goto again;
 
 	case AFS_CELL_DEACTIVATING:
+		set_bit(AFS_CELL_FL_NOT_READY, &cell->flags);
 		if (atomic_read(&cell->usage) > 1)
 			goto reverse_deactivation;
 		afs_deactivate_cell(net, cell);
-		smp_store_release(&cell->state, AFS_CELL_INACTIVE);
-		wake_up_var(&cell->state);
+		cell->state = AFS_CELL_INACTIVE;
 		goto again;
 
 	default:
@@ -709,13 +628,17 @@ activation_failed:
 	cell->error = ret;
 	afs_deactivate_cell(net, cell);
 
-	smp_store_release(&cell->state, AFS_CELL_FAILED); /* vs error */
-	wake_up_var(&cell->state);
+	cell->state = AFS_CELL_FAILED;
+	smp_wmb();
+	if (test_and_clear_bit(AFS_CELL_FL_NOT_READY, &cell->flags))
+		wake_up_bit(&cell->flags, AFS_CELL_FL_NOT_READY);
 	goto again;
 
 reverse_deactivation:
-	smp_store_release(&cell->state, AFS_CELL_ACTIVE);
-	wake_up_var(&cell->state);
+	cell->state = AFS_CELL_ACTIVE;
+	smp_wmb();
+	clear_bit(AFS_CELL_FL_NOT_READY, &cell->flags);
+	wake_up_bit(&cell->flags, AFS_CELL_FL_NOT_READY);
 	_leave(" [deact->act]");
 	return;
 
@@ -775,16 +698,11 @@ void afs_manage_cells(struct work_struct *work)
 		}
 
 		if (usage == 1) {
-			struct afs_vlserver_list *vllist;
 			time64_t expire_at = cell->last_inactive;
 
-			read_lock(&cell->vl_servers_lock);
-			vllist = rcu_dereference_protected(
-				cell->vl_servers,
-				lockdep_is_held(&cell->vl_servers_lock));
-			if (vllist->nr_servers > 0)
+			if (!test_bit(AFS_CELL_FL_DNS_FAIL, &cell->flags) &&
+			    !test_bit(AFS_CELL_FL_NOT_FOUND, &cell->flags))
 				expire_at += afs_cell_gc_delay;
-			read_unlock(&cell->vl_servers_lock);
 			if (purging || expire_at <= now)
 				sched_cell = true;
 			else if (expire_at < next_manage)
@@ -792,8 +710,10 @@ void afs_manage_cells(struct work_struct *work)
 		}
 
 		if (!purging) {
-			if (test_bit(AFS_CELL_FL_DO_LOOKUP, &cell->flags))
+			if (cell->dns_expiry <= now)
 				sched_cell = true;
+			else if (cell->dns_expiry <= next_manage)
+				next_manage = cell->dns_expiry;
 		}
 
 		if (sched_cell)
@@ -831,8 +751,8 @@ void afs_cell_purge(struct afs_net *net)
 	_enter("");
 
 	write_seqlock(&net->cells_lock);
-	ws = rcu_access_pointer(net->ws_cell);
-	RCU_INIT_POINTER(net->ws_cell, NULL);
+	ws = net->ws_cell;
+	net->ws_cell = NULL;
 	write_sequnlock(&net->cells_lock);
 	afs_put_cell(net, ws);
 
@@ -844,7 +764,7 @@ void afs_cell_purge(struct afs_net *net)
 	afs_queue_cell_manager(net);
 
 	_debug("wait");
-	wait_var_event(&net->cells_outstanding,
-		       !atomic_read(&net->cells_outstanding));
+	wait_on_atomic_t(&net->cells_outstanding, atomic_t_wait,
+			 TASK_UNINTERRUPTIBLE);
 	_leave("");
 }

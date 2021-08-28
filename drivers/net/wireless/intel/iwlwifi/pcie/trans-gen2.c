@@ -6,7 +6,6 @@
  * GPL LICENSE SUMMARY
  *
  * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License as
@@ -20,7 +19,6 @@
  * BSD LICENSE
  *
  * Copyright(c) 2017 Intel Deutschland GmbH
- * Copyright(c) 2018 - 2019 Intel Corporation
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -53,34 +51,14 @@
 #include "iwl-trans.h"
 #include "iwl-prph.h"
 #include "iwl-context-info.h"
-#include "iwl-context-info-gen3.h"
 #include "internal.h"
-#include "fw/dbg.h"
-
-static int iwl_pcie_gen2_force_power_gating(struct iwl_trans *trans)
-{
-	iwl_set_bits_prph(trans, HPM_HIPM_GEN_CFG,
-			  HPM_HIPM_GEN_CFG_CR_FORCE_ACTIVE);
-	udelay(20);
-	iwl_set_bits_prph(trans, HPM_HIPM_GEN_CFG,
-			  HPM_HIPM_GEN_CFG_CR_PG_EN |
-			  HPM_HIPM_GEN_CFG_CR_SLP_EN);
-	udelay(20);
-	iwl_clear_bits_prph(trans, HPM_HIPM_GEN_CFG,
-			    HPM_HIPM_GEN_CFG_CR_FORCE_ACTIVE);
-
-	iwl_trans_sw_reset(trans);
-	iwl_clear_bit(trans, CSR_GP_CNTRL, CSR_GP_CNTRL_REG_FLAG_INIT_DONE);
-
-	return 0;
-}
 
 /*
  * Start up NIC's basic functionality after it has been reset
  * (e.g. after platform boot, or shutdown via iwl_pcie_apm_stop())
  * NOTE:  This does not load uCode nor start the embedded processor
  */
-int iwl_pcie_gen2_apm_init(struct iwl_trans *trans)
+static int iwl_pcie_gen2_apm_init(struct iwl_trans *trans)
 {
 	int ret = 0;
 
@@ -110,16 +88,24 @@ int iwl_pcie_gen2_apm_init(struct iwl_trans *trans)
 
 	iwl_pcie_apm_config(trans);
 
-	if (trans->trans_cfg->device_family == IWL_DEVICE_FAMILY_22000 &&
-	    trans->cfg->integrated) {
-		ret = iwl_pcie_gen2_force_power_gating(trans);
-		if (ret)
-			return ret;
-	}
+	/*
+	 * Set "initialization complete" bit to move adapter from
+	 * D0U* --> D0A* (powered-up active) state.
+	 */
+	iwl_set_bit(trans, CSR_GP_CNTRL, CSR_GP_CNTRL_REG_FLAG_INIT_DONE);
 
-	ret = iwl_finish_nic_init(trans, trans->trans_cfg);
-	if (ret)
+	/*
+	 * Wait for clock stabilization; once stabilized, access to
+	 * device-internal resources is supported, e.g. iwl_write_prph()
+	 * and accesses to uCode SRAM.
+	 */
+	ret = iwl_poll_bit(trans, CSR_GP_CNTRL,
+			   CSR_GP_CNTRL_REG_FLAG_MAC_CLOCK_READY,
+			   CSR_GP_CNTRL_REG_FLAG_MAC_CLOCK_READY, 25000);
+	if (ret < 0) {
+		IWL_DEBUG_INFO(trans, "Failed to init the card\n");
 		return ret;
+	}
 
 	set_bit(STATUS_DEVICE_ENABLED, &trans->status);
 
@@ -151,17 +137,16 @@ static void iwl_pcie_gen2_apm_stop(struct iwl_trans *trans, bool op_mode_leave)
 	/* Stop device's DMA activity */
 	iwl_pcie_apm_stop_master(trans);
 
-	iwl_trans_sw_reset(trans);
+	iwl_pcie_sw_reset(trans);
 
 	/*
 	 * Clear "initialization complete" bit to move adapter from
 	 * D0A* (powered-up Active) --> D0U* (Uninitialized) state.
 	 */
-	iwl_clear_bit(trans, CSR_GP_CNTRL,
-		      BIT(trans->trans_cfg->csr->flag_init_done));
+	iwl_clear_bit(trans, CSR_GP_CNTRL, CSR_GP_CNTRL_REG_FLAG_INIT_DONE);
 }
 
-void _iwl_trans_pcie_gen2_stop_device(struct iwl_trans *trans)
+void _iwl_trans_pcie_gen2_stop_device(struct iwl_trans *trans, bool low_power)
 {
 	struct iwl_trans_pcie *trans_pcie = IWL_TRANS_GET_PCIE_TRANS(trans);
 
@@ -171,6 +156,11 @@ void _iwl_trans_pcie_gen2_stop_device(struct iwl_trans *trans)
 		return;
 
 	trans_pcie->is_down = true;
+
+	/* Stop dbgc before stopping device */
+	iwl_write_prph(trans, DBGC_IN_SAMPLE, 0);
+	udelay(100);
+	iwl_write_prph(trans, DBGC_OUT_CTRL, 0);
 
 	/* tell the device to stop sending interrupts */
 	iwl_disable_interrupts(trans);
@@ -193,19 +183,16 @@ void _iwl_trans_pcie_gen2_stop_device(struct iwl_trans *trans)
 	}
 
 	iwl_pcie_ctxt_info_free_paging(trans);
-	if (trans->trans_cfg->device_family >= IWL_DEVICE_FAMILY_22560)
-		iwl_pcie_ctxt_info_gen3_free(trans);
-	else
-		iwl_pcie_ctxt_info_free(trans);
+	iwl_pcie_ctxt_info_free(trans);
 
 	/* Make sure (redundant) we've released our request to stay awake */
 	iwl_clear_bit(trans, CSR_GP_CNTRL,
-		      BIT(trans->trans_cfg->csr->flag_mac_access_req));
+		      CSR_GP_CNTRL_REG_FLAG_MAC_ACCESS_REQ);
 
 	/* Stop the device, and put it in low power state */
 	iwl_pcie_gen2_apm_stop(trans, false);
 
-	iwl_trans_sw_reset(trans);
+	iwl_pcie_sw_reset(trans);
 
 	/*
 	 * Upon stop, the IVAR table gets erased, so msi-x won't
@@ -240,7 +227,7 @@ void _iwl_trans_pcie_gen2_stop_device(struct iwl_trans *trans)
 	iwl_pcie_prepare_card_hw(trans);
 }
 
-void iwl_trans_pcie_gen2_stop_device(struct iwl_trans *trans)
+void iwl_trans_pcie_gen2_stop_device(struct iwl_trans *trans, bool low_power)
 {
 	struct iwl_trans_pcie *trans_pcie = IWL_TRANS_GET_PCIE_TRANS(trans);
 	bool was_in_rfkill;
@@ -248,7 +235,7 @@ void iwl_trans_pcie_gen2_stop_device(struct iwl_trans *trans)
 	mutex_lock(&trans_pcie->mutex);
 	trans_pcie->opmode_down = true;
 	was_in_rfkill = test_bit(STATUS_RFKILL_OPMODE, &trans->status);
-	_iwl_trans_pcie_gen2_stop_device(trans);
+	_iwl_trans_pcie_gen2_stop_device(trans, low_power);
 	iwl_trans_pcie_handle_stop_rfkill(trans, was_in_rfkill);
 	mutex_unlock(&trans_pcie->mutex);
 }
@@ -256,8 +243,6 @@ void iwl_trans_pcie_gen2_stop_device(struct iwl_trans *trans)
 static int iwl_pcie_gen2_nic_init(struct iwl_trans *trans)
 {
 	struct iwl_trans_pcie *trans_pcie = IWL_TRANS_GET_PCIE_TRANS(trans);
-	int queue_size = max_t(u32, IWL_CMD_QUEUE_SIZE,
-			       trans->cfg->min_txq_size);
 
 	/* TODO: most of the logic can be removed in A0 - but not in Z0 */
 	spin_lock(&trans_pcie->irq_lock);
@@ -271,7 +256,7 @@ static int iwl_pcie_gen2_nic_init(struct iwl_trans *trans)
 		return -ENOMEM;
 
 	/* Allocate or reset and init all Tx and Command queues */
-	if (iwl_pcie_gen2_tx_init(trans, trans_pcie->cmd_queue, queue_size))
+	if (iwl_pcie_gen2_tx_init(trans))
 		return -ENOMEM;
 
 	/* enable shadow regs in HW */
@@ -295,15 +280,6 @@ void iwl_trans_pcie_gen2_fw_alive(struct iwl_trans *trans, u32 scd_addr)
 	 * paging memory cannot be freed included since FW will still use it
 	 */
 	iwl_pcie_ctxt_info_free(trans);
-
-	/*
-	 * Re-enable all the interrupts, including the RF-Kill one, now that
-	 * the firmware is alive.
-	 */
-	iwl_enable_interrupts(trans);
-	mutex_lock(&trans_pcie->mutex);
-	iwl_pcie_check_hw_rf_kill(trans);
-	mutex_unlock(&trans_pcie->mutex);
 }
 
 int iwl_trans_pcie_gen2_start_fw(struct iwl_trans *trans,
@@ -365,10 +341,7 @@ int iwl_trans_pcie_gen2_start_fw(struct iwl_trans *trans,
 		goto out;
 	}
 
-	if (trans->trans_cfg->device_family >= IWL_DEVICE_FAMILY_22560)
-		ret = iwl_pcie_ctxt_info_gen3_init(trans, fw);
-	else
-		ret = iwl_pcie_ctxt_info_init(trans, fw);
+	ret = iwl_pcie_ctxt_info_init(trans, fw);
 	if (ret)
 		goto out;
 

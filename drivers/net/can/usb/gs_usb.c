@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* CAN driver for Geschwister Schneider USB/CAN devices
  * and bytewerk.org candleLight USB CAN interfaces.
  *
@@ -7,6 +6,15 @@
  * Copyright (C) 2016 Hubert Denkmair
  *
  * Many thanks to all socketcan devs!
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published
+ * by the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * General Public License for more details.
  */
 
 #include <linux/init.h>
@@ -235,7 +243,7 @@ static struct gs_tx_context *gs_get_tx_context(struct gs_can *dev,
 	return NULL;
 }
 
-static int gs_cmd_reset(struct gs_can *gsdev)
+static int gs_cmd_reset(struct gs_usb *gsusb, struct gs_can *gsdev)
 {
 	struct gs_device_mode *dm;
 	struct usb_interface *intf = gsdev->iface;
@@ -623,7 +631,6 @@ static int gs_can_open(struct net_device *netdev)
 					   rc);
 
 				usb_unanchor_urb(urb);
-				usb_free_urb(urb);
 				break;
 			}
 
@@ -702,7 +709,7 @@ static int gs_can_close(struct net_device *netdev)
 	atomic_set(&dev->active_tx_urbs, 0);
 
 	/* reset the device */
-	rc = gs_cmd_reset(dev);
+	rc = gs_cmd_reset(parent, dev);
 	if (rc < 0)
 		netdev_warn(netdev, "Couldn't shutdown device (err=%d)", rc);
 

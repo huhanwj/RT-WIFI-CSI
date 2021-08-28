@@ -276,6 +276,8 @@ struct i40iw_cm_tcp_context {
 	u32 mss;
 	u8 snd_wscale;
 	u8 rcv_wscale;
+
+	struct timeval sent_ts;
 };
 
 enum i40iw_cm_listener_state {
@@ -335,13 +337,13 @@ struct i40iw_cm_node {
 	u16     mpav2_ird_ord;
 	struct iw_cm_id *cm_id;
 	struct list_head list;
-	bool accelerated;
+	int accelerated;
 	struct i40iw_cm_listener *listener;
 	int apbvt_set;
 	int accept_pend;
 	struct list_head timer_entry;
 	struct list_head reset_entry;
-	struct list_head teardown_entry;
+	struct list_head connected_entry;
 	atomic_t passive_state;
 	bool qhash_set;
 	u8 user_pri;
@@ -403,8 +405,7 @@ struct i40iw_cm_core {
 	struct i40iw_sc_dev *dev;
 
 	struct list_head listen_nodes;
-	struct list_head accelerated_list;
-	struct list_head non_accelerated_list;
+	struct list_head connected_nodes;
 
 	struct timer_list tcp_timer;
 
@@ -413,9 +414,8 @@ struct i40iw_cm_core {
 
 	spinlock_t ht_lock; /* manage hash table */
 	spinlock_t listen_list_lock; /* listen list */
-	spinlock_t apbvt_lock; /*manage apbvt entries*/
 
-	unsigned long ports_in_use[BITS_TO_LONGS(MAX_PORTS)];
+	unsigned long active_side_ports[BITS_TO_LONGS(MAX_PORTS)];
 
 	u64	stats_nodes_created;
 	u64	stats_nodes_destroyed;
@@ -455,8 +455,5 @@ int i40iw_arp_table(struct i40iw_device *iwdev,
 
 void i40iw_if_notify(struct i40iw_device *iwdev, struct net_device *netdev,
 		     u32 *ipaddr, bool ipv4, bool ifup);
-void i40iw_cm_teardown_connections(struct i40iw_device *iwdev, u32 *ipaddr,
-				   struct i40iw_cm_info *nfo,
-				   bool disconnect_all);
-bool i40iw_port_in_use(struct i40iw_cm_core *cm_core, u16 port);
+void i40iw_cm_disconnect_all(struct i40iw_device *iwdev);
 #endif /* I40IW_CM_H */

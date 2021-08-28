@@ -2,7 +2,6 @@
 #include <linux/module.h>
 #include <asm/alternative.h>
 #include <asm/facility.h>
-#include <asm/nospec-branch.h>
 
 #define MAX_PATCH_LEN (255 - 1)
 
@@ -76,8 +75,7 @@ static void __init_or_module __apply_alternatives(struct alt_instr *start,
 		instr = (u8 *)&a->instr_offset + a->instr_offset;
 		replacement = (u8 *)&a->repl_offset + a->repl_offset;
 
-		if (!__test_facility(a->facility,
-				     S390_lowcore.alt_stfle_fac_list))
+		if (!test_facility(a->facility))
 			continue;
 
 		if (unlikely(a->instrlen % 2 || a->replacementlen % 2)) {

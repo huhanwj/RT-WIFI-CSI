@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * omap_hwmod macros, structures
  *
@@ -9,6 +8,10 @@
  * Created in collaboration with (alphabetical order): Benoît Cousson,
  * Kevin Hilman, Tony Lindgren, Rajendra Nayak, Vikram Pandita, Sakari
  * Poussa, Anand Sawant, Santosh Shilimkar, Richard Woodruff
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * These headers and macros are used to define OMAP on-chip module
  * data and their integration with other OMAP modules and Linux.
@@ -21,6 +24,7 @@
  * - init_conn_id_bit (CONNID_BIT_VECTOR)
  * - implement default hwmod SMS/SDRC flags?
  * - move Linux-specific data ("non-ROM data") out
+ *
  */
 #ifndef __ARCH_ARM_PLAT_OMAP_INCLUDE_MACH_OMAP_HWMOD_H
 #define __ARCH_ARM_PLAT_OMAP_INCLUDE_MACH_OMAP_HWMOD_H
@@ -33,15 +37,9 @@
 
 struct omap_device;
 
-extern struct sysc_regbits omap_hwmod_sysc_type1;
-extern struct sysc_regbits omap_hwmod_sysc_type2;
-extern struct sysc_regbits omap_hwmod_sysc_type3;
-extern struct sysc_regbits omap34xx_sr_sysc_fields;
-extern struct sysc_regbits omap36xx_sr_sysc_fields;
-extern struct sysc_regbits omap3_sham_sysc_fields;
-extern struct sysc_regbits omap3xxx_aes_sysc_fields;
-extern struct sysc_regbits omap_hwmod_sysc_type_mcasp;
-extern struct sysc_regbits omap_hwmod_sysc_type_usb_host_fs;
+extern struct omap_hwmod_sysc_fields omap_hwmod_sysc_type1;
+extern struct omap_hwmod_sysc_fields omap_hwmod_sysc_type2;
+extern struct omap_hwmod_sysc_fields omap_hwmod_sysc_type3;
 
 /*
  * OCP SYSCONFIG bit shifts/masks TYPE1. These are for IPs compliant
@@ -287,6 +285,26 @@ struct omap_hwmod_ocp_if {
 #define CLOCKACT_TEST_NONE	0x3
 
 /**
+ * struct omap_hwmod_sysc_fields - hwmod OCP_SYSCONFIG register field offsets.
+ * @midle_shift: Offset of the midle bit
+ * @clkact_shift: Offset of the clockactivity bit
+ * @sidle_shift: Offset of the sidle bit
+ * @enwkup_shift: Offset of the enawakeup bit
+ * @srst_shift: Offset of the softreset bit
+ * @autoidle_shift: Offset of the autoidle bit
+ * @dmadisable_shift: Offset of the dmadisable bit
+ */
+struct omap_hwmod_sysc_fields {
+	u8 midle_shift;
+	u8 clkact_shift;
+	u8 sidle_shift;
+	u8 enwkup_shift;
+	u8 srst_shift;
+	u8 autoidle_shift;
+	u8 dmadisable_shift;
+};
+
+/**
  * struct omap_hwmod_class_sysconfig - hwmod class OCP_SYS* data
  * @rev_offs: IP block revision register offset (from module base addr)
  * @sysc_offs: OCP_SYSCONFIG register offset (from module base addr)
@@ -313,11 +331,11 @@ struct omap_hwmod_ocp_if {
  * then this field has to be populated with the correct offset structure.
  */
 struct omap_hwmod_class_sysconfig {
-	s32 rev_offs;
-	s32 sysc_offs;
-	s32 syss_offs;
+	u32 rev_offs;
+	u32 sysc_offs;
+	u32 syss_offs;
 	u16 sysc_flags;
-	struct sysc_regbits *sysc_fields;
+	struct omap_hwmod_sysc_fields *sysc_fields;
 	u8 srst_udelay;
 	u8 idlemodes;
 };
@@ -325,8 +343,11 @@ struct omap_hwmod_class_sysconfig {
 /**
  * struct omap_hwmod_omap2_prcm - OMAP2/3-specific PRCM data
  * @module_offs: PRCM submodule offset from the start of the PRM/CM
+ * @prcm_reg_id: PRCM register ID (e.g., 3 for CM_AUTOIDLE3)
+ * @module_bit: register bit shift for AUTOIDLE, WKST, WKEN, GRPSEL regs
  * @idlest_reg_id: IDLEST register ID (e.g., 3 for CM_IDLEST3)
  * @idlest_idle_bit: register bit shift for CM_IDLEST slave idle bit
+ * @idlest_stdby_bit: register bit shift for CM_IDLEST master standby bit
  *
  * @prcm_reg_id and @module_bit are specific to the AUTOIDLE, WKST,
  * WKEN, GRPSEL registers.  In an ideal world, no extra information
@@ -336,8 +357,11 @@ struct omap_hwmod_class_sysconfig {
  */
 struct omap_hwmod_omap2_prcm {
 	s16 module_offs;
+	u8 prcm_reg_id;
+	u8 module_bit;
 	u8 idlest_reg_id;
 	u8 idlest_idle_bit;
+	u8 idlest_stdby_bit;
 };
 
 /*
@@ -489,16 +513,11 @@ struct omap_hwmod_omap4_prcm {
 #define _HWMOD_STATE_IDLE			5
 #define _HWMOD_STATE_DISABLED			6
 
-#ifdef CONFIG_PM
-#define _HWMOD_STATE_DEFAULT			_HWMOD_STATE_IDLE
-#else
-#define _HWMOD_STATE_DEFAULT			_HWMOD_STATE_ENABLED
-#endif
-
 /**
  * struct omap_hwmod_class - the type of an IP block
  * @name: name of the hwmod_class
  * @sysc: device SYSCONFIG/SYSSTATUS register data
+ * @rev: revision of the IP class
  * @pre_shutdown: ptr to fn to be executed immediately prior to device shutdown
  * @reset: ptr to fn to be executed in place of the standard hwmod reset fn
  * @enable_preprogram:  ptr to fn to be executed during device enable
@@ -524,6 +543,7 @@ struct omap_hwmod_omap4_prcm {
 struct omap_hwmod_class {
 	const char				*name;
 	struct omap_hwmod_class_sysconfig	*sysc;
+	u32					rev;
 	int					(*pre_shutdown)(struct omap_hwmod *oh);
 	int					(*reset)(struct omap_hwmod *oh);
 	int					(*enable_preprogram)(struct omap_hwmod *oh);
@@ -619,13 +639,6 @@ int __init omap_hwmod_setup_one(const char *name);
 int omap_hwmod_parse_module_range(struct omap_hwmod *oh,
 				  struct device_node *np,
 				  struct resource *res);
-
-struct ti_sysc_module_data;
-struct ti_sysc_cookie;
-
-int omap_hwmod_init_module(struct device *dev,
-			   const struct ti_sysc_module_data *data,
-			   struct ti_sysc_cookie *cookie);
 
 int omap_hwmod_enable(struct omap_hwmod *oh);
 int omap_hwmod_idle(struct omap_hwmod *oh);

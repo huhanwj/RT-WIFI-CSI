@@ -1,9 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * sama5d3xmb.dts - Device Tree file for SAMA5D3x mother board
  *
  *  Copyright (C) 2013 Atmel,
  *                2013 Ludovic Desroches <ludovic.desroches@atmel.com>
+ *
+ * Licensed under GPLv2 or later.
  */
 #include "sama5d3xcm.dtsi"
 
@@ -52,7 +53,7 @@
 			};
 
 			i2c1: i2c@f0018000 {
-				ov2640: camera@30 {
+				ov2640: camera@0x30 {
 					compatible = "ovti,ov2640";
 					reg = <0x30>;
 					pinctrl-names = "default";

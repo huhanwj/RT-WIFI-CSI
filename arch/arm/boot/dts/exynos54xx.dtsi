@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Samsung's Exynos54xx SoC series common device tree source
  *
@@ -9,6 +8,10 @@
  * Device nodes common for Samsung Exynos5410/5420/5422/5800. Specific
  * Exynos 54xx SoCs should include this file and customize it further
  * (e.g. with clocks).
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include "exynos5.dtsi"
@@ -23,26 +26,6 @@
 		i2c7 = &hsi2c_7;
 		usbdrdphy0 = &usbdrd_phy0;
 		usbdrdphy1 = &usbdrd_phy1;
-	};
-
-	arm_a7_pmu: arm-a7-pmu {
-		compatible = "arm,cortex-a7-pmu";
-		interrupt-parent = <&gic>;
-		interrupts = <GIC_SPI 160 IRQ_TYPE_LEVEL_HIGH>,
-			     <GIC_SPI 161 IRQ_TYPE_LEVEL_HIGH>,
-			     <GIC_SPI 162 IRQ_TYPE_LEVEL_HIGH>,
-			     <GIC_SPI 163 IRQ_TYPE_LEVEL_HIGH>;
-		status = "disabled";
-	};
-
-	arm_a15_pmu: arm-a15-pmu {
-		compatible = "arm,cortex-a15-pmu";
-		interrupt-parent = <&combiner>;
-		interrupts = <1 2>,
-			     <7 0>,
-			     <16 6>,
-			     <19 2>;
-		status = "disabled";
 	};
 
 	soc: soc {
@@ -96,13 +79,10 @@
 			interrupts = <GIC_SPI 42 IRQ_TYPE_LEVEL_HIGH>;
 		};
 
-		adc: adc@12d10000 {
-			compatible = "samsung,exynos-adc-v2";
-			reg = <0x12d10000 0x100>;
-			interrupts = <GIC_SPI 106 IRQ_TYPE_LEVEL_HIGH>;
-			#io-channel-cells = <1>;
-			io-channel-ranges;
-			status = "disabled";
+		sss: sss@10830000 {
+			compatible = "samsung,exynos4210-secss";
+			reg = <0x10830000 0x300>;
+			interrupts = <GIC_SPI 112 IRQ_TYPE_LEVEL_HIGH>;
 		};
 
 		/* i2c_0-3 are defined in exynos5.dtsi */
@@ -189,16 +169,26 @@
 			compatible = "samsung,exynos4210-ehci";
 			reg = <0x12110000 0x100>;
 			interrupts = <GIC_SPI 71 IRQ_TYPE_LEVEL_HIGH>;
-			phys = <&usb2_phy 1>;
-			phy-names = "host";
+
+			#address-cells = <1>;
+			#size-cells = <0>;
+			port@0 {
+				reg = <0>;
+				phys = <&usb2_phy 1>;
+			};
 		};
 
 		usbhost1: usb@12120000 {
 			compatible = "samsung,exynos4210-ohci";
 			reg = <0x12120000 0x100>;
 			interrupts = <GIC_SPI 71 IRQ_TYPE_LEVEL_HIGH>;
-			phys = <&usb2_phy 1>;
-			phy-names = "host";
+
+			#address-cells = <1>;
+			#size-cells = <0>;
+			port@0 {
+				reg = <0>;
+				phys = <&usb2_phy 1>;
+			};
 		};
 
 		usb2_phy: phy@12130000 {

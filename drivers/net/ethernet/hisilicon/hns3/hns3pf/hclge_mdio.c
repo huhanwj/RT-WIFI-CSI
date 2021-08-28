@@ -1,13 +1,25 @@
-// SPDX-License-Identifier: GPL-2.0+
-// Copyright (c) 2016-2017 Hisilicon Limited.
+/*
+ * Copyright (c) 2016~2017 Hisilicon Limited.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ */
 
 #include <linux/etherdevice.h>
 #include <linux/kernel.h>
-#include <linux/marvell_phy.h>
 
 #include "hclge_cmd.h"
 #include "hclge_main.h"
 #include "hclge_mdio.h"
+
+#define HCLGE_PHY_SUPPORTED_FEATURES	(SUPPORTED_Autoneg | \
+					 SUPPORTED_TP | \
+					 SUPPORTED_Pause | \
+					 PHY_10BT_FEATURES | \
+					 PHY_100BT_FEATURES | \
+					 PHY_1000BT_FEATURES)
 
 enum hclge_mdio_c22_op_seq {
 	HCLGE_MDIO_C22_WRITE = 1,
@@ -47,23 +59,20 @@ static int hclge_mdio_write(struct mii_bus *bus, int phyid, int regnum,
 	struct hclge_desc desc;
 	int ret;
 
-	if (test_bit(HCLGE_STATE_CMD_DISABLE, &hdev->state))
-		return 0;
-
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_MDIO_CONFIG, false);
 
 	mdio_cmd = (struct hclge_mdio_cfg_cmd *)desc.data;
 
-	hnae3_set_field(mdio_cmd->phyid, HCLGE_MDIO_PHYID_M,
-			HCLGE_MDIO_PHYID_S, (u32)phyid);
-	hnae3_set_field(mdio_cmd->phyad, HCLGE_MDIO_PHYREG_M,
-			HCLGE_MDIO_PHYREG_S, (u32)regnum);
+	hnae_set_field(mdio_cmd->phyid, HCLGE_MDIO_PHYID_M,
+		       HCLGE_MDIO_PHYID_S, phyid);
+	hnae_set_field(mdio_cmd->phyad, HCLGE_MDIO_PHYREG_M,
+		       HCLGE_MDIO_PHYREG_S, regnum);
 
-	hnae3_set_bit(mdio_cmd->ctrl_bit, HCLGE_MDIO_CTRL_START_B, 1);
-	hnae3_set_field(mdio_cmd->ctrl_bit, HCLGE_MDIO_CTRL_ST_M,
-			HCLGE_MDIO_CTRL_ST_S, 1);
-	hnae3_set_field(mdio_cmd->ctrl_bit, HCLGE_MDIO_CTRL_OP_M,
-			HCLGE_MDIO_CTRL_OP_S, HCLGE_MDIO_C22_WRITE);
+	hnae_set_bit(mdio_cmd->ctrl_bit, HCLGE_MDIO_CTRL_START_B, 1);
+	hnae_set_field(mdio_cmd->ctrl_bit, HCLGE_MDIO_CTRL_ST_M,
+		       HCLGE_MDIO_CTRL_ST_S, 1);
+	hnae_set_field(mdio_cmd->ctrl_bit, HCLGE_MDIO_CTRL_OP_M,
+		       HCLGE_MDIO_CTRL_OP_S, HCLGE_MDIO_C22_WRITE);
 
 	mdio_cmd->data_wr = cpu_to_le16(data);
 
@@ -85,23 +94,20 @@ static int hclge_mdio_read(struct mii_bus *bus, int phyid, int regnum)
 	struct hclge_desc desc;
 	int ret;
 
-	if (test_bit(HCLGE_STATE_CMD_DISABLE, &hdev->state))
-		return 0;
-
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_MDIO_CONFIG, true);
 
 	mdio_cmd = (struct hclge_mdio_cfg_cmd *)desc.data;
 
-	hnae3_set_field(mdio_cmd->phyid, HCLGE_MDIO_PHYID_M,
-			HCLGE_MDIO_PHYID_S, (u32)phyid);
-	hnae3_set_field(mdio_cmd->phyad, HCLGE_MDIO_PHYREG_M,
-			HCLGE_MDIO_PHYREG_S, (u32)regnum);
+	hnae_set_field(mdio_cmd->phyid, HCLGE_MDIO_PHYID_M,
+		       HCLGE_MDIO_PHYID_S, phyid);
+	hnae_set_field(mdio_cmd->phyad, HCLGE_MDIO_PHYREG_M,
+		       HCLGE_MDIO_PHYREG_S, regnum);
 
-	hnae3_set_bit(mdio_cmd->ctrl_bit, HCLGE_MDIO_CTRL_START_B, 1);
-	hnae3_set_field(mdio_cmd->ctrl_bit, HCLGE_MDIO_CTRL_ST_M,
-			HCLGE_MDIO_CTRL_ST_S, 1);
-	hnae3_set_field(mdio_cmd->ctrl_bit, HCLGE_MDIO_CTRL_OP_M,
-			HCLGE_MDIO_CTRL_OP_S, HCLGE_MDIO_C22_READ);
+	hnae_set_bit(mdio_cmd->ctrl_bit, HCLGE_MDIO_CTRL_START_B, 1);
+	hnae_set_field(mdio_cmd->ctrl_bit, HCLGE_MDIO_CTRL_ST_M,
+		       HCLGE_MDIO_CTRL_ST_S, 1);
+	hnae_set_field(mdio_cmd->ctrl_bit, HCLGE_MDIO_CTRL_OP_M,
+		       HCLGE_MDIO_CTRL_OP_S, HCLGE_MDIO_C22_READ);
 
 	/* Read out phy data */
 	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
@@ -112,7 +118,7 @@ static int hclge_mdio_read(struct mii_bus *bus, int phyid, int regnum)
 		return ret;
 	}
 
-	if (hnae3_get_bit(le16_to_cpu(mdio_cmd->sta), HCLGE_MDIO_STA_B)) {
+	if (hnae_get_bit(le16_to_cpu(mdio_cmd->sta), HCLGE_MDIO_STA_B)) {
 		dev_err(&hdev->pdev->dev, "mdio read data error\n");
 		return -EIO;
 	}
@@ -122,22 +128,13 @@ static int hclge_mdio_read(struct mii_bus *bus, int phyid, int regnum)
 
 int hclge_mac_mdio_config(struct hclge_dev *hdev)
 {
-#define PHY_INEXISTENT	255
-
 	struct hclge_mac *mac = &hdev->hw.mac;
 	struct phy_device *phydev;
 	struct mii_bus *mdio_bus;
 	int ret;
 
-	if (hdev->hw.mac.phy_addr == PHY_INEXISTENT) {
-		dev_info(&hdev->pdev->dev,
-			 "no phy device is connected to mdio bus\n");
+	if (hdev->hw.mac.phy_addr >= PHY_MAX_ADDR)
 		return 0;
-	} else if (hdev->hw.mac.phy_addr >= PHY_MAX_ADDR) {
-		dev_err(&hdev->pdev->dev, "phy_addr(%d) is too large.\n",
-			hdev->hw.mac.phy_addr);
-		return -EINVAL;
-	}
 
 	mdio_bus = devm_mdiobus_alloc(&hdev->pdev->dev);
 	if (!mdio_bus)
@@ -180,37 +177,22 @@ static void hclge_mac_adjust_link(struct net_device *netdev)
 	int duplex, speed;
 	int ret;
 
-	/* When phy link down, do nothing */
-	if (netdev->phydev->link == 0)
-		return;
-
 	speed = netdev->phydev->speed;
 	duplex = netdev->phydev->duplex;
 
 	ret = hclge_cfg_mac_speed_dup(hdev, speed, duplex);
 	if (ret)
 		netdev_err(netdev, "failed to adjust link.\n");
-
-	ret = hclge_cfg_flowctrl(hdev);
-	if (ret)
-		netdev_err(netdev, "failed to configure flow control.\n");
 }
 
-int hclge_mac_connect_phy(struct hnae3_handle *handle)
+int hclge_mac_start_phy(struct hclge_dev *hdev)
 {
-	struct hclge_vport *vport = hclge_get_vport(handle);
-	struct hclge_dev *hdev = vport->back;
 	struct net_device *netdev = hdev->vport[0].nic.netdev;
 	struct phy_device *phydev = hdev->hw.mac.phydev;
-	__ETHTOOL_DECLARE_LINK_MODE_MASK(mask) = { 0, };
 	int ret;
 
 	if (!phydev)
 		return 0;
-
-	linkmode_clear_bit(ETHTOOL_LINK_MODE_FIBRE_BIT, phydev->supported);
-
-	phydev->dev_flags |= MARVELL_PHY_LED0_LINK_LED1_ACTIVE;
 
 	ret = phy_connect_direct(netdev, phydev,
 				 hclge_mac_adjust_link,
@@ -220,42 +202,12 @@ int hclge_mac_connect_phy(struct hnae3_handle *handle)
 		return ret;
 	}
 
-	linkmode_copy(mask, hdev->hw.mac.supported);
-	linkmode_and(phydev->supported, phydev->supported, mask);
-	linkmode_copy(phydev->advertising, phydev->supported);
-
-	/* supported flag is Pause and Asym Pause, but default advertising
-	 * should be rx on, tx on, so need clear Asym Pause in advertising
-	 * flag
-	 */
-	linkmode_clear_bit(ETHTOOL_LINK_MODE_Asym_Pause_BIT,
-			   phydev->advertising);
-
-	phy_attached_info(phydev);
-
-	return 0;
-}
-
-void hclge_mac_disconnect_phy(struct hnae3_handle *handle)
-{
-	struct hclge_vport *vport = hclge_get_vport(handle);
-	struct hclge_dev *hdev = vport->back;
-	struct phy_device *phydev = hdev->hw.mac.phydev;
-
-	if (!phydev)
-		return;
-
-	phy_disconnect(phydev);
-}
-
-void hclge_mac_start_phy(struct hclge_dev *hdev)
-{
-	struct phy_device *phydev = hdev->hw.mac.phydev;
-
-	if (!phydev)
-		return;
+	phydev->supported &= HCLGE_PHY_SUPPORTED_FEATURES;
+	phydev->advertising = phydev->supported;
 
 	phy_start(phydev);
+
+	return 0;
 }
 
 void hclge_mac_stop_phy(struct hclge_dev *hdev)
@@ -267,4 +219,5 @@ void hclge_mac_stop_phy(struct hclge_dev *hdev)
 		return;
 
 	phy_stop(phydev);
+	phy_disconnect(phydev);
 }

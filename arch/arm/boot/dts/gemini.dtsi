@@ -3,6 +3,8 @@
  * Device Tree file for Cortina systems Gemini SoC
  */
 
+/include/ "skeleton.dtsi"
+
 #include <dt-bindings/interrupt-controller/irq.h>
 #include <dt-bindings/clock/cortina,gemini-clock.h>
 #include <dt-bindings/reset/cortina,gemini-reset.h>
@@ -112,16 +114,9 @@
 					};
 				};
 				gmii_default_pins: pinctrl-gmii {
-					/*
-					 * Only activate GMAC0 by default since
-					 * GMAC1 will overlap with 8 GPIO lines
-					 * gpio2a, gpio2b. Overlay groups with
-					 * "gmii_gmac0_grp", "gmii_gmac1_grp" for
-					 * both ethernet interfaces.
-					 */
 					mux {
 						function = "gmii";
-						groups = "gmii_gmac0_grp";
+						groups = "gmiigrp";
 					};
 				};
 				pci_default_pins: pinctrl-pci {
@@ -321,41 +316,6 @@
 			};
 		};
 
-		ethernet@60000000 {
-			compatible = "cortina,gemini-ethernet";
-			reg = <0x60000000 0x4000>, /* Global registers, queue */
-			      <0x60004000 0x2000>, /* V-bit */
-			      <0x60006000 0x2000>; /* A-bit */
-			pinctrl-names = "default";
-			pinctrl-0 = <&gmii_default_pins>;
-			status = "disabled";
-			#address-cells = <1>;
-			#size-cells = <1>;
-			ranges;
-
-			gmac0: ethernet-port@0 {
-				compatible = "cortina,gemini-ethernet-port";
-				reg = <0x60008000 0x2000>, /* Port 0 DMA/TOE */
-				      <0x6000a000 0x2000>; /* Port 0 GMAC */
-				interrupt-parent = <&intcon>;
-				interrupts = <1 IRQ_TYPE_LEVEL_HIGH>;
-				resets = <&syscon GEMINI_RESET_GMAC0>;
-				clocks = <&syscon GEMINI_CLK_GATE_GMAC0>;
-				clock-names = "PCLK";
-			};
-
-			gmac1: ethernet-port@1 {
-				compatible = "cortina,gemini-ethernet-port";
-				reg = <0x6000c000 0x2000>, /* Port 1 DMA/TOE */
-				      <0x6000e000 0x2000>; /* Port 1 GMAC */
-				interrupt-parent = <&intcon>;
-				interrupts = <2 IRQ_TYPE_LEVEL_HIGH>;
-				resets = <&syscon GEMINI_RESET_GMAC1>;
-				clocks = <&syscon GEMINI_CLK_GATE_GMAC1>;
-				clock-names = "PCLK";
-			};
-		};
-
 		ata@63000000 {
 			compatible = "cortina,gemini-pata", "faraday,ftide010";
 			reg = <0x63000000 0x1000>;
@@ -407,38 +367,6 @@
 			pinctrl-0 = <&tvc_default_pins>;
 			#address-cells = <1>;
 			#size-cells = <0>;
-			status = "disabled";
-		};
-
-		usb@68000000 {
-			compatible = "cortina,gemini-usb", "faraday,fotg210";
-			reg = <0x68000000 0x1000>;
-			interrupts = <10 IRQ_TYPE_LEVEL_HIGH>;
-			resets = <&syscon GEMINI_RESET_USB0>;
-			clocks = <&syscon GEMINI_CLK_GATE_USB0>;
-			clock-names = "PCLK";
-			/*
-			 * This will claim pins for USB0 and USB1 at the same
-			 * time as they are using some common pins. If you for
-			 * some reason have a system using USB1 at 96000000 but
-			 * NOT using USB0 at 68000000 you wll have to add the
-			 * usb_default_pins to the USB controller at 96000000
-			 * in your .dts for the board.
-			 */
-			pinctrl-names = "default";
-			pinctrl-0 = <&usb_default_pins>;
-			syscon = <&syscon>;
-			status = "disabled";
-		};
-
-		usb@69000000 {
-			compatible = "cortina,gemini-usb", "faraday,fotg210";
-			reg = <0x69000000 0x1000>;
-			interrupts = <11 IRQ_TYPE_LEVEL_HIGH>;
-			resets = <&syscon GEMINI_RESET_USB1>;
-			clocks = <&syscon GEMINI_CLK_GATE_USB1>;
-			clock-names = "PCLK";
-			syscon = <&syscon>;
 			status = "disabled";
 		};
 	};

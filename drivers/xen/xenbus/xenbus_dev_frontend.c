@@ -55,15 +55,12 @@
 #include <linux/string.h>
 #include <linux/slab.h>
 #include <linux/miscdevice.h>
-#include <linux/workqueue.h>
 
 #include <xen/xenbus.h>
 #include <xen/xen.h>
 #include <asm/xen/hypervisor.h>
 
 #include "xenbus.h"
-
-unsigned int xb_dev_generation_id;
 
 /*
  * An element of a list of outstanding transactions, for which we're
@@ -72,7 +69,6 @@ unsigned int xb_dev_generation_id;
 struct xenbus_transaction_holder {
 	struct list_head list;
 	struct xenbus_transaction handle;
-	unsigned int generation_id;
 };
 
 /*
@@ -117,8 +113,6 @@ struct xenbus_file_priv {
 	wait_queue_head_t read_waitq;
 
 	struct kref kref;
-
-	struct work_struct wq;
 };
 
 /* Read out any raw xenbus messages queued up. */
@@ -303,14 +297,14 @@ static void watch_fired(struct xenbus_watch *watch,
 	mutex_unlock(&adap->dev_data->reply_mutex);
 }
 
-static void xenbus_worker(struct work_struct *wq)
+static void xenbus_file_free(struct kref *kref)
 {
 	struct xenbus_file_priv *u;
 	struct xenbus_transaction_holder *trans, *tmp;
 	struct watch_adapter *watch, *tmp_watch;
 	struct read_buffer *rb, *tmp_rb;
 
-	u = container_of(wq, struct xenbus_file_priv, wq);
+	u = container_of(kref, struct xenbus_file_priv, kref);
 
 	/*
 	 * No need for locking here because there are no other users,
@@ -334,18 +328,6 @@ static void xenbus_worker(struct work_struct *wq)
 		kfree(rb);
 	}
 	kfree(u);
-}
-
-static void xenbus_file_free(struct kref *kref)
-{
-	struct xenbus_file_priv *u;
-
-	/*
-	 * We might be called in xenbus_thread().
-	 * Use workqueue to avoid deadlock.
-	 */
-	u = container_of(kref, struct xenbus_file_priv, kref);
-	schedule_work(&u->wq);
 }
 
 static struct xenbus_transaction_holder *xenbus_get_transaction(
@@ -383,7 +365,7 @@ void xenbus_dev_queue_reply(struct xb_req_data *req)
 			if (WARN_ON(rc))
 				goto out;
 		}
-	} else if (req->type == XS_TRANSACTION_END) {
+	} else if (req->msg.type == XS_TRANSACTION_END) {
 		trans = xenbus_get_transaction(u, req->msg.tx_id);
 		if (WARN_ON(!trans))
 			goto out;
@@ -421,7 +403,7 @@ static int xenbus_command_reply(struct xenbus_file_priv *u,
 {
 	struct {
 		struct xsd_sockmsg hdr;
-		char body[16];
+		const char body[16];
 	} msg;
 	int rc;
 
@@ -430,7 +412,6 @@ static int xenbus_command_reply(struct xenbus_file_priv *u,
 	msg.hdr.len = strlen(reply) + 1;
 	if (msg.hdr.len > sizeof(msg.body))
 		return -E2BIG;
-	memcpy(&msg.body, reply, msg.hdr.len);
 
 	mutex_lock(&u->reply_mutex);
 	rc = queue_reply(&u->read_buffers, &msg, sizeof(msg.hdr) + msg.hdr.len);
@@ -448,10 +429,6 @@ static int xenbus_write_transaction(unsigned msg_type,
 {
 	int rc;
 	struct xenbus_transaction_holder *trans = NULL;
-	struct {
-		struct xsd_sockmsg hdr;
-		char body[];
-	} *msg = (void *)u->u.buffer;
 
 	if (msg_type == XS_TRANSACTION_START) {
 		trans = kzalloc(sizeof(*trans), GFP_KERNEL);
@@ -459,31 +436,12 @@ static int xenbus_write_transaction(unsigned msg_type,
 			rc = -ENOMEM;
 			goto out;
 		}
-		trans->generation_id = xb_dev_generation_id;
 		list_add(&trans->list, &u->transactions);
-	} else if (msg->hdr.tx_id != 0 &&
-		   !xenbus_get_transaction(u, msg->hdr.tx_id))
+	} else if (u->u.msg.tx_id != 0 &&
+		   !xenbus_get_transaction(u, u->u.msg.tx_id))
 		return xenbus_command_reply(u, XS_ERROR, "ENOENT");
-	else if (msg_type == XS_TRANSACTION_END &&
-		 !(msg->hdr.len == 2 &&
-		   (!strcmp(msg->body, "T") || !strcmp(msg->body, "F"))))
-		return xenbus_command_reply(u, XS_ERROR, "EINVAL");
-	else if (msg_type == XS_TRANSACTION_END) {
-		trans = xenbus_get_transaction(u, msg->hdr.tx_id);
-		if (trans && trans->generation_id != xb_dev_generation_id) {
-			list_del(&trans->list);
-			kfree(trans);
-			if (!strcmp(msg->body, "T"))
-				return xenbus_command_reply(u, XS_ERROR,
-							    "EAGAIN");
-			else
-				return xenbus_command_reply(u,
-							    XS_TRANSACTION_END,
-							    "OK");
-		}
-	}
 
-	rc = xenbus_dev_request_and_reply(&msg->hdr, u);
+	rc = xenbus_dev_request_and_reply(&u->u.msg, u);
 	if (rc && trans) {
 		list_del(&trans->list);
 		kfree(trans);
@@ -498,6 +456,7 @@ static int xenbus_write_watch(unsigned msg_type, struct xenbus_file_priv *u)
 	struct watch_adapter *watch;
 	char *path, *token;
 	int err, rc;
+	LIST_HEAD(staging_q);
 
 	path = u->u.buffer + sizeof(u->u.msg);
 	token = memchr(path, 0, u->u.msg.len);
@@ -555,6 +514,7 @@ static ssize_t xenbus_file_write(struct file *filp,
 	uint32_t msg_type;
 	int rc = len;
 	int ret;
+	LIST_HEAD(staging_q);
 
 	/*
 	 * We're expecting usermode to be writing properly formed
@@ -653,7 +613,9 @@ static int xenbus_file_open(struct inode *inode, struct file *filp)
 	if (xen_store_evtchn == 0)
 		return -ENOENT;
 
-	stream_open(inode, filp);
+	nonseekable_open(inode, filp);
+
+	filp->f_mode &= ~FMODE_ATOMIC_POS; /* cdev-style semantics */
 
 	u = kzalloc(sizeof(*u), GFP_KERNEL);
 	if (u == NULL)
@@ -665,7 +627,6 @@ static int xenbus_file_open(struct inode *inode, struct file *filp)
 	INIT_LIST_HEAD(&u->watches);
 	INIT_LIST_HEAD(&u->read_buffers);
 	init_waitqueue_head(&u->read_waitq);
-	INIT_WORK(&u->wq, xenbus_worker);
 
 	mutex_init(&u->reply_mutex);
 	mutex_init(&u->msgbuffer_mutex);
@@ -684,13 +645,13 @@ static int xenbus_file_release(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-static __poll_t xenbus_file_poll(struct file *file, poll_table *wait)
+static unsigned int xenbus_file_poll(struct file *file, poll_table *wait)
 {
 	struct xenbus_file_priv *u = file->private_data;
 
 	poll_wait(file, &u->read_waitq, wait);
 	if (!list_empty(&u->read_buffers))
-		return EPOLLIN | EPOLLRDNORM;
+		return POLLIN | POLLRDNORM;
 	return 0;
 }
 

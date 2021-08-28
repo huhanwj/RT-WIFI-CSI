@@ -1,7 +1,15 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2012 Realtek Corporation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of version 2 of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
  *
  ******************************************************************************/
 #ifndef __HAL_INTF_H__
@@ -9,7 +17,7 @@
 
 #include <osdep_service.h>
 #include <drv_types.h>
-#include <hal8188e_phy_cfg.h>
+#include <Hal8188EPhyCfg.h>
 
 enum RTL871X_HCI_TYPE {
 	RTW_PCIE	= BIT(0),
@@ -185,7 +193,7 @@ u32	rtw_hal_inirp_init(struct adapter *padapter);
 void	rtw_hal_inirp_deinit(struct adapter *padapter);
 void usb_intf_stop(struct adapter *padapter);
 
-bool rtw_hal_xmit(struct adapter *padapter, struct xmit_frame *pxmitframe);
+s32	rtw_hal_xmit(struct adapter *padapter, struct xmit_frame *pxmitframe);
 s32	rtw_hal_mgnt_xmit(struct adapter *padapter,
 			  struct xmit_frame *pmgntframe);
 
@@ -199,7 +207,7 @@ void	rtw_hal_add_ra_tid(struct adapter *adapt, u32 bitmap, u8 arg, u8 level);
 void	rtw_hal_clone_data(struct adapter *dst_adapt,
 			   struct adapter *src_adapt);
 
-void beacon_timing_control(struct adapter *padapter);
+void rtw_hal_bcn_related_reg_setting(struct adapter *padapter);
 
 u32	rtw_hal_read_rfreg(struct adapter *padapter, enum rf_radio_path eRFPath,
 			   u32 RegAddr, u32 BitMask);

@@ -1,5 +1,35 @@
-/* SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause) */
-/* Copyright (C) 2016-2018 Netronome Systems, Inc. */
+/*
+ * Copyright (C) 2016 Netronome Systems, Inc.
+ *
+ * This software is dual licensed under the GNU General License Version 2,
+ * June 1991 as shown in the file COPYING in the top-level directory of this
+ * source tree or the BSD 2-Clause License provided below.  You have the
+ * option to license this software under the complete terms of either license.
+ *
+ * The BSD 2-Clause License:
+ *
+ *     Redistribution and use in source and binary forms, with or
+ *     without modification, are permitted provided that the following
+ *     conditions are met:
+ *
+ *      1. Redistributions of source code must retain the above
+ *         copyright notice, this list of conditions and the following
+ *         disclaimer.
+ *
+ *      2. Redistributions in binary form must reproduce the above
+ *         copyright notice, this list of conditions and the following
+ *         disclaimer in the documentation and/or other materials
+ *         provided with the distribution.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+ * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 
 #ifndef __NFP_ASM_H__
 #define __NFP_ASM_H__ 1
@@ -9,7 +39,6 @@
 #include <linux/types.h>
 
 #define REG_NONE	0
-#define REG_WIDTH	4
 
 #define RE_REG_NO_DST	0x020
 #define RE_REG_IMM	0x020
@@ -42,40 +71,15 @@
 #define OP_BR_ADDR_LO		0x007ffc00000ULL
 #define OP_BR_ADDR_HI		0x10000000000ULL
 
-#define OP_BR_BIT_BASE		0x0d000000000ULL
-#define OP_BR_BIT_BASE_MASK	0x0f800080300ULL
-#define OP_BR_BIT_A_SRC		0x000000000ffULL
-#define OP_BR_BIT_B_SRC		0x0000003fc00ULL
-#define OP_BR_BIT_BV		0x00000040000ULL
-#define OP_BR_BIT_SRC_LMEXTN	0x40000000000ULL
-#define OP_BR_BIT_DEFBR		OP_BR_DEFBR
-#define OP_BR_BIT_ADDR_LO	OP_BR_ADDR_LO
-#define OP_BR_BIT_ADDR_HI	OP_BR_ADDR_HI
-
-#define OP_BR_ALU_BASE		0x0e800000000ULL
-#define OP_BR_ALU_BASE_MASK	0x0ff80000000ULL
-#define OP_BR_ALU_A_SRC		0x000000003ffULL
-#define OP_BR_ALU_B_SRC		0x000000ffc00ULL
-#define OP_BR_ALU_DEFBR		0x00000300000ULL
-#define OP_BR_ALU_IMM_HI	0x0007fc00000ULL
-#define OP_BR_ALU_SRC_LMEXTN	0x40000000000ULL
-#define OP_BR_ALU_DST_LMEXTN	0x80000000000ULL
-
-static inline bool nfp_is_br(u64 insn)
-{
-	return (insn & OP_BR_BASE_MASK) == OP_BR_BASE ||
-	       (insn & OP_BR_BIT_BASE_MASK) == OP_BR_BIT_BASE;
-}
+#define nfp_is_br(_insn)				\
+	(((_insn) & OP_BR_BASE_MASK) == OP_BR_BASE)
 
 enum br_mask {
 	BR_BEQ = 0x00,
 	BR_BNE = 0x01,
-	BR_BMI = 0x02,
 	BR_BHS = 0x04,
-	BR_BCC = 0x05,
 	BR_BLO = 0x05,
 	BR_BGE = 0x08,
-	BR_BLT = 0x09,
 	BR_UNC = 0x18,
 };
 
@@ -87,10 +91,6 @@ enum br_ev_pip {
 enum br_ctx_signal_state {
 	BR_CSS_NONE = 2,
 };
-
-u16 br_get_offset(u64 instr);
-void br_set_offset(u64 *instr, u16 offset);
-void br_add_offset(u64 *instr, u16 offset);
 
 #define OP_BBYTE_BASE		0x0c800000000ULL
 #define OP_BB_A_SRC		0x000000000ffULL
@@ -132,10 +132,6 @@ enum immed_shift {
 	IMMED_SHIFT_2B = 2,
 };
 
-u16 immed_get_value(u64 instr);
-void immed_set_value(u64 *instr, u16 immed);
-void immed_add_value(u64 *instr, u16 offset);
-
 #define OP_SHF_BASE		0x08000000000ULL
 #define OP_SHF_A_SRC		0x000000000ffULL
 #define OP_SHF_SC		0x00000000300ULL
@@ -154,7 +150,6 @@ enum shf_op {
 	SHF_OP_NONE = 0,
 	SHF_OP_AND = 2,
 	SHF_OP_OR = 5,
-	SHF_OP_ASHR = 6,
 };
 
 enum shf_sc {
@@ -177,18 +172,15 @@ enum shf_sc {
 #define OP_ALU_DST_LMEXTN	0x80000000000ULL
 
 enum alu_op {
-	ALU_OP_NONE		= 0x00,
-	ALU_OP_ADD		= 0x01,
-	ALU_OP_NOT		= 0x04,
-	ALU_OP_ADD_2B		= 0x05,
-	ALU_OP_AND		= 0x08,
-	ALU_OP_AND_NOT_A	= 0x0c,
-	ALU_OP_SUB_C		= 0x0d,
-	ALU_OP_AND_NOT_B	= 0x10,
-	ALU_OP_ADD_C		= 0x11,
-	ALU_OP_OR		= 0x14,
-	ALU_OP_SUB		= 0x15,
-	ALU_OP_XOR		= 0x18,
+	ALU_OP_NONE	= 0x00,
+	ALU_OP_ADD	= 0x01,
+	ALU_OP_NOT	= 0x04,
+	ALU_OP_AND	= 0x08,
+	ALU_OP_SUB_C	= 0x0d,
+	ALU_OP_ADD_C	= 0x11,
+	ALU_OP_OR	= 0x14,
+	ALU_OP_SUB	= 0x15,
+	ALU_OP_XOR	= 0x18,
 };
 
 enum alu_dst_ab {
@@ -217,7 +209,6 @@ enum alu_dst_ab {
 #define OP_CMD_CNT		0x0000e000000ULL
 #define OP_CMD_SIG		0x000f0000000ULL
 #define OP_CMD_TGT_CMD		0x07f00000000ULL
-#define OP_CMD_INDIR		0x20000000000ULL
 #define OP_CMD_MODE	       0x1c0000000000ULL
 
 struct cmd_tgt_act {
@@ -228,14 +219,11 @@ struct cmd_tgt_act {
 enum cmd_tgt_map {
 	CMD_TGT_READ8,
 	CMD_TGT_WRITE8_SWAP,
-	CMD_TGT_WRITE32_SWAP,
 	CMD_TGT_READ32,
 	CMD_TGT_READ32_LE,
 	CMD_TGT_READ32_SWAP,
 	CMD_TGT_READ_LE,
 	CMD_TGT_READ_SWAP_LE,
-	CMD_TGT_ADD,
-	CMD_TGT_ADD_IMM,
 	__CMD_TGT_MAP_SIZE,
 };
 
@@ -249,14 +237,8 @@ enum cmd_mode {
 
 enum cmd_ctx_swap {
 	CMD_CTX_SWAP = 0,
-	CMD_CTX_SWAP_DEFER1 = 1,
-	CMD_CTX_SWAP_DEFER2 = 2,
 	CMD_CTX_NO_SWAP = 3,
 };
-
-#define CMD_OVE_DATA	GENMASK(5, 3)
-#define CMD_OVE_LEN	BIT(7)
-#define CMD_OV_LEN	GENMASK(12, 8)
 
 #define OP_LCSR_BASE		0x0fc00000000ULL
 #define OP_LCSR_A_SRC		0x000000003ffULL
@@ -275,12 +257,10 @@ enum lcsr_wr_src {
 #define OP_CARB_BASE		0x0e000000000ULL
 #define OP_CARB_OR		0x00000010000ULL
 
-#define NFP_CSR_CTX_PTR		0x20
 #define NFP_CSR_ACT_LM_ADDR0	0x64
 #define NFP_CSR_ACT_LM_ADDR1	0x6c
 #define NFP_CSR_ACT_LM_ADDR2	0x94
 #define NFP_CSR_ACT_LM_ADDR3	0x9c
-#define NFP_CSR_PSEUDO_RND_NUM	0x148
 
 /* Software register representation, independent of operand type */
 #define NN_REG_TYPE	GENMASK(31, 24)
@@ -396,42 +376,5 @@ int swreg_to_restricted(swreg dst, swreg lreg, swreg rreg,
 
 int nfp_ustore_check_valid_no_ecc(u64 insn);
 u64 nfp_ustore_calc_ecc_insn(u64 insn);
-
-#define NFP_IND_ME_REFL_WR_SIG_INIT	3
-#define NFP_IND_ME_CTX_PTR_BASE_MASK	GENMASK(9, 0)
-#define NFP_IND_NUM_CONTEXTS		8
-
-static inline u32 nfp_get_ind_csr_ctx_ptr_offs(u32 read_offset)
-{
-	return (read_offset & ~NFP_IND_ME_CTX_PTR_BASE_MASK) | NFP_CSR_CTX_PTR;
-}
-
-enum mul_type {
-	MUL_TYPE_START		= 0x00,
-	MUL_TYPE_STEP_24x8	= 0x01,
-	MUL_TYPE_STEP_16x16	= 0x02,
-	MUL_TYPE_STEP_32x32	= 0x03,
-};
-
-enum mul_step {
-	MUL_STEP_1		= 0x00,
-	MUL_STEP_NONE		= MUL_STEP_1,
-	MUL_STEP_2		= 0x01,
-	MUL_STEP_3		= 0x02,
-	MUL_STEP_4		= 0x03,
-	MUL_LAST		= 0x04,
-	MUL_LAST_2		= 0x05,
-};
-
-#define OP_MUL_BASE		0x0f800000000ULL
-#define OP_MUL_A_SRC		0x000000003ffULL
-#define OP_MUL_B_SRC		0x000000ffc00ULL
-#define OP_MUL_STEP		0x00000700000ULL
-#define OP_MUL_DST_AB		0x00000800000ULL
-#define OP_MUL_SW		0x00040000000ULL
-#define OP_MUL_TYPE		0x00180000000ULL
-#define OP_MUL_WR_AB		0x20000000000ULL
-#define OP_MUL_SRC_LMEXTN	0x40000000000ULL
-#define OP_MUL_DST_LMEXTN	0x80000000000ULL
 
 #endif

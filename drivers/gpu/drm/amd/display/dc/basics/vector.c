@@ -23,8 +23,6 @@
  *
  */
 
-#include <linux/slab.h>
-
 #include "dm_services.h"
 #include "include/vector.h"
 
@@ -42,7 +40,7 @@ bool dal_vector_construct(
 		return false;
 	}
 
-	vector->container = kcalloc(capacity, struct_size, GFP_KERNEL);
+	vector->container = kzalloc(struct_size * capacity, GFP_KERNEL);
 	if (vector->container == NULL)
 		return false;
 	vector->capacity = capacity;
@@ -69,7 +67,7 @@ bool dal_vector_presized_costruct(
 		return false;
 	}
 
-	vector->container = kcalloc(count, struct_size, GFP_KERNEL);
+	vector->container = kzalloc(struct_size * count, GFP_KERNEL);
 
 	if (vector->container == NULL)
 		return false;

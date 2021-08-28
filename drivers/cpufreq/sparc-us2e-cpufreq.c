@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* us2e_cpufreq.c: UltraSPARC-IIe cpu frequency support
  *
  * Copyright (C) 2003 David S. Miller (davem@redhat.com)
@@ -293,9 +292,8 @@ static int __init us2e_freq_cpu_init(struct cpufreq_policy *policy)
 
 	policy->cpuinfo.transition_latency = 0;
 	policy->cur = clock_tick;
-	policy->freq_table = table;
 
-	return 0;
+	return cpufreq_table_validate_and_show(policy, table);
 }
 
 static int us2e_freq_cpu_exit(struct cpufreq_policy *policy)

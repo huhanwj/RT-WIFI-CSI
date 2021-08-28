@@ -1,7 +1,16 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * FBTFT driver for the RA8875 LCD Controller
  * Copyright by Pf@nne & NOTRO
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/module.h>
@@ -9,7 +18,7 @@
 #include <linux/init.h>
 #include <linux/delay.h>
 
-#include <linux/gpio/consumer.h>
+#include <linux/gpio.h>
 #include "fbtft.h"
 
 #define DRVNAME "fb_ra8875"
@@ -24,7 +33,7 @@ static int write_spi(struct fbtft_par *par, void *buf, size_t len)
 	struct spi_message m;
 
 	fbtft_par_dbg_hex(DEBUG_WRITE, par, par->info->device, u8, buf, len,
-			  "%s(len=%zu): ", __func__, len);
+			  "%s(len=%d): ", __func__, len);
 
 	if (!par->spi) {
 		dev_err(par->info->device,
@@ -39,7 +48,7 @@ static int write_spi(struct fbtft_par *par, void *buf, size_t len)
 
 static int init_display(struct fbtft_par *par)
 {
-	gpiod_set_value(par->gpio.dc, 1);
+	gpio_set_value(par->gpio.dc, 1);
 
 	fbtft_par_dbg(DEBUG_INIT_DISPLAY, par,
 		      "%s()\n", __func__);

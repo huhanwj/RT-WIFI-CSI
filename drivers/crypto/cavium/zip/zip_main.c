@@ -113,7 +113,7 @@ struct zip_device *zip_get_device(int node)
  */
 int zip_get_node_id(void)
 {
-	return cpu_to_node(raw_smp_processor_id());
+	return cpu_to_node(smp_processor_id());
 }
 
 /* Initializes the ZIP h/w sub-system */
@@ -351,7 +351,6 @@ static struct pci_driver zip_driver = {
 
 static struct crypto_alg zip_comp_deflate = {
 	.cra_name		= "deflate",
-	.cra_driver_name	= "deflate-cavium",
 	.cra_flags		= CRYPTO_ALG_TYPE_COMPRESS,
 	.cra_ctxsize		= sizeof(struct zip_kernel_ctx),
 	.cra_priority           = 300,
@@ -366,7 +365,6 @@ static struct crypto_alg zip_comp_deflate = {
 
 static struct crypto_alg zip_comp_lzs = {
 	.cra_name		= "lzs",
-	.cra_driver_name	= "lzs-cavium",
 	.cra_flags		= CRYPTO_ALG_TYPE_COMPRESS,
 	.cra_ctxsize		= sizeof(struct zip_kernel_ctx),
 	.cra_priority           = 300,
@@ -386,7 +384,7 @@ static struct scomp_alg zip_scomp_deflate = {
 	.decompress		= zip_scomp_decompress,
 	.base			= {
 		.cra_name		= "deflate",
-		.cra_driver_name	= "deflate-scomp-cavium",
+		.cra_driver_name	= "deflate-scomp",
 		.cra_module		= THIS_MODULE,
 		.cra_priority           = 300,
 	}
@@ -399,7 +397,7 @@ static struct scomp_alg zip_scomp_lzs = {
 	.decompress		= zip_scomp_decompress,
 	.base			= {
 		.cra_name		= "lzs",
-		.cra_driver_name	= "lzs-scomp-cavium",
+		.cra_driver_name	= "lzs-scomp",
 		.cra_module		= THIS_MODULE,
 		.cra_priority           = 300,
 	}
@@ -471,8 +469,6 @@ static int zip_show_stats(struct seq_file *s, void *unused)
 	struct zip_stats  *st;
 
 	for (index = 0; index < MAX_ZIP_DEVICES; index++) {
-		u64 pending = 0;
-
 		if (zip_dev[index]) {
 			zip = zip_dev[index];
 			st  = &zip->stats;
@@ -480,15 +476,16 @@ static int zip_show_stats(struct seq_file *s, void *unused)
 			/* Get all the pending requests */
 			for (q = 0; q < ZIP_NUM_QUEUES; q++) {
 				val = zip_reg_read((zip->reg_base +
-						    ZIP_DBG_QUEX_STA(q)));
-				pending += val >> 32 & 0xffffff;
+						    ZIP_DBG_COREX_STA(q)));
+				val = (val >> 32);
+				val = val & 0xffffff;
+				atomic64_add(val, &st->pending_req);
 			}
 
-			val = atomic64_read(&st->comp_req_complete);
-			avg_chunk = (val) ? atomic64_read(&st->comp_in_bytes) / val : 0;
-
-			val = atomic64_read(&st->comp_out_bytes);
-			avg_cr = (val) ? atomic64_read(&st->comp_in_bytes) / val : 0;
+			avg_chunk = (atomic64_read(&st->comp_in_bytes) /
+				     atomic64_read(&st->comp_req_complete));
+			avg_cr = (atomic64_read(&st->comp_in_bytes) /
+				  atomic64_read(&st->comp_out_bytes));
 			seq_printf(s, "        ZIP Device %d Stats\n"
 				      "-----------------------------------\n"
 				      "Comp Req Submitted        : \t%lld\n"
@@ -516,7 +513,10 @@ static int zip_show_stats(struct seq_file *s, void *unused)
 				       (u64)atomic64_read(&st->decomp_in_bytes),
 				       (u64)atomic64_read(&st->decomp_out_bytes),
 				       (u64)atomic64_read(&st->decomp_bad_reqs),
-				       pending);
+				       (u64)atomic64_read(&st->pending_req));
+
+			/* Reset pending requests  count */
+			atomic64_set(&st->pending_req, 0);
 		}
 	}
 	return 0;
@@ -593,7 +593,6 @@ static const struct file_operations zip_stats_fops = {
 	.owner = THIS_MODULE,
 	.open  = zip_stats_open,
 	.read  = seq_read,
-	.release = single_release,
 };
 
 static int zip_clear_open(struct inode *inode, struct file *file)
@@ -605,7 +604,6 @@ static const struct file_operations zip_clear_fops = {
 	.owner = THIS_MODULE,
 	.open  = zip_clear_open,
 	.read  = seq_read,
-	.release = single_release,
 };
 
 static int zip_regs_open(struct inode *inode, struct file *file)
@@ -617,29 +615,46 @@ static const struct file_operations zip_regs_fops = {
 	.owner = THIS_MODULE,
 	.open  = zip_regs_open,
 	.read  = seq_read,
-	.release = single_release,
 };
 
 /* Root directory for thunderx_zip debugfs entry */
 static struct dentry *zip_debugfs_root;
 
-static void __init zip_debugfs_init(void)
+static int __init zip_debugfs_init(void)
 {
+	struct dentry *zip_stats, *zip_clear, *zip_regs;
+
 	if (!debugfs_initialized())
-		return;
+		return -ENODEV;
 
 	zip_debugfs_root = debugfs_create_dir("thunderx_zip", NULL);
+	if (!zip_debugfs_root)
+		return -ENOMEM;
 
 	/* Creating files for entries inside thunderx_zip directory */
-	debugfs_create_file("zip_stats", 0444, zip_debugfs_root, NULL,
-			    &zip_stats_fops);
+	zip_stats = debugfs_create_file("zip_stats", 0444,
+					zip_debugfs_root,
+					NULL, &zip_stats_fops);
+	if (!zip_stats)
+		goto failed_to_create;
 
-	debugfs_create_file("zip_clear", 0444, zip_debugfs_root, NULL,
-			    &zip_clear_fops);
+	zip_clear = debugfs_create_file("zip_clear", 0444,
+					zip_debugfs_root,
+					NULL, &zip_clear_fops);
+	if (!zip_clear)
+		goto failed_to_create;
 
-	debugfs_create_file("zip_regs", 0444, zip_debugfs_root, NULL,
-			    &zip_regs_fops);
+	zip_regs = debugfs_create_file("zip_regs", 0444,
+				       zip_debugfs_root,
+				       NULL, &zip_regs_fops);
+	if (!zip_regs)
+		goto failed_to_create;
 
+	return 0;
+
+failed_to_create:
+	debugfs_remove_recursive(zip_debugfs_root);
+	return -ENOENT;
 }
 
 static void __exit zip_debugfs_exit(void)
@@ -648,8 +663,13 @@ static void __exit zip_debugfs_exit(void)
 }
 
 #else
-static void __init zip_debugfs_init(void) { }
+static int __init zip_debugfs_init(void)
+{
+	return 0;
+}
+
 static void __exit zip_debugfs_exit(void) { }
+
 #endif
 /* debugfs - end */
 
@@ -673,9 +693,16 @@ static int __init zip_init_module(void)
 	}
 
 	/* comp-decomp statistics are handled with debugfs interface */
-	zip_debugfs_init();
+	ret = zip_debugfs_init();
+	if (ret < 0) {
+		zip_err("ZIP: debugfs initialization failed\n");
+		goto err_crypto_unregister;
+	}
 
 	return ret;
+
+err_crypto_unregister:
+	zip_unregister_compression_device();
 
 err_pci_unregister:
 	pci_unregister_driver(&zip_driver);

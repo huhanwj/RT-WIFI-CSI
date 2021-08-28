@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Atmel SMC (Static Memory Controller) helper functions.
  *
@@ -6,10 +5,13 @@
  * Copyright (C) 2017 Free Electrons
  *
  * Author: Boris Brezillon <boris.brezillon@free-electrons.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/mfd/syscon/atmel-smc.h>
-#include <linux/string.h>
 
 /**
  * atmel_smc_cs_conf_init - initialize a SMC CS conf

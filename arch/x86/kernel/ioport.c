@@ -11,7 +11,6 @@
 #include <linux/errno.h>
 #include <linux/types.h>
 #include <linux/ioport.h>
-#include <linux/security.h>
 #include <linux/smp.h>
 #include <linux/stddef.h>
 #include <linux/slab.h>
@@ -24,7 +23,7 @@
 /*
  * this changes the io permissions bitmap in the current task.
  */
-long ksys_ioperm(unsigned long from, unsigned long num, int turn_on)
+asmlinkage long sys_ioperm(unsigned long from, unsigned long num, int turn_on)
 {
 	struct thread_struct *t = &current->thread;
 	struct tss_struct *tss;
@@ -32,8 +31,7 @@ long ksys_ioperm(unsigned long from, unsigned long num, int turn_on)
 
 	if ((from + num <= from) || (from + num > IO_BITMAP_BITS))
 		return -EINVAL;
-	if (turn_on && (!capable(CAP_SYS_RAWIO) ||
-			security_locked_down(LOCKDOWN_IOPORT)))
+	if (turn_on && !capable(CAP_SYS_RAWIO))
 		return -EPERM;
 
 	/*
@@ -98,11 +96,6 @@ long ksys_ioperm(unsigned long from, unsigned long num, int turn_on)
 	return 0;
 }
 
-SYSCALL_DEFINE3(ioperm, unsigned long, from, unsigned long, num, int, turn_on)
-{
-	return ksys_ioperm(from, num, turn_on);
-}
-
 /*
  * sys_iopl has to be used when you want to access the IO ports
  * beyond the 0x3ff range: to get the full 65536 ports bitmapped
@@ -128,8 +121,7 @@ SYSCALL_DEFINE1(iopl, unsigned int, level)
 		return -EINVAL;
 	/* Trying to gain more privileges? */
 	if (level > old) {
-		if (!capable(CAP_SYS_RAWIO) ||
-		    security_locked_down(LOCKDOWN_IOPORT))
+		if (!capable(CAP_SYS_RAWIO))
 			return -EPERM;
 	}
 	regs->flags = (regs->flags & ~X86_EFLAGS_IOPL) |

@@ -1,6 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017 Red Hat, Inc
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
  */
 
 #define pr_fmt(fmt)		KBUILD_MODNAME ": " fmt
@@ -20,7 +23,6 @@ struct psmouse_smbus_dev {
 	struct i2c_client *client;
 	struct list_head node;
 	bool dead;
-	bool need_deactivate;
 };
 
 static LIST_HEAD(psmouse_smbus_list);
@@ -116,10 +118,7 @@ static psmouse_ret_t psmouse_smbus_process_byte(struct psmouse *psmouse)
 
 static int psmouse_smbus_reconnect(struct psmouse *psmouse)
 {
-	struct psmouse_smbus_dev *smbdev = psmouse->private;
-
-	if (smbdev->need_deactivate)
-		psmouse_deactivate(psmouse);
+	psmouse_deactivate(psmouse);
 
 	return 0;
 }
@@ -226,7 +225,6 @@ void psmouse_smbus_cleanup(struct psmouse *psmouse)
 int psmouse_smbus_init(struct psmouse *psmouse,
 		       const struct i2c_board_info *board,
 		       const void *pdata, size_t pdata_size,
-		       bool need_deactivate,
 		       bool leave_breadcrumbs)
 {
 	struct psmouse_smbus_dev *smbdev;
@@ -238,19 +236,12 @@ int psmouse_smbus_init(struct psmouse *psmouse,
 
 	smbdev->psmouse = psmouse;
 	smbdev->board = *board;
-	smbdev->need_deactivate = need_deactivate;
 
-	if (pdata) {
-		smbdev->board.platform_data = kmemdup(pdata, pdata_size,
-						      GFP_KERNEL);
-		if (!smbdev->board.platform_data) {
-			kfree(smbdev);
-			return -ENOMEM;
-		}
+	smbdev->board.platform_data = kmemdup(pdata, pdata_size, GFP_KERNEL);
+	if (!smbdev->board.platform_data) {
+		kfree(smbdev);
+		return -ENOMEM;
 	}
-
-	if (need_deactivate)
-		psmouse_deactivate(psmouse);
 
 	psmouse->private = smbdev;
 	psmouse->protocol_handler = psmouse_smbus_process_byte;
@@ -258,6 +249,8 @@ int psmouse_smbus_init(struct psmouse *psmouse,
 	psmouse->fast_reconnect = psmouse_smbus_reconnect;
 	psmouse->disconnect = psmouse_smbus_disconnect;
 	psmouse->resync_time = 0;
+
+	psmouse_deactivate(psmouse);
 
 	mutex_lock(&psmouse_smbus_mutex);
 	list_add_tail(&smbdev->node, &psmouse_smbus_list);

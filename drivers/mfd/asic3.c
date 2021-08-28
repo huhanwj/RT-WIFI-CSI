@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * driver/mfd/asic3.c
  *
  * Compaq ASIC3 support.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * Copyright 2001 Compaq Computer Corporation.
  * Copyright 2004-2005 Phil Blundell
@@ -10,12 +13,13 @@
  *
  * Authors: Phil Blundell <pb@handhelds.org>,
  *	    Samuel Ortiz <sameo@openedhand.com>
+ *
  */
 
 #include <linux/kernel.h>
 #include <linux/delay.h>
 #include <linux/irq.h>
-#include <linux/gpio/driver.h>
+#include <linux/gpio.h>
 #include <linux/export.h>
 #include <linux/io.h>
 #include <linux/slab.h>
@@ -26,8 +30,6 @@
 #include <linux/mfd/core.h>
 #include <linux/mfd/ds1wm.h>
 #include <linux/mfd/tmio.h>
-
-#include <linux/mmc/host.h>
 
 enum {
 	ASIC3_CLOCK_SPI,
@@ -717,7 +719,6 @@ static void asic3_mmc_clk_div(struct platform_device *pdev, int state)
 
 static struct tmio_mmc_data asic3_mmc_data = {
 	.hclk           = 24576000,
-	.ocr_mask	= MMC_VDD_32_33 | MMC_VDD_33_34,
 	.set_pwr        = asic3_mmc_pwr,
 	.set_clk_div    = asic3_mmc_clk_div,
 };

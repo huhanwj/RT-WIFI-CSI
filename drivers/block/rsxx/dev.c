@@ -1,11 +1,25 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
 * Filename: dev.c
+*
 *
 * Authors: Joshua Morris <josh.h.morris@us.ibm.com>
 *	Philip Kelleher <pjk1939@linux.vnet.ibm.com>
 *
 * (C) Copyright 2013 IBM Corporation
+*
+* This program is free software; you can redistribute it and/or
+* modify it under the terms of the GNU General Public License as
+* published by the Free Software Foundation; either version 2 of the
+* License, or (at your option) any later version.
+*
+* This program is distributed in the hope that it will be useful, but
+* WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+* General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with this program; if not, write to the Free Software Foundation,
+* Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 */
 
 #include <linux/kernel.h>
@@ -98,7 +112,7 @@ static const struct block_device_operations rsxx_fops = {
 
 static void disk_stats_start(struct rsxx_cardinfo *card, struct bio *bio)
 {
-	generic_start_io_acct(card->queue, bio_op(bio), bio_sectors(bio),
+	generic_start_io_acct(card->queue, bio_data_dir(bio), bio_sectors(bio),
 			     &card->gendisk->part0);
 }
 
@@ -106,8 +120,8 @@ static void disk_stats_complete(struct rsxx_cardinfo *card,
 				struct bio *bio,
 				unsigned long start_time)
 {
-	generic_end_io_acct(card->queue, bio_op(bio),
-			    &card->gendisk->part0, start_time);
+	generic_end_io_acct(card->queue, bio_data_dir(bio),
+				&card->gendisk->part0, start_time);
 }
 
 static void bio_dma_done_cb(struct rsxx_cardinfo *card,
@@ -212,7 +226,7 @@ int rsxx_attach_dev(struct rsxx_cardinfo *card)
 			set_capacity(card->gendisk, card->size8 >> 9);
 		else
 			set_capacity(card->gendisk, 0);
-		device_add_disk(CARD_TO_DEV(card), card->gendisk, NULL);
+		device_add_disk(CARD_TO_DEV(card), card->gendisk);
 		card->bdev_attached = 1;
 	}
 
@@ -273,10 +287,10 @@ int rsxx_setup_dev(struct rsxx_cardinfo *card)
 	blk_queue_max_hw_sectors(card->queue, blkdev_max_hw_sectors);
 	blk_queue_physical_block_size(card->queue, RSXX_HW_BLK_SIZE);
 
-	blk_queue_flag_set(QUEUE_FLAG_NONROT, card->queue);
-	blk_queue_flag_clear(QUEUE_FLAG_ADD_RANDOM, card->queue);
+	queue_flag_set_unlocked(QUEUE_FLAG_NONROT, card->queue);
+	queue_flag_clear_unlocked(QUEUE_FLAG_ADD_RANDOM, card->queue);
 	if (rsxx_discard_supported(card)) {
-		blk_queue_flag_set(QUEUE_FLAG_DISCARD, card->queue);
+		queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, card->queue);
 		blk_queue_max_discard_sectors(card->queue,
 						RSXX_HW_BLK_SIZE >> 9);
 		card->queue->limits.discard_granularity = RSXX_HW_BLK_SIZE;

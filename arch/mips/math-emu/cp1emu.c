@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * cp1emu.c: a MIPS coprocessor 1 (FPU) instruction emulator
  *
@@ -7,6 +6,19 @@
  *
  * Kevin D. Kissell, kevink@mips.com and Carsten Langgaard, carstenl@mips.com
  * Copyright (C) 2000  MIPS Technologies, Inc.
+ *
+ *  This program is free software; you can distribute it and/or modify it
+ *  under the terms of the GNU General Public License (Version 2) as
+ *  published by the Free Software Foundation.
+ *
+ *  This program is distributed in the hope it will be useful, but WITHOUT
+ *  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ *  FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ *  for more details.
+ *
+ *  You should have received a copy of the GNU General Public License along
+ *  with this program; if not, write to the Free Software Foundation, Inc.,
+ *  51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA.
  *
  * A complete emulator for MIPS coprocessor 1 instructions.  This is
  * required for #float(switch) or #float(trap), where it catches all
@@ -439,7 +451,7 @@ int isBranchInstr(struct pt_regs *regs, struct mm_decoded_insn dec_insn,
 					regs->cp0_epc + dec_insn.pc_inc +
 					dec_insn.next_pc_inc;
 			}
-			/* fall through */
+			/* Fall through */
 		case jr_op:
 			/* For R6, JR already emulated in jalr_op */
 			if (NO_R6EMU && insn.r_format.func == jr_op)
@@ -459,11 +471,10 @@ int isBranchInstr(struct pt_regs *regs, struct mm_decoded_insn dec_insn,
 			regs->regs[31] = regs->cp0_epc +
 				dec_insn.pc_inc +
 				dec_insn.next_pc_inc;
-			/* fall through */
+			/* Fall through */
 		case bltzl_op:
 			if (NO_R6EMU)
 				break;
-			/* fall through */
 		case bltz_op:
 			if ((long)regs->regs[insn.i_format.rs] < 0)
 				*contpc = regs->cp0_epc +
@@ -483,11 +494,10 @@ int isBranchInstr(struct pt_regs *regs, struct mm_decoded_insn dec_insn,
 			regs->regs[31] = regs->cp0_epc +
 				dec_insn.pc_inc +
 				dec_insn.next_pc_inc;
-			/* fall through */
+			/* Fall through */
 		case bgezl_op:
 			if (NO_R6EMU)
 				break;
-			/* fall through */
 		case bgez_op:
 			if ((long)regs->regs[insn.i_format.rs] >= 0)
 				*contpc = regs->cp0_epc +
@@ -502,12 +512,11 @@ int isBranchInstr(struct pt_regs *regs, struct mm_decoded_insn dec_insn,
 		break;
 	case jalx_op:
 		set_isa16_mode(bit);
-		/* fall through */
 	case jal_op:
 		regs->regs[31] = regs->cp0_epc +
 			dec_insn.pc_inc +
 			dec_insn.next_pc_inc;
-		/* fall through */
+		/* Fall through */
 	case j_op:
 		*contpc = regs->cp0_epc + dec_insn.pc_inc;
 		*contpc >>= 28;
@@ -519,7 +528,6 @@ int isBranchInstr(struct pt_regs *regs, struct mm_decoded_insn dec_insn,
 	case beql_op:
 		if (NO_R6EMU)
 			break;
-		/* fall through */
 	case beq_op:
 		if (regs->regs[insn.i_format.rs] ==
 		    regs->regs[insn.i_format.rt])
@@ -534,7 +542,6 @@ int isBranchInstr(struct pt_regs *regs, struct mm_decoded_insn dec_insn,
 	case bnel_op:
 		if (NO_R6EMU)
 			break;
-		/* fall through */
 	case bne_op:
 		if (regs->regs[insn.i_format.rs] !=
 		    regs->regs[insn.i_format.rt])
@@ -549,7 +556,6 @@ int isBranchInstr(struct pt_regs *regs, struct mm_decoded_insn dec_insn,
 	case blezl_op:
 		if (!insn.i_format.rt && NO_R6EMU)
 			break;
-		/* fall through */
 	case blez_op:
 
 		/*
@@ -587,7 +593,6 @@ int isBranchInstr(struct pt_regs *regs, struct mm_decoded_insn dec_insn,
 	case bgtzl_op:
 		if (!insn.i_format.rt && NO_R6EMU)
 			break;
-		/* fall through */
 	case bgtz_op:
 		/*
 		 * Compact branches for R6 for the
@@ -724,8 +729,7 @@ int isBranchInstr(struct pt_regs *regs, struct mm_decoded_insn dec_insn,
 
 			return 1;
 		}
-		/* R2/R6 compatible cop1 instruction */
-		/* fall through */
+		/* R2/R6 compatible cop1 instruction. Fall through */
 	case cop2_op:
 	case cop1x_op:
 		if (insn.i_format.rs == bc_op) {
@@ -1051,7 +1055,7 @@ emul:
 				     MIPSInst_SIMM(ir));
 		MIPS_FPU_EMU_INC_STATS(loads);
 
-		if (!access_ok(dva, sizeof(u64))) {
+		if (!access_ok(VERIFY_READ, dva, sizeof(u64))) {
 			MIPS_FPU_EMU_INC_STATS(errors);
 			*fault_addr = dva;
 			return SIGBUS;
@@ -1069,7 +1073,7 @@ emul:
 				      MIPSInst_SIMM(ir));
 		MIPS_FPU_EMU_INC_STATS(stores);
 		DIFROMREG(dval, MIPSInst_RT(ir));
-		if (!access_ok(dva, sizeof(u64))) {
+		if (!access_ok(VERIFY_WRITE, dva, sizeof(u64))) {
 			MIPS_FPU_EMU_INC_STATS(errors);
 			*fault_addr = dva;
 			return SIGBUS;
@@ -1085,7 +1089,7 @@ emul:
 		wva = (u32 __user *) (xcp->regs[MIPSInst_RS(ir)] +
 				      MIPSInst_SIMM(ir));
 		MIPS_FPU_EMU_INC_STATS(loads);
-		if (!access_ok(wva, sizeof(u32))) {
+		if (!access_ok(VERIFY_READ, wva, sizeof(u32))) {
 			MIPS_FPU_EMU_INC_STATS(errors);
 			*fault_addr = wva;
 			return SIGBUS;
@@ -1103,7 +1107,7 @@ emul:
 				      MIPSInst_SIMM(ir));
 		MIPS_FPU_EMU_INC_STATS(stores);
 		SIFROMREG(wval, MIPSInst_RT(ir));
-		if (!access_ok(wva, sizeof(u32))) {
+		if (!access_ok(VERIFY_WRITE, wva, sizeof(u32))) {
 			MIPS_FPU_EMU_INC_STATS(errors);
 			*fault_addr = wva;
 			return SIGBUS;
@@ -1186,8 +1190,7 @@ emul:
 			if (!cpu_has_mips_r6 || delay_slot(xcp))
 				return SIGILL;
 
-			likely = 0;
-			cond = 0;
+			cond = likely = 0;
 			fpr = &current->thread.fpu.fpr[MIPSInst_RT(ir)];
 			bit0 = get_fpr32(fpr, 0) & 0x1;
 			switch (MIPSInst_RS(ir)) {
@@ -1217,14 +1220,14 @@ emul:
 			case bcfl_op:
 				if (cpu_has_mips_2_3_4_5_r)
 					likely = 1;
-				/* fall through */
+				/* Fall through */
 			case bcf_op:
 				cond = !cond;
 				break;
 			case bctl_op:
 				if (cpu_has_mips_2_3_4_5_r)
 					likely = 1;
-				/* fall through */
+				/* Fall through */
 			case bct_op:
 				break;
 			}
@@ -1350,8 +1353,7 @@ branch_common:
 				return SIGILL;
 
 			/* a real fpu computation instruction */
-			sig = fpu_emu(xcp, ctx, ir);
-			if (sig)
+			if ((sig = fpu_emu(xcp, ctx, ir)))
 				return sig;
 		}
 		break;
@@ -1481,7 +1483,7 @@ static int fpux_emu(struct pt_regs *xcp, struct mips_fpu_struct *ctx,
 				xcp->regs[MIPSInst_FT(ir)]);
 
 			MIPS_FPU_EMU_INC_STATS(loads);
-			if (!access_ok(va, sizeof(u32))) {
+			if (!access_ok(VERIFY_READ, va, sizeof(u32))) {
 				MIPS_FPU_EMU_INC_STATS(errors);
 				*fault_addr = va;
 				return SIGBUS;
@@ -1501,7 +1503,7 @@ static int fpux_emu(struct pt_regs *xcp, struct mips_fpu_struct *ctx,
 			MIPS_FPU_EMU_INC_STATS(stores);
 
 			SIFROMREG(val, MIPSInst_FS(ir));
-			if (!access_ok(va, sizeof(u32))) {
+			if (!access_ok(VERIFY_WRITE, va, sizeof(u32))) {
 				MIPS_FPU_EMU_INC_STATS(errors);
 				*fault_addr = va;
 				return SIGBUS;
@@ -1578,7 +1580,7 @@ static int fpux_emu(struct pt_regs *xcp, struct mips_fpu_struct *ctx,
 				xcp->regs[MIPSInst_FT(ir)]);
 
 			MIPS_FPU_EMU_INC_STATS(loads);
-			if (!access_ok(va, sizeof(u64))) {
+			if (!access_ok(VERIFY_READ, va, sizeof(u64))) {
 				MIPS_FPU_EMU_INC_STATS(errors);
 				*fault_addr = va;
 				return SIGBUS;
@@ -1597,7 +1599,7 @@ static int fpux_emu(struct pt_regs *xcp, struct mips_fpu_struct *ctx,
 
 			MIPS_FPU_EMU_INC_STATS(stores);
 			DIFROMREG(val, MIPSInst_FS(ir));
-			if (!access_ok(va, sizeof(u64))) {
+			if (!access_ok(VERIFY_WRITE, va, sizeof(u64))) {
 				MIPS_FPU_EMU_INC_STATS(errors);
 				*fault_addr = va;
 				return SIGBUS;
@@ -2818,13 +2820,6 @@ int fpu_emulator_cop1Handler(struct pt_regs *xcp, struct mips_fpu_struct *ctx,
 	u16 instr[4];
 	u16 *instr_ptr;
 	int sig = 0;
-
-	/*
-	 * Initialize context if it hasn't been used already, otherwise ensure
-	 * it has been saved to struct thread_struct.
-	 */
-	if (!init_fp_ctx(current))
-		lose_fpu(1);
 
 	oldepc = xcp->cp0_epc;
 	do {

@@ -249,10 +249,9 @@ static int dw_pcm_new(struct snd_soc_pcm_runtime *rtd)
 {
 	size_t size = dw_pcm_hardware.buffer_bytes_max;
 
-	snd_pcm_lib_preallocate_pages_for_all(rtd->pcm,
+	return snd_pcm_lib_preallocate_pages_for_all(rtd->pcm,
 			SNDRV_DMA_TYPE_CONTINUOUS,
 			snd_dma_continuous_data(GFP_KERNEL), size, size);
-	return 0;
 }
 
 static void dw_pcm_free(struct snd_pcm *pcm)
@@ -270,7 +269,7 @@ static const struct snd_pcm_ops dw_pcm_ops = {
 	.pointer = dw_pcm_pointer,
 };
 
-static const struct snd_soc_component_driver dw_pcm_component = {
+static const struct snd_soc_platform_driver dw_pcm_platform = {
 	.pcm_new = dw_pcm_new,
 	.pcm_free = dw_pcm_free,
 	.ops = &dw_pcm_ops,
@@ -278,6 +277,5 @@ static const struct snd_soc_component_driver dw_pcm_component = {
 
 int dw_pcm_register(struct platform_device *pdev)
 {
-	return devm_snd_soc_register_component(&pdev->dev, &dw_pcm_component,
-					       NULL, 0);
+	return devm_snd_soc_register_platform(&pdev->dev, &dw_pcm_platform);
 }

@@ -134,12 +134,8 @@ static ssize_t r3964_write(struct tty_struct *tty, struct file *file,
 		const unsigned char *buf, size_t nr);
 static int r3964_ioctl(struct tty_struct *tty, struct file *file,
 		unsigned int cmd, unsigned long arg);
-#ifdef CONFIG_COMPAT
-static int r3964_compat_ioctl(struct tty_struct *tty, struct file *file,
-		unsigned int cmd, unsigned long arg);
-#endif
 static void r3964_set_termios(struct tty_struct *tty, struct ktermios *old);
-static __poll_t r3964_poll(struct tty_struct *tty, struct file *file,
+static unsigned int r3964_poll(struct tty_struct *tty, struct file *file,
 		struct poll_table_struct *wait);
 static void r3964_receive_buf(struct tty_struct *tty, const unsigned char *cp,
 		char *fp, int count);
@@ -153,9 +149,6 @@ static struct tty_ldisc_ops tty_ldisc_N_R3964 = {
 	.read = r3964_read,
 	.write = r3964_write,
 	.ioctl = r3964_ioctl,
-#ifdef CONFIG_COMPAT
-	.compat_ioctl = r3964_compat_ioctl,
-#endif
 	.set_termios = r3964_set_termios,
 	.poll = r3964_poll,
 	.receive_buf = r3964_receive_buf,
@@ -1085,7 +1078,7 @@ static ssize_t r3964_read(struct tty_struct *tty, struct file *file,
 		pMsg = remove_msg(pInfo, pClient);
 		if (pMsg == NULL) {
 			/* no messages available. */
-			if (tty_io_nonblock(tty, file)) {
+			if (file->f_flags & O_NONBLOCK) {
 				ret = -EAGAIN;
 				goto unlock;
 			}
@@ -1217,35 +1210,20 @@ static int r3964_ioctl(struct tty_struct *tty, struct file *file,
 	}
 }
 
-#ifdef CONFIG_COMPAT
-static int r3964_compat_ioctl(struct tty_struct *tty, struct file *file,
-		unsigned int cmd, unsigned long arg)
-{
-	switch (cmd) {
-	case R3964_ENABLE_SIGNALS:
-	case R3964_SETPRIORITY:
-	case R3964_USE_BCC:
-		return r3964_ioctl(tty, file, cmd, arg);
-	default:
-		return -ENOIOCTLCMD;
-	}
-}
-#endif
-
 static void r3964_set_termios(struct tty_struct *tty, struct ktermios *old)
 {
 	TRACE_L("set_termios");
 }
 
 /* Called without the kernel lock held - fine */
-static __poll_t r3964_poll(struct tty_struct *tty, struct file *file,
+static unsigned int r3964_poll(struct tty_struct *tty, struct file *file,
 			struct poll_table_struct *wait)
 {
 	struct r3964_info *pInfo = tty->disc_data;
 	struct r3964_client_info *pClient;
 	struct r3964_message *pMsg = NULL;
 	unsigned long flags;
-	__poll_t result = EPOLLOUT;
+	int result = POLLOUT;
 
 	TRACE_L("POLL");
 
@@ -1256,7 +1234,7 @@ static __poll_t r3964_poll(struct tty_struct *tty, struct file *file,
 		pMsg = pClient->first_msg;
 		spin_unlock_irqrestore(&pInfo->lock, flags);
 		if (pMsg)
-			result |= EPOLLIN | EPOLLRDNORM;
+			result |= POLLIN | POLLRDNORM;
 	} else {
 		result = -EINVAL;
 	}

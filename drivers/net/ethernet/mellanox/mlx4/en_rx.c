@@ -31,6 +31,7 @@
  *
  */
 
+#include <net/busy_poll.h>
 #include <linux/bpf.h>
 #include <linux/bpf_trace.h>
 #include <linux/mlx4/cq.h>
@@ -43,7 +44,6 @@
 #include <linux/vmalloc.h>
 #include <linux/irq.h>
 
-#include <net/ip.h>
 #if IS_ENABLED(CONFIG_IPV6)
 #include <net/ip6_checksum.h>
 #endif
@@ -262,7 +262,7 @@ void mlx4_en_set_num_rx_rings(struct mlx4_en_dev *mdev)
 
 int mlx4_en_create_rx_ring(struct mlx4_en_priv *priv,
 			   struct mlx4_en_rx_ring **pring,
-			   u32 size, u16 stride, int node, int queue_index)
+			   u32 size, u16 stride, int node)
 {
 	struct mlx4_en_dev *mdev = priv->mdev;
 	struct mlx4_en_rx_ring *ring;
@@ -271,8 +271,11 @@ int mlx4_en_create_rx_ring(struct mlx4_en_priv *priv,
 
 	ring = kzalloc_node(sizeof(*ring), GFP_KERNEL, node);
 	if (!ring) {
-		en_err(priv, "Failed to allocate RX ring structure\n");
-		return -ENOMEM;
+		ring = kzalloc(sizeof(*ring), GFP_KERNEL);
+		if (!ring) {
+			en_err(priv, "Failed to allocate RX ring structure\n");
+			return -ENOMEM;
+		}
 	}
 
 	ring->prod = 0;
@@ -283,15 +286,15 @@ int mlx4_en_create_rx_ring(struct mlx4_en_priv *priv,
 	ring->log_stride = ffs(ring->stride) - 1;
 	ring->buf_size = ring->size * ring->stride + TXBB_SIZE;
 
-	if (xdp_rxq_info_reg(&ring->xdp_rxq, priv->dev, queue_index) < 0)
-		goto err_ring;
-
 	tmp = size * roundup_pow_of_two(MLX4_EN_MAX_RX_FRAGS *
 					sizeof(struct mlx4_en_rx_alloc));
-	ring->rx_info = kvzalloc_node(tmp, GFP_KERNEL, node);
+	ring->rx_info = vzalloc_node(tmp, node);
 	if (!ring->rx_info) {
-		err = -ENOMEM;
-		goto err_xdp_info;
+		ring->rx_info = vzalloc(tmp);
+		if (!ring->rx_info) {
+			err = -ENOMEM;
+			goto err_ring;
+		}
 	}
 
 	en_dbg(DRV, priv, "Allocated rx_info ring at addr:%p size:%d\n",
@@ -312,10 +315,8 @@ int mlx4_en_create_rx_ring(struct mlx4_en_priv *priv,
 	return 0;
 
 err_info:
-	kvfree(ring->rx_info);
+	vfree(ring->rx_info);
 	ring->rx_info = NULL;
-err_xdp_info:
-	xdp_rxq_info_unreg(&ring->xdp_rxq);
 err_ring:
 	kfree(ring);
 	*pring = NULL;
@@ -439,9 +440,8 @@ void mlx4_en_destroy_rx_ring(struct mlx4_en_priv *priv,
 					lockdep_is_held(&mdev->state_lock));
 	if (old_prog)
 		bpf_prog_put(old_prog);
-	xdp_rxq_info_unreg(&ring->xdp_rxq);
 	mlx4_free_hwq_res(mdev->dev, &ring->wqres, size * stride + TXBB_SIZE);
-	kvfree(ring->rx_info);
+	vfree(ring->rx_info);
 	ring->rx_info = NULL;
 	kfree(ring);
 	*pring = NULL;
@@ -471,10 +471,10 @@ static int mlx4_en_complete_rx_desc(struct mlx4_en_priv *priv,
 {
 	const struct mlx4_en_frag_info *frag_info = priv->frag_info;
 	unsigned int truesize = 0;
-	bool release = true;
 	int nr, frag_size;
 	struct page *page;
 	dma_addr_t dma;
+	bool release;
 
 	/* Collect used fragments while replacing them in the HW descriptors */
 	for (nr = 0;; frags++) {
@@ -497,11 +497,7 @@ static int mlx4_en_complete_rx_desc(struct mlx4_en_priv *priv,
 			release = page_count(page) != 1 ||
 				  page_is_pfmemalloc(page) ||
 				  page_to_nid(page) != numa_mem_id();
-		} else if (!priv->rx_headroom) {
-			/* rx_headroom for non XDP setup is always 0.
-			 * When XDP is set, the above condition will
-			 * guarantee page is always released.
-			 */
+		} else {
 			u32 sz_align = ALIGN(frag_size, SMP_CACHE_BYTES);
 
 			frags->page_offset += sz_align;
@@ -594,52 +590,40 @@ static int get_fixed_ipv4_csum(__wsum hw_checksum, struct sk_buff *skb,
 }
 
 #if IS_ENABLED(CONFIG_IPV6)
-/* In IPv6 packets, hw_checksum lacks 6 bytes from IPv6 header:
- * 4 first bytes : priority, version, flow_lbl
- * and 2 additional bytes : nexthdr, hop_limit.
+/* In IPv6 packets, besides subtracting the pseudo header checksum,
+ * we also compute/add the IP header checksum which
+ * is not added by the HW.
  */
 static int get_fixed_ipv6_csum(__wsum hw_checksum, struct sk_buff *skb,
 			       struct ipv6hdr *ipv6h)
 {
 	__u8 nexthdr = ipv6h->nexthdr;
-	__wsum temp;
+	__wsum csum_pseudo_hdr = 0;
 
 	if (unlikely(nexthdr == IPPROTO_FRAGMENT ||
 		     nexthdr == IPPROTO_HOPOPTS ||
 		     nexthdr == IPPROTO_SCTP))
 		return -1;
+	hw_checksum = csum_add(hw_checksum, (__force __wsum)htons(nexthdr));
 
-	/* priority, version, flow_lbl */
-	temp = csum_add(hw_checksum, *(__wsum *)ipv6h);
-	/* nexthdr and hop_limit */
-	skb->csum = csum_add(temp, (__force __wsum)*(__be16 *)&ipv6h->nexthdr);
+	csum_pseudo_hdr = csum_partial(&ipv6h->saddr,
+				       sizeof(ipv6h->saddr) + sizeof(ipv6h->daddr), 0);
+	csum_pseudo_hdr = csum_add(csum_pseudo_hdr, (__force __wsum)ipv6h->payload_len);
+	csum_pseudo_hdr = csum_add(csum_pseudo_hdr,
+				   (__force __wsum)htons(nexthdr));
+
+	skb->csum = csum_sub(hw_checksum, csum_pseudo_hdr);
+	skb->csum = csum_add(skb->csum, csum_partial(ipv6h, sizeof(struct ipv6hdr), 0));
 	return 0;
 }
 #endif
-
-#define short_frame(size) ((size) <= ETH_ZLEN + ETH_FCS_LEN)
-
-/* We reach this function only after checking that any of
- * the (IPv4 | IPv6) bits are set in cqe->status.
- */
 static int check_csum(struct mlx4_cqe *cqe, struct sk_buff *skb, void *va,
 		      netdev_features_t dev_features)
 {
 	__wsum hw_checksum = 0;
-	void *hdr;
 
-	/* CQE csum doesn't cover padding octets in short ethernet
-	 * frames. And the pad field is appended prior to calculating
-	 * and appending the FCS field.
-	 *
-	 * Detecting these padded frames requires to verify and parse
-	 * IP headers, so we simply force all those small frames to skip
-	 * checksum complete.
-	 */
-	if (short_frame(skb->len))
-		return -EINVAL;
+	void *hdr = (u8 *)va + sizeof(struct ethhdr);
 
-	hdr = (u8 *)va + sizeof(struct ethhdr);
 	hw_checksum = csum_unfold((__force __sum16)cqe->checksum);
 
 	if (cqe->vlan_my_qpn & cpu_to_be32(MLX4_CQE_CVLAN_PRESENT_MASK) &&
@@ -648,18 +632,14 @@ static int check_csum(struct mlx4_cqe *cqe, struct sk_buff *skb, void *va,
 		hdr += sizeof(struct vlan_hdr);
 	}
 
+	if (cqe->status & cpu_to_be16(MLX4_CQE_STATUS_IPV4))
+		return get_fixed_ipv4_csum(hw_checksum, skb, hdr);
 #if IS_ENABLED(CONFIG_IPV6)
 	if (cqe->status & cpu_to_be16(MLX4_CQE_STATUS_IPV6))
 		return get_fixed_ipv6_csum(hw_checksum, skb, hdr);
 #endif
-	return get_fixed_ipv4_csum(hw_checksum, skb, hdr);
+	return 0;
 }
-
-#if IS_ENABLED(CONFIG_IPV6)
-#define MLX4_CQE_STATUS_IP_ANY (MLX4_CQE_STATUS_IPV4 | MLX4_CQE_STATUS_IPV6)
-#else
-#define MLX4_CQE_STATUS_IP_ANY (MLX4_CQE_STATUS_IPV4)
-#endif
 
 int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int budget)
 {
@@ -670,19 +650,20 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
 	int cq_ring = cq->ring;
 	bool doorbell_pending;
 	struct mlx4_cqe *cqe;
-	struct xdp_buff xdp;
 	int polled = 0;
 	int index;
 
-	if (unlikely(!priv->port_up || budget <= 0))
+	if (unlikely(!priv->port_up))
 		return 0;
+
+	if (unlikely(budget <= 0))
+		return polled;
 
 	ring = priv->rx_ring[cq_ring];
 
 	/* Protect accesses to: ring->xdp_prog, priv->mac_hash list */
 	rcu_read_lock();
 	xdp_prog = rcu_dereference(ring->xdp_prog);
-	xdp.rxq = &ring->xdp_rxq;
 	doorbell_pending = 0;
 
 	/* We assume a 1:1 mapping between CQEs and Rx descriptors, so Rx
@@ -767,6 +748,7 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
 		 * read bytes but not past the end of the frag.
 		 */
 		if (xdp_prog) {
+			struct xdp_buff xdp;
 			dma_addr_t dma;
 			void *orig_data;
 			u32 act;
@@ -784,8 +766,8 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
 
 			act = bpf_prog_run_xdp(xdp_prog, &xdp);
 
-			length = xdp.data_end - xdp.data;
 			if (xdp.data != orig_data) {
+				length = xdp.data_end - xdp.data;
 				frags[0].page_offset = xdp.data -
 					xdp.data_hard_start;
 				va = xdp.data;
@@ -805,10 +787,8 @@ int mlx4_en_process_rx_cq(struct net_device *dev, struct mlx4_en_cq *cq, int bud
 				goto xdp_drop_no_cnt; /* Drop on xmit failure */
 			default:
 				bpf_warn_invalid_xdp_action(act);
-				/* fall through */
 			case XDP_ABORTED:
 				trace_xdp_exception(dev, xdp_prog, act);
-				/* fall through */
 			case XDP_DROP:
 				ring->xdp_drop++;
 xdp_drop_no_cnt:
@@ -832,33 +812,35 @@ xdp_drop_no_cnt:
 		skb_record_rx_queue(skb, cq_ring);
 
 		if (likely(dev->features & NETIF_F_RXCSUM)) {
-			/* TODO: For IP non TCP/UDP packets when csum complete is
-			 * not an option (not supported or any other reason) we can
-			 * actually check cqe IPOK status bit and report
-			 * CHECKSUM_UNNECESSARY rather than CHECKSUM_NONE
-			 */
-			if ((cqe->status & cpu_to_be16(MLX4_CQE_STATUS_TCP |
-						       MLX4_CQE_STATUS_UDP)) &&
-			    (cqe->status & cpu_to_be16(MLX4_CQE_STATUS_IPOK)) &&
-			    cqe->checksum == cpu_to_be16(0xffff)) {
-				bool l2_tunnel;
+			if (cqe->status & cpu_to_be16(MLX4_CQE_STATUS_TCP |
+						      MLX4_CQE_STATUS_UDP)) {
+				if ((cqe->status & cpu_to_be16(MLX4_CQE_STATUS_IPOK)) &&
+				    cqe->checksum == cpu_to_be16(0xffff)) {
+					bool l2_tunnel = (dev->hw_enc_features & NETIF_F_RXCSUM) &&
+						(cqe->vlan_my_qpn & cpu_to_be32(MLX4_CQE_L2_TUNNEL));
 
-				l2_tunnel = (dev->hw_enc_features & NETIF_F_RXCSUM) &&
-					(cqe->vlan_my_qpn & cpu_to_be32(MLX4_CQE_L2_TUNNEL));
-				ip_summed = CHECKSUM_UNNECESSARY;
-				hash_type = PKT_HASH_TYPE_L4;
-				if (l2_tunnel)
-					skb->csum_level = 1;
-				ring->csum_ok++;
+					ip_summed = CHECKSUM_UNNECESSARY;
+					hash_type = PKT_HASH_TYPE_L4;
+					if (l2_tunnel)
+						skb->csum_level = 1;
+					ring->csum_ok++;
+				} else {
+					goto csum_none;
+				}
 			} else {
-				if (!(priv->flags & MLX4_EN_FLAG_RX_CSUM_NON_TCP_UDP &&
-				      (cqe->status & cpu_to_be16(MLX4_CQE_STATUS_IP_ANY))))
+				if (priv->flags & MLX4_EN_FLAG_RX_CSUM_NON_TCP_UDP &&
+				    (cqe->status & cpu_to_be16(MLX4_CQE_STATUS_IPV4 |
+							       MLX4_CQE_STATUS_IPV6))) {
+					if (check_csum(cqe, skb, va, dev->features)) {
+						goto csum_none;
+					} else {
+						ip_summed = CHECKSUM_COMPLETE;
+						hash_type = PKT_HASH_TYPE_L3;
+						ring->csum_complete++;
+					}
+				} else {
 					goto csum_none;
-				if (check_csum(cqe, skb, va, dev->features))
-					goto csum_none;
-				ip_summed = CHECKSUM_COMPLETE;
-				hash_type = PKT_HASH_TYPE_L3;
-				ring->csum_complete++;
+				}
 			}
 		} else {
 csum_none:
@@ -890,7 +872,7 @@ csum_none:
 			skb->data_len = length;
 			napi_gro_frags(&cq->napi);
 		} else {
-			__vlan_hwaccel_clear_tag(skb);
+			skb->vlan_tci = 0;
 			skb_clear_hash(skb);
 		}
 next:
@@ -1187,7 +1169,7 @@ int mlx4_en_config_rss_steer(struct mlx4_en_priv *priv)
 	err = mlx4_qp_alloc(mdev->dev, priv->base_qpn, rss_map->indir_qp);
 	if (err) {
 		en_err(priv, "Failed to allocate RSS indirection QP\n");
-		goto qp_alloc_err;
+		goto rss_err;
 	}
 
 	rss_map->indir_qp->event = mlx4_en_sqp_event;
@@ -1241,7 +1223,6 @@ indir_err:
 		       MLX4_QP_STATE_RST, NULL, 0, 0, rss_map->indir_qp);
 	mlx4_qp_remove(mdev->dev, rss_map->indir_qp);
 	mlx4_qp_free(mdev->dev, rss_map->indir_qp);
-qp_alloc_err:
 	kfree(rss_map->indir_qp);
 	rss_map->indir_qp = NULL;
 rss_err:

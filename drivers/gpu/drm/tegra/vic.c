@@ -1,10 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2015, NVIDIA Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/clk.h>
-#include <linux/delay.h>
 #include <linux/host1x.h>
 #include <linux/iommu.h>
 #include <linux/module.h>
@@ -23,8 +25,6 @@
 
 struct vic_config {
 	const char *firmware;
-	unsigned int version;
-	bool supports_sid;
 };
 
 struct vic {
@@ -37,7 +37,6 @@ struct vic {
 	struct iommu_domain *domain;
 	struct device *dev;
 	struct clk *clk;
-	struct reset_control *rst;
 
 	/* Platform configuration */
 	const struct vic_config *config;
@@ -56,37 +55,13 @@ static void vic_writel(struct vic *vic, u32 value, unsigned int offset)
 static int vic_runtime_resume(struct device *dev)
 {
 	struct vic *vic = dev_get_drvdata(dev);
-	int err;
 
-	err = clk_prepare_enable(vic->clk);
-	if (err < 0)
-		return err;
-
-	usleep_range(10, 20);
-
-	err = reset_control_deassert(vic->rst);
-	if (err < 0)
-		goto disable;
-
-	usleep_range(10, 20);
-
-	return 0;
-
-disable:
-	clk_disable_unprepare(vic->clk);
-	return err;
+	return clk_prepare_enable(vic->clk);
 }
 
 static int vic_runtime_suspend(struct device *dev)
 {
 	struct vic *vic = dev_get_drvdata(dev);
-	int err;
-
-	err = reset_control_assert(vic->rst);
-	if (err < 0)
-		return err;
-
-	usleep_range(2000, 4000);
 
 	clk_disable_unprepare(vic->clk);
 
@@ -103,24 +78,6 @@ static int vic_boot(struct vic *vic)
 
 	if (vic->booted)
 		return 0;
-
-#ifdef CONFIG_IOMMU_API
-	if (vic->config->supports_sid) {
-		struct iommu_fwspec *spec = dev_iommu_fwspec_get(vic->dev);
-		u32 value;
-
-		value = TRANSCFG_ATT(1, TRANSCFG_SID_FALCON) |
-			TRANSCFG_ATT(0, TRANSCFG_SID_HW);
-		vic_writel(vic, value, VIC_TFBIF_TRANSCFG);
-
-		if (spec && spec->num_ids > 0) {
-			value = spec->ids[0] & 0xffff;
-
-			vic_writel(vic, value, VIC_THI_STREAMID0);
-			vic_writel(vic, value, VIC_THI_STREAMID1);
-		}
-	}
-#endif
 
 	/* setup clockgating registers */
 	vic_writel(vic, CG_IDLE_CG_DLY_CNT(4) |
@@ -158,7 +115,7 @@ static int vic_boot(struct vic *vic)
 }
 
 static void *vic_falcon_alloc(struct falcon *falcon, size_t size,
-			      dma_addr_t *iova)
+			       dma_addr_t *iova)
 {
 	struct tegra_drm *tegra = falcon->data;
 
@@ -181,14 +138,13 @@ static const struct falcon_ops vic_falcon_ops = {
 static int vic_init(struct host1x_client *client)
 {
 	struct tegra_drm_client *drm = host1x_to_drm_client(client);
-	struct iommu_group *group = iommu_group_get(client->dev);
 	struct drm_device *dev = dev_get_drvdata(client->parent);
 	struct tegra_drm *tegra = dev->dev_private;
 	struct vic *vic = to_vic(drm);
 	int err;
 
-	if (group && tegra->domain) {
-		err = iommu_attach_group(tegra->domain, group);
+	if (tegra->domain) {
+		err = iommu_attach_device(tegra->domain, vic->dev);
 		if (err < 0) {
 			dev_err(vic->dev, "failed to attach to domain: %d\n",
 				err);
@@ -198,10 +154,17 @@ static int vic_init(struct host1x_client *client)
 		vic->domain = tegra->domain;
 	}
 
+	if (!vic->falcon.data) {
+		vic->falcon.data = tegra;
+		err = falcon_load_firmware(&vic->falcon);
+		if (err < 0)
+			goto detach_device;
+	}
+
 	vic->channel = host1x_channel_request(client->dev);
 	if (!vic->channel) {
 		err = -ENOMEM;
-		goto detach;
+		goto detach_device;
 	}
 
 	client->syncpts[0] = host1x_syncpt_request(client, 0);
@@ -220,9 +183,9 @@ free_syncpt:
 	host1x_syncpt_free(client->syncpts[0]);
 free_channel:
 	host1x_channel_put(vic->channel);
-detach:
-	if (group && tegra->domain)
-		iommu_detach_group(tegra->domain, group);
+detach_device:
+	if (tegra->domain)
+		iommu_detach_device(tegra->domain, vic->dev);
 
 	return err;
 }
@@ -230,7 +193,6 @@ detach:
 static int vic_exit(struct host1x_client *client)
 {
 	struct tegra_drm_client *drm = host1x_to_drm_client(client);
-	struct iommu_group *group = iommu_group_get(client->dev);
 	struct drm_device *dev = dev_get_drvdata(client->parent);
 	struct tegra_drm *tegra = dev->dev_private;
 	struct vic *vic = to_vic(drm);
@@ -244,7 +206,7 @@ static int vic_exit(struct host1x_client *client)
 	host1x_channel_put(vic->channel);
 
 	if (vic->domain) {
-		iommu_detach_group(vic->domain, group);
+		iommu_detach_device(vic->domain, vic->dev);
 		vic->domain = NULL;
 	}
 
@@ -256,30 +218,6 @@ static const struct host1x_client_ops vic_client_ops = {
 	.exit = vic_exit,
 };
 
-static int vic_load_firmware(struct vic *vic)
-{
-	int err;
-
-	if (vic->falcon.data)
-		return 0;
-
-	vic->falcon.data = vic->client.drm;
-
-	err = falcon_read_firmware(&vic->falcon, vic->config->firmware);
-	if (err < 0)
-		goto cleanup;
-
-	err = falcon_load_firmware(&vic->falcon);
-	if (err < 0)
-		goto cleanup;
-
-	return 0;
-
-cleanup:
-	vic->falcon.data = NULL;
-	return err;
-}
-
 static int vic_open_channel(struct tegra_drm_client *client,
 			    struct tegra_drm_context *context)
 {
@@ -290,25 +228,19 @@ static int vic_open_channel(struct tegra_drm_client *client,
 	if (err < 0)
 		return err;
 
-	err = vic_load_firmware(vic);
-	if (err < 0)
-		goto rpm_put;
-
 	err = vic_boot(vic);
-	if (err < 0)
-		goto rpm_put;
+	if (err < 0) {
+		pm_runtime_put(vic->dev);
+		return err;
+	}
 
 	context->channel = host1x_channel_get(vic->channel);
 	if (!context->channel) {
-		err = -ENOMEM;
-		goto rpm_put;
+		pm_runtime_put(vic->dev);
+		return -ENOMEM;
 	}
 
 	return 0;
-
-rpm_put:
-	pm_runtime_put(vic->dev);
-	return err;
 }
 
 static void vic_close_channel(struct tegra_drm_context *context)
@@ -330,39 +262,24 @@ static const struct tegra_drm_client_ops vic_ops = {
 
 static const struct vic_config vic_t124_config = {
 	.firmware = NVIDIA_TEGRA_124_VIC_FIRMWARE,
-	.version = 0x40,
-	.supports_sid = false,
 };
 
 #define NVIDIA_TEGRA_210_VIC_FIRMWARE "nvidia/tegra210/vic04_ucode.bin"
 
 static const struct vic_config vic_t210_config = {
 	.firmware = NVIDIA_TEGRA_210_VIC_FIRMWARE,
-	.version = 0x21,
-	.supports_sid = false,
 };
 
 #define NVIDIA_TEGRA_186_VIC_FIRMWARE "nvidia/tegra186/vic04_ucode.bin"
 
 static const struct vic_config vic_t186_config = {
 	.firmware = NVIDIA_TEGRA_186_VIC_FIRMWARE,
-	.version = 0x18,
-	.supports_sid = true,
-};
-
-#define NVIDIA_TEGRA_194_VIC_FIRMWARE "nvidia/tegra194/vic.bin"
-
-static const struct vic_config vic_t194_config = {
-	.firmware = NVIDIA_TEGRA_194_VIC_FIRMWARE,
-	.version = 0x19,
-	.supports_sid = true,
 };
 
 static const struct of_device_id vic_match[] = {
 	{ .compatible = "nvidia,tegra124-vic", .data = &vic_t124_config },
 	{ .compatible = "nvidia,tegra210-vic", .data = &vic_t210_config },
 	{ .compatible = "nvidia,tegra186-vic", .data = &vic_t186_config },
-	{ .compatible = "nvidia,tegra194-vic", .data = &vic_t194_config },
 	{ },
 };
 
@@ -400,14 +317,6 @@ static int vic_probe(struct platform_device *pdev)
 		return PTR_ERR(vic->clk);
 	}
 
-	if (!dev->pm_domain) {
-		vic->rst = devm_reset_control_get(dev, "vic");
-		if (IS_ERR(vic->rst)) {
-			dev_err(&pdev->dev, "failed to get reset\n");
-			return PTR_ERR(vic->rst);
-		}
-	}
-
 	vic->falcon.dev = dev;
 	vic->falcon.regs = vic->regs;
 	vic->falcon.ops = &vic_falcon_ops;
@@ -415,6 +324,10 @@ static int vic_probe(struct platform_device *pdev)
 	err = falcon_init(&vic->falcon);
 	if (err < 0)
 		return err;
+
+	err = falcon_read_firmware(&vic->falcon, vic->config->firmware);
+	if (err < 0)
+		goto exit_falcon;
 
 	platform_set_drvdata(pdev, vic);
 
@@ -427,12 +340,12 @@ static int vic_probe(struct platform_device *pdev)
 	vic->dev = dev;
 
 	INIT_LIST_HEAD(&vic->client.list);
-	vic->client.version = vic->config->version;
 	vic->client.ops = &vic_ops;
 
 	err = host1x_client_register(&vic->client.base);
 	if (err < 0) {
 		dev_err(dev, "failed to register host1x client: %d\n", err);
+		platform_set_drvdata(pdev, NULL);
 		goto exit_falcon;
 	}
 
@@ -497,7 +410,4 @@ MODULE_FIRMWARE(NVIDIA_TEGRA_210_VIC_FIRMWARE);
 #endif
 #if IS_ENABLED(CONFIG_ARCH_TEGRA_186_SOC)
 MODULE_FIRMWARE(NVIDIA_TEGRA_186_VIC_FIRMWARE);
-#endif
-#if IS_ENABLED(CONFIG_ARCH_TEGRA_194_SOC)
-MODULE_FIRMWARE(NVIDIA_TEGRA_194_VIC_FIRMWARE);
 #endif

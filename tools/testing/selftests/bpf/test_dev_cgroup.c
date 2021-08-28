@@ -1,5 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2017 Facebook
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of version 2 of the GNU General Public
+ * License as published by the Free Software Foundation.
  */
 
 #include <stdio.h>
@@ -7,18 +10,16 @@
 #include <string.h>
 #include <errno.h>
 #include <assert.h>
-#include <sys/time.h>
 
 #include <linux/bpf.h>
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
 
 #include "cgroup_helpers.h"
-#include "bpf_rlimit.h"
 
 #define DEV_CGROUP_PROG "./dev_cgroup.o"
 
-#define TEST_CGROUP "/test-bpf-based-device-cgroup/"
+#define TEST_CGROUP "test-bpf-based-device-cgroup/"
 
 int main(int argc, char **argv)
 {
@@ -30,7 +31,7 @@ int main(int argc, char **argv)
 	if (bpf_prog_load(DEV_CGROUP_PROG, BPF_PROG_TYPE_CGROUP_DEVICE,
 			  &obj, &prog_fd)) {
 		printf("Failed to load DEV_CGROUP program\n");
-		goto out;
+		goto err;
 	}
 
 	if (setup_cgroup_environment()) {
@@ -40,7 +41,7 @@ int main(int argc, char **argv)
 
 	/* Create a cgroup, get fd, and join it */
 	cgroup_fd = create_and_get_cgroup(TEST_CGROUP);
-	if (cgroup_fd < 0) {
+	if (!cgroup_fd) {
 		printf("Failed to create test cgroup\n");
 		goto err;
 	}
@@ -88,6 +89,5 @@ int main(int argc, char **argv)
 err:
 	cleanup_cgroup_environment();
 
-out:
 	return error;
 }

@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * net/sched/cls_flow.c		Generic flow classifier
  *
  * Copyright (c) 2007, 2008 Patrick McHardy <kaber@trash.net>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
  */
 
 #include <linux/kernel.h>
@@ -53,7 +57,10 @@ struct flow_filter {
 	u32			divisor;
 	u32			baseclass;
 	u32			hashrnd;
-	struct rcu_work		rwork;
+	union {
+		struct work_struct	work;
+		struct rcu_head		rcu;
+	};
 };
 
 static inline u32 addr_fold(void *addr)
@@ -376,19 +383,25 @@ static void __flow_destroy_filter(struct flow_filter *f)
 
 static void flow_destroy_filter_work(struct work_struct *work)
 {
-	struct flow_filter *f = container_of(to_rcu_work(work),
-					     struct flow_filter,
-					     rwork);
+	struct flow_filter *f = container_of(work, struct flow_filter, work);
+
 	rtnl_lock();
 	__flow_destroy_filter(f);
 	rtnl_unlock();
 }
 
+static void flow_destroy_filter(struct rcu_head *head)
+{
+	struct flow_filter *f = container_of(head, struct flow_filter, rcu);
+
+	INIT_WORK(&f->work, flow_destroy_filter_work);
+	tcf_queue_work(&f->work);
+}
+
 static int flow_change(struct net *net, struct sk_buff *in_skb,
 		       struct tcf_proto *tp, unsigned long base,
 		       u32 handle, struct nlattr **tca,
-		       void **arg, bool ovr, bool rtnl_held,
-		       struct netlink_ext_ack *extack)
+		       void **arg, bool ovr)
 {
 	struct flow_head *head = rtnl_dereference(tp->root);
 	struct flow_filter *fold, *fnew;
@@ -404,8 +417,7 @@ static int flow_change(struct net *net, struct sk_buff *in_skb,
 	if (opt == NULL)
 		return -EINVAL;
 
-	err = nla_parse_nested_deprecated(tb, TCA_FLOW_MAX, opt, flow_policy,
-					  NULL);
+	err = nla_parse_nested(tb, TCA_FLOW_MAX, opt, flow_policy, NULL);
 	if (err < 0)
 		return err;
 
@@ -438,12 +450,11 @@ static int flow_change(struct net *net, struct sk_buff *in_skb,
 	if (err < 0)
 		goto err1;
 
-	err = tcf_exts_init(&fnew->exts, net, TCA_FLOW_ACT, TCA_FLOW_POLICE);
+	err = tcf_exts_init(&fnew->exts, TCA_FLOW_ACT, TCA_FLOW_POLICE);
 	if (err < 0)
 		goto err2;
 
-	err = tcf_exts_validate(net, tp, tb, tca[TCA_RATE], &fnew->exts, ovr,
-				true, extack);
+	err = tcf_exts_validate(net, tp, tb, tca[TCA_RATE], &fnew->exts, ovr);
 	if (err < 0)
 		goto err2;
 
@@ -515,7 +526,7 @@ static int flow_change(struct net *net, struct sk_buff *in_skb,
 
 	timer_setup(&fnew->perturb_timer, flow_perturbation, TIMER_DEFERRABLE);
 
-	tcf_block_netif_keep_dst(tp->chain->block);
+	netif_keep_dst(qdisc_dev(tp->q));
 
 	if (tb[TCA_FLOW_KEYS]) {
 		fnew->keymask = keymask;
@@ -551,7 +562,7 @@ static int flow_change(struct net *net, struct sk_buff *in_skb,
 
 	if (fold) {
 		tcf_exts_get_net(&fold->exts);
-		tcf_queue_work(&fold->rwork, flow_destroy_filter_work);
+		call_rcu(&fold->rcu, flow_destroy_filter);
 	}
 	return 0;
 
@@ -563,15 +574,14 @@ err1:
 	return err;
 }
 
-static int flow_delete(struct tcf_proto *tp, void *arg, bool *last,
-		       bool rtnl_held, struct netlink_ext_ack *extack)
+static int flow_delete(struct tcf_proto *tp, void *arg, bool *last)
 {
 	struct flow_head *head = rtnl_dereference(tp->root);
 	struct flow_filter *f = arg;
 
 	list_del_rcu(&f->list);
 	tcf_exts_get_net(&f->exts);
-	tcf_queue_work(&f->rwork, flow_destroy_filter_work);
+	call_rcu(&f->rcu, flow_destroy_filter);
 	*last = list_empty(&head->filters);
 	return 0;
 }
@@ -588,8 +598,7 @@ static int flow_init(struct tcf_proto *tp)
 	return 0;
 }
 
-static void flow_destroy(struct tcf_proto *tp, bool rtnl_held,
-			 struct netlink_ext_ack *extack)
+static void flow_destroy(struct tcf_proto *tp)
 {
 	struct flow_head *head = rtnl_dereference(tp->root);
 	struct flow_filter *f, *next;
@@ -597,7 +606,7 @@ static void flow_destroy(struct tcf_proto *tp, bool rtnl_held,
 	list_for_each_entry_safe(f, next, &head->filters, list) {
 		list_del_rcu(&f->list);
 		if (tcf_exts_get_net(&f->exts))
-			tcf_queue_work(&f->rwork, flow_destroy_filter_work);
+			call_rcu(&f->rcu, flow_destroy_filter);
 		else
 			__flow_destroy_filter(f);
 	}
@@ -616,7 +625,7 @@ static void *flow_get(struct tcf_proto *tp, u32 handle)
 }
 
 static int flow_dump(struct net *net, struct tcf_proto *tp, void *fh,
-		     struct sk_buff *skb, struct tcmsg *t, bool rtnl_held)
+		     struct sk_buff *skb, struct tcmsg *t)
 {
 	struct flow_filter *f = fh;
 	struct nlattr *nest;
@@ -626,7 +635,7 @@ static int flow_dump(struct net *net, struct tcf_proto *tp, void *fh,
 
 	t->tcm_handle = f->handle;
 
-	nest = nla_nest_start_noflag(skb, TCA_OPTIONS);
+	nest = nla_nest_start(skb, TCA_OPTIONS);
 	if (nest == NULL)
 		goto nla_put_failure;
 
@@ -676,8 +685,7 @@ nla_put_failure:
 	return -1;
 }
 
-static void flow_walk(struct tcf_proto *tp, struct tcf_walker *arg,
-		      bool rtnl_held)
+static void flow_walk(struct tcf_proto *tp, struct tcf_walker *arg)
 {
 	struct flow_head *head = rtnl_dereference(tp->root);
 	struct flow_filter *f;

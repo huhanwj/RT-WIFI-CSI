@@ -8,7 +8,6 @@
 #include <linux/vmalloc.h>
 #include <linux/wait.h>
 #include <linux/writeback.h>
-#include <linux/iversion.h>
 
 #include "super.h"
 #include "mds_client.h"
@@ -70,8 +69,6 @@ static char *gcap_string(char *s, int c)
 		*s++ = 'w';
 	if (c & CEPH_CAP_GBUFFER)
 		*s++ = 'b';
-	if (c & CEPH_CAP_GWREXTEND)
-		*s++ = 'a';
 	if (c & CEPH_CAP_GLAZYIO)
 		*s++ = 'l';
 	return s;
@@ -149,65 +146,21 @@ void ceph_caps_finalize(struct ceph_mds_client *mdsc)
 	spin_unlock(&mdsc->caps_list_lock);
 }
 
-void ceph_adjust_caps_max_min(struct ceph_mds_client *mdsc,
-			      struct ceph_mount_options *fsopt)
+void ceph_adjust_min_caps(struct ceph_mds_client *mdsc, int delta)
 {
 	spin_lock(&mdsc->caps_list_lock);
-	mdsc->caps_min_count = fsopt->max_readdir;
-	if (mdsc->caps_min_count < 1024)
-		mdsc->caps_min_count = 1024;
-	mdsc->caps_use_max = fsopt->caps_max;
-	if (mdsc->caps_use_max > 0 &&
-	    mdsc->caps_use_max < mdsc->caps_min_count)
-		mdsc->caps_use_max = mdsc->caps_min_count;
+	mdsc->caps_min_count += delta;
+	BUG_ON(mdsc->caps_min_count < 0);
 	spin_unlock(&mdsc->caps_list_lock);
 }
 
-static void __ceph_unreserve_caps(struct ceph_mds_client *mdsc, int nr_caps)
-{
-	struct ceph_cap *cap;
-	int i;
-
-	if (nr_caps) {
-		BUG_ON(mdsc->caps_reserve_count < nr_caps);
-		mdsc->caps_reserve_count -= nr_caps;
-		if (mdsc->caps_avail_count >=
-		    mdsc->caps_reserve_count + mdsc->caps_min_count) {
-			mdsc->caps_total_count -= nr_caps;
-			for (i = 0; i < nr_caps; i++) {
-				cap = list_first_entry(&mdsc->caps_list,
-					struct ceph_cap, caps_item);
-				list_del(&cap->caps_item);
-				kmem_cache_free(ceph_cap_cachep, cap);
-			}
-		} else {
-			mdsc->caps_avail_count += nr_caps;
-		}
-
-		dout("%s: caps %d = %d used + %d resv + %d avail\n",
-		     __func__,
-		     mdsc->caps_total_count, mdsc->caps_use_count,
-		     mdsc->caps_reserve_count, mdsc->caps_avail_count);
-		BUG_ON(mdsc->caps_total_count != mdsc->caps_use_count +
-						 mdsc->caps_reserve_count +
-						 mdsc->caps_avail_count);
-	}
-}
-
-/*
- * Called under mdsc->mutex.
- */
-int ceph_reserve_caps(struct ceph_mds_client *mdsc,
+void ceph_reserve_caps(struct ceph_mds_client *mdsc,
 		      struct ceph_cap_reservation *ctx, int need)
 {
-	int i, j;
+	int i;
 	struct ceph_cap *cap;
 	int have;
 	int alloc = 0;
-	int max_caps;
-	int err = 0;
-	bool trimmed = false;
-	struct ceph_mds_session *s;
 	LIST_HEAD(newcaps);
 
 	dout("reserve caps ctx=%p need=%d\n", ctx, need);
@@ -225,62 +178,17 @@ int ceph_reserve_caps(struct ceph_mds_client *mdsc,
 					 mdsc->caps_avail_count);
 	spin_unlock(&mdsc->caps_list_lock);
 
-	for (i = have; i < need; ) {
+	for (i = have; i < need; i++) {
 		cap = kmem_cache_alloc(ceph_cap_cachep, GFP_NOFS);
-		if (cap) {
-			list_add(&cap->caps_item, &newcaps);
-			alloc++;
-			i++;
-			continue;
-		}
-
-		if (!trimmed) {
-			for (j = 0; j < mdsc->max_sessions; j++) {
-				s = __ceph_lookup_mds_session(mdsc, j);
-				if (!s)
-					continue;
-				mutex_unlock(&mdsc->mutex);
-
-				mutex_lock(&s->s_mutex);
-				max_caps = s->s_nr_caps - (need - i);
-				ceph_trim_caps(mdsc, s, max_caps);
-				mutex_unlock(&s->s_mutex);
-
-				ceph_put_mds_session(s);
-				mutex_lock(&mdsc->mutex);
-			}
-			trimmed = true;
-
-			spin_lock(&mdsc->caps_list_lock);
-			if (mdsc->caps_avail_count) {
-				int more_have;
-				if (mdsc->caps_avail_count >= need - i)
-					more_have = need - i;
-				else
-					more_have = mdsc->caps_avail_count;
-
-				i += more_have;
-				have += more_have;
-				mdsc->caps_avail_count -= more_have;
-				mdsc->caps_reserve_count += more_have;
-
-			}
-			spin_unlock(&mdsc->caps_list_lock);
-
-			continue;
-		}
-
+		if (!cap)
+			break;
+		list_add(&cap->caps_item, &newcaps);
+		alloc++;
+	}
+	/* we didn't manage to reserve as much as we needed */
+	if (have + alloc != need)
 		pr_warn("reserve caps ctx=%p ENOMEM need=%d got=%d\n",
 			ctx, need, have + alloc);
-		err = -ENOMEM;
-		break;
-	}
-
-	if (!err) {
-		BUG_ON(have + alloc != need);
-		ctx->count = need;
-		ctx->used = 0;
-	}
 
 	spin_lock(&mdsc->caps_list_lock);
 	mdsc->caps_total_count += alloc;
@@ -290,37 +198,33 @@ int ceph_reserve_caps(struct ceph_mds_client *mdsc,
 	BUG_ON(mdsc->caps_total_count != mdsc->caps_use_count +
 					 mdsc->caps_reserve_count +
 					 mdsc->caps_avail_count);
-
-	if (err)
-		__ceph_unreserve_caps(mdsc, have + alloc);
-
 	spin_unlock(&mdsc->caps_list_lock);
 
+	ctx->count = need;
 	dout("reserve caps ctx=%p %d = %d used + %d resv + %d avail\n",
 	     ctx, mdsc->caps_total_count, mdsc->caps_use_count,
 	     mdsc->caps_reserve_count, mdsc->caps_avail_count);
-	return err;
 }
 
-void ceph_unreserve_caps(struct ceph_mds_client *mdsc,
-			 struct ceph_cap_reservation *ctx)
+int ceph_unreserve_caps(struct ceph_mds_client *mdsc,
+			struct ceph_cap_reservation *ctx)
 {
-	bool reclaim = false;
-	if (!ctx->count)
-		return;
-
 	dout("unreserve caps ctx=%p count=%d\n", ctx, ctx->count);
-	spin_lock(&mdsc->caps_list_lock);
-	__ceph_unreserve_caps(mdsc, ctx->count);
-	ctx->count = 0;
-
-	if (mdsc->caps_use_max > 0 &&
-	    mdsc->caps_use_count > mdsc->caps_use_max)
-		reclaim = true;
-	spin_unlock(&mdsc->caps_list_lock);
-
-	if (reclaim)
-		ceph_reclaim_caps_nr(mdsc, ctx->used);
+	if (ctx->count) {
+		spin_lock(&mdsc->caps_list_lock);
+		BUG_ON(mdsc->caps_reserve_count < ctx->count);
+		mdsc->caps_reserve_count -= ctx->count;
+		mdsc->caps_avail_count += ctx->count;
+		ctx->count = 0;
+		dout("unreserve caps %d = %d used + %d resv + %d avail\n",
+		     mdsc->caps_total_count, mdsc->caps_use_count,
+		     mdsc->caps_reserve_count, mdsc->caps_avail_count);
+		BUG_ON(mdsc->caps_total_count != mdsc->caps_use_count +
+						 mdsc->caps_reserve_count +
+						 mdsc->caps_avail_count);
+		spin_unlock(&mdsc->caps_list_lock);
+	}
+	return 0;
 }
 
 struct ceph_cap *ceph_get_cap(struct ceph_mds_client *mdsc,
@@ -336,23 +240,7 @@ struct ceph_cap *ceph_get_cap(struct ceph_mds_client *mdsc,
 			mdsc->caps_use_count++;
 			mdsc->caps_total_count++;
 			spin_unlock(&mdsc->caps_list_lock);
-		} else {
-			spin_lock(&mdsc->caps_list_lock);
-			if (mdsc->caps_avail_count) {
-				BUG_ON(list_empty(&mdsc->caps_list));
-
-				mdsc->caps_avail_count--;
-				mdsc->caps_use_count++;
-				cap = list_first_entry(&mdsc->caps_list,
-						struct ceph_cap, caps_item);
-				list_del(&cap->caps_item);
-
-				BUG_ON(mdsc->caps_total_count != mdsc->caps_use_count +
-				       mdsc->caps_reserve_count + mdsc->caps_avail_count);
-			}
-			spin_unlock(&mdsc->caps_list_lock);
 		}
-
 		return cap;
 	}
 
@@ -365,7 +253,6 @@ struct ceph_cap *ceph_get_cap(struct ceph_mds_client *mdsc,
 	BUG_ON(list_empty(&mdsc->caps_list));
 
 	ctx->count--;
-	ctx->used++;
 	mdsc->caps_reserve_count--;
 	mdsc->caps_use_count++;
 
@@ -409,8 +296,6 @@ void ceph_reservation_status(struct ceph_fs_client *fsc,
 {
 	struct ceph_mds_client *mdsc = fsc->mdsc;
 
-	spin_lock(&mdsc->caps_list_lock);
-
 	if (total)
 		*total = mdsc->caps_total_count;
 	if (avail)
@@ -421,8 +306,6 @@ void ceph_reservation_status(struct ceph_fs_client *fsc,
 		*reserved = mdsc->caps_reserve_count;
 	if (min)
 		*min = mdsc->caps_min_count;
-
-	spin_unlock(&mdsc->caps_list_lock);
 }
 
 /*
@@ -458,6 +341,37 @@ struct ceph_cap *ceph_get_cap_for_mds(struct ceph_inode_info *ci, int mds)
 }
 
 /*
+ * Return id of any MDS with a cap, preferably FILE_WR|BUFFER|EXCL, else -1.
+ */
+static int __ceph_get_cap_mds(struct ceph_inode_info *ci)
+{
+	struct ceph_cap *cap;
+	int mds = -1;
+	struct rb_node *p;
+
+	/* prefer mds with WR|BUFFER|EXCL caps */
+	for (p = rb_first(&ci->i_caps); p; p = rb_next(p)) {
+		cap = rb_entry(p, struct ceph_cap, ci_node);
+		mds = cap->mds;
+		if (cap->issued & (CEPH_CAP_FILE_WR |
+				   CEPH_CAP_FILE_BUFFER |
+				   CEPH_CAP_FILE_EXCL))
+			break;
+	}
+	return mds;
+}
+
+int ceph_get_cap_mds(struct inode *inode)
+{
+	struct ceph_inode_info *ci = ceph_inode(inode);
+	int mds;
+	spin_lock(&ci->i_ceph_lock);
+	mds = __ceph_get_cap_mds(ceph_inode(inode));
+	spin_unlock(&ci->i_ceph_lock);
+	return mds;
+}
+
+/*
  * Called under i_ceph_lock.
  */
 static void __insert_cap_node(struct ceph_inode_info *ci,
@@ -489,12 +403,12 @@ static void __insert_cap_node(struct ceph_inode_info *ci,
 static void __cap_set_timeouts(struct ceph_mds_client *mdsc,
 			       struct ceph_inode_info *ci)
 {
-	struct ceph_mount_options *opt = mdsc->fsc->mount_options;
+	struct ceph_mount_options *ma = mdsc->fsc->mount_options;
 
 	ci->i_hold_caps_min = round_jiffies(jiffies +
-					    opt->caps_wanted_delay_min * HZ);
+					    ma->caps_wanted_delay_min * HZ);
 	ci->i_hold_caps_max = round_jiffies(jiffies +
-					    opt->caps_wanted_delay_max * HZ);
+					    ma->caps_wanted_delay_max * HZ);
 	dout("__cap_set_timeouts %p min %lu max %lu\n", &ci->vfs_inode,
 	     ci->i_hold_caps_min - jiffies, ci->i_hold_caps_max - jiffies);
 }
@@ -508,9 +422,9 @@ static void __cap_set_timeouts(struct ceph_mds_client *mdsc,
  *    -> we take mdsc->cap_delay_lock
  */
 static void __cap_delay_requeue(struct ceph_mds_client *mdsc,
-				struct ceph_inode_info *ci,
-				bool set_timeout)
+				struct ceph_inode_info *ci)
 {
+	__cap_set_timeouts(mdsc, ci);
 	dout("__cap_delay_requeue %p flags %d at %lu\n", &ci->vfs_inode,
 	     ci->i_ceph_flags, ci->i_hold_caps_max);
 	if (!mdsc->stopping) {
@@ -520,8 +434,6 @@ static void __cap_delay_requeue(struct ceph_mds_client *mdsc,
 				goto no_change;
 			list_del_init(&ci->i_cap_delay_list);
 		}
-		if (set_timeout)
-			__cap_set_timeouts(mdsc, ci);
 		list_add_tail(&ci->i_cap_delay_list, &mdsc->cap_delay_list);
 no_change:
 		spin_unlock(&mdsc->cap_delay_lock);
@@ -586,7 +498,7 @@ static void __check_cap_issue(struct ceph_inode_info *ci, struct ceph_cap *cap,
 	 */
 	if ((issued & CEPH_CAP_FILE_SHARED) != (had & CEPH_CAP_FILE_SHARED)) {
 		if (issued & CEPH_CAP_FILE_SHARED)
-			atomic_inc(&ci->i_shared_gen);
+			ci->i_shared_gen++;
 		if (S_ISDIR(ci->vfs_inode.i_mode)) {
 			dout(" marking %p NOT complete\n", &ci->vfs_inode);
 			__ceph_dir_clear_complete(ci);
@@ -597,7 +509,7 @@ static void __check_cap_issue(struct ceph_inode_info *ci, struct ceph_cap *cap,
 /*
  * Add a capability under the given MDS session.
  *
- * Caller should hold session snap_rwsem (read) and ci->i_ceph_lock
+ * Caller should hold session snap_rwsem (read) and s_mutex.
  *
  * @fmode is the open file mode, if we are opening a file, otherwise
  * it is < 0.  (This is so we can atomically add the cap and add an
@@ -614,9 +526,6 @@ void ceph_add_cap(struct inode *inode,
 	struct ceph_cap *cap;
 	int mds = session->s_mds;
 	int actual_wanted;
-	u32 gen;
-
-	lockdep_assert_held(&ci->i_ceph_lock);
 
 	dout("add_cap %p mds%d cap %llx %s seq %d\n", inode,
 	     session->s_mds, cap_id, ceph_cap_string(issued), seq);
@@ -627,10 +536,6 @@ void ceph_add_cap(struct inode *inode,
 	 */
 	if (fmode >= 0)
 		wanted |= ceph_caps_for_mode(fmode);
-
-	spin_lock(&session->s_gen_ttl_lock);
-	gen = session->s_cap_gen;
-	spin_unlock(&session->s_gen_ttl_lock);
 
 	cap = __get_cap_for_mds(ci, mds);
 	if (!cap) {
@@ -653,13 +558,6 @@ void ceph_add_cap(struct inode *inode,
 		session->s_nr_caps++;
 		spin_unlock(&session->s_cap_lock);
 	} else {
-		spin_lock(&session->s_cap_lock);
-		list_move_tail(&cap->session_caps, &session->s_caps);
-		spin_unlock(&session->s_cap_lock);
-
-		if (cap->cap_gen < gen)
-			cap->issued = cap->implemented = CEPH_CAP_PIN;
-
 		/*
 		 * auth mds of the inode changed. we received the cap export
 		 * message, but still haven't received the cap import message.
@@ -679,32 +577,18 @@ void ceph_add_cap(struct inode *inode,
 		}
 	}
 
-	if (!ci->i_snap_realm ||
-	    ((flags & CEPH_CAP_FLAG_AUTH) &&
-	     realmino != (u64)-1 && ci->i_snap_realm->ino != realmino)) {
+	if (!ci->i_snap_realm) {
 		/*
 		 * add this inode to the appropriate snap realm
 		 */
 		struct ceph_snap_realm *realm = ceph_lookup_snap_realm(mdsc,
 							       realmino);
 		if (realm) {
-			struct ceph_snap_realm *oldrealm = ci->i_snap_realm;
-			if (oldrealm) {
-				spin_lock(&oldrealm->inodes_with_caps_lock);
-				list_del_init(&ci->i_snap_realm_item);
-				spin_unlock(&oldrealm->inodes_with_caps_lock);
-			}
-
 			spin_lock(&realm->inodes_with_caps_lock);
+			ci->i_snap_realm = realm;
 			list_add(&ci->i_snap_realm_item,
 				 &realm->inodes_with_caps);
-			ci->i_snap_realm = realm;
-			if (realm->ino == ci->i_vino.ino)
-				realm->inode = inode;
 			spin_unlock(&realm->inodes_with_caps_lock);
-
-			if (oldrealm)
-				ceph_put_snap_realm(mdsc, oldrealm);
 		} else {
 			pr_err("ceph_add_cap: couldn't find snap realm %llx\n",
 			       realmino);
@@ -725,7 +609,7 @@ void ceph_add_cap(struct inode *inode,
 		dout(" issued %s, mds wanted %s, actual %s, queueing\n",
 		     ceph_cap_string(issued), ceph_cap_string(wanted),
 		     ceph_cap_string(actual_wanted));
-		__cap_delay_requeue(mdsc, ci, true);
+		__cap_delay_requeue(mdsc, ci);
 	}
 
 	if (flags & CEPH_CAP_FLAG_AUTH) {
@@ -751,7 +635,7 @@ void ceph_add_cap(struct inode *inode,
 	cap->seq = seq;
 	cap->issue_seq = seq;
 	cap->mseq = mseq;
-	cap->cap_gen = gen;
+	cap->cap_gen = session->s_cap_gen;
 
 	if (fmode >= 0)
 		__ceph_get_fmode(ci, fmode);
@@ -869,8 +753,8 @@ int __ceph_caps_issued_mask(struct ceph_inode_info *ci, int mask, int touch)
 	int have = ci->i_snap_caps;
 
 	if ((have & mask) == mask) {
-		dout("__ceph_caps_issued_mask ino 0x%lx snap issued %s"
-		     " (mask %s)\n", ci->vfs_inode.i_ino,
+		dout("__ceph_caps_issued_mask %p snap issued %s"
+		     " (mask %s)\n", &ci->vfs_inode,
 		     ceph_cap_string(have),
 		     ceph_cap_string(mask));
 		return 1;
@@ -881,8 +765,8 @@ int __ceph_caps_issued_mask(struct ceph_inode_info *ci, int mask, int touch)
 		if (!__cap_is_valid(cap))
 			continue;
 		if ((cap->issued & mask) == mask) {
-			dout("__ceph_caps_issued_mask ino 0x%lx cap %p issued %s"
-			     " (mask %s)\n", ci->vfs_inode.i_ino, cap,
+			dout("__ceph_caps_issued_mask %p cap %p issued %s"
+			     " (mask %s)\n", &ci->vfs_inode, cap,
 			     ceph_cap_string(cap->issued),
 			     ceph_cap_string(mask));
 			if (touch)
@@ -893,8 +777,8 @@ int __ceph_caps_issued_mask(struct ceph_inode_info *ci, int mask, int touch)
 		/* does a combination of caps satisfy mask? */
 		have |= cap->issued;
 		if ((have & mask) == mask) {
-			dout("__ceph_caps_issued_mask ino 0x%lx combo issued %s"
-			     " (mask %s)\n", ci->vfs_inode.i_ino,
+			dout("__ceph_caps_issued_mask %p combo issued %s"
+			     " (mask %s)\n", &ci->vfs_inode,
 			     ceph_cap_string(cap->issued),
 			     ceph_cap_string(mask));
 			if (touch) {
@@ -1006,11 +890,6 @@ int __ceph_caps_mds_wanted(struct ceph_inode_info *ci, bool check)
 /*
  * called under i_ceph_lock
  */
-static int __ceph_is_single_caps(struct ceph_inode_info *ci)
-{
-	return rb_first(&ci->i_caps) == rb_last(&ci->i_caps);
-}
-
 static int __ceph_is_any_caps(struct ceph_inode_info *ci)
 {
 	return !RB_EMPTY_ROOT(&ci->i_caps);
@@ -1035,8 +914,6 @@ static void drop_inode_snap_realm(struct ceph_inode_info *ci)
 	list_del_init(&ci->i_snap_realm_item);
 	ci->i_snap_realm_counter++;
 	ci->i_snap_realm = NULL;
-	if (realm->ino == ci->i_vino.ino)
-		realm->inode = NULL;
 	spin_unlock(&realm->inodes_with_caps_lock);
 	ceph_put_snap_realm(ceph_sb_to_client(ci->vfs_inode.i_sb)->mdsc,
 			    realm);
@@ -1057,11 +934,6 @@ void __ceph_remove_cap(struct ceph_cap *cap, bool queue_release)
 	int removed = 0;
 
 	dout("__ceph_remove_cap %p from %p\n", cap, &ci->vfs_inode);
-
-	/* remove from inode's cap rbtree, and clear auth cap */
-	rb_erase(&cap->ci_node, &ci->i_caps);
-	if (ci->i_auth_cap == cap)
-		ci->i_auth_cap = NULL;
 
 	/* remove from session list */
 	spin_lock(&session->s_cap_lock);
@@ -1086,7 +958,9 @@ void __ceph_remove_cap(struct ceph_cap *cap, bool queue_release)
 	    (!session->s_cap_reconnect || cap->cap_gen == session->s_cap_gen)) {
 		cap->queue_release = 1;
 		if (removed) {
-			__ceph_queue_cap_release(session, cap);
+			list_add_tail(&cap->session_caps,
+				      &session->s_cap_releases);
+			session->s_num_cap_releases++;
 			removed = 0;
 		}
 	} else {
@@ -1095,6 +969,11 @@ void __ceph_remove_cap(struct ceph_cap *cap, bool queue_release)
 	cap->cap_ino = ci->i_vino.ino;
 
 	spin_unlock(&session->s_cap_lock);
+
+	/* remove from inode list */
+	rb_erase(&cap->ci_node, &ci->i_caps);
+	if (ci->i_auth_cap == cap)
+		ci->i_auth_cap = NULL;
 
 	if (removed)
 		ceph_put_cap(mdsc, cap);
@@ -1115,9 +994,8 @@ struct cap_msg_args {
 	u64			ino, cid, follows;
 	u64			flush_tid, oldest_flush_tid, size, max_size;
 	u64			xattr_version;
-	u64			change_attr;
 	struct ceph_buffer	*xattr_buf;
-	struct timespec64	atime, mtime, ctime, btime;
+	struct timespec		atime, mtime, ctime;
 	int			op, caps, wanted, dirty;
 	u32			seq, issue_seq, mseq, time_warp_seq;
 	u32			flags;
@@ -1138,6 +1016,7 @@ static int send_cap_msg(struct cap_msg_args *arg)
 	struct ceph_msg *msg;
 	void *p;
 	size_t extra_len;
+	struct timespec zerotime = {0};
 	struct ceph_osd_client *osdc = &arg->session->s_mdsc->fsc->client->osdc;
 
 	dout("send_cap_msg %s %llx %llx caps %s wanted %s dirty %s"
@@ -1177,9 +1056,9 @@ static int send_cap_msg(struct cap_msg_args *arg)
 
 	fc->size = cpu_to_le64(arg->size);
 	fc->max_size = cpu_to_le64(arg->max_size);
-	ceph_encode_timespec64(&fc->mtime, &arg->mtime);
-	ceph_encode_timespec64(&fc->atime, &arg->atime);
-	ceph_encode_timespec64(&fc->ctime, &arg->ctime);
+	ceph_encode_timespec(&fc->mtime, &arg->mtime);
+	ceph_encode_timespec(&fc->atime, &arg->atime);
+	ceph_encode_timespec(&fc->ctime, &arg->ctime);
 	fc->time_warp_seq = cpu_to_le32(arg->time_warp_seq);
 
 	fc->uid = cpu_to_le32(from_kuid(&init_user_ns, arg->uid));
@@ -1222,10 +1101,15 @@ static int send_cap_msg(struct cap_msg_args *arg)
 	/* pool namespace (version 8) (mds always ignores this) */
 	ceph_encode_32(&p, 0);
 
-	/* btime and change_attr (version 9) */
-	ceph_encode_timespec64(p, &arg->btime);
+	/*
+	 * btime and change_attr (version 9)
+	 *
+	 * We just zero these out for now, as the MDS ignores them unless
+	 * the requisite feature flags are set (which we don't do yet).
+	 */
+	ceph_encode_timespec(p, &zerotime);
 	p += sizeof(struct ceph_timespec);
-	ceph_encode_64(&p, arg->change_attr);
+	ceph_encode_64(&p, 0);
 
 	/* Advisory flags (version 10) */
 	ceph_encode_32(&p, arg->flags);
@@ -1235,22 +1119,20 @@ static int send_cap_msg(struct cap_msg_args *arg)
 }
 
 /*
- * Queue cap releases when an inode is dropped from our cache.
+ * Queue cap releases when an inode is dropped from our cache.  Since
+ * inode is about to be destroyed, there is no need for i_ceph_lock.
  */
-void __ceph_remove_caps(struct ceph_inode_info *ci)
+void ceph_queue_caps_release(struct inode *inode)
 {
+	struct ceph_inode_info *ci = ceph_inode(inode);
 	struct rb_node *p;
 
-	/* lock i_ceph_lock, because ceph_d_revalidate(..., LOOKUP_RCU)
-	 * may call __ceph_caps_issued_mask() on a freeing inode. */
-	spin_lock(&ci->i_ceph_lock);
 	p = rb_first(&ci->i_caps);
 	while (p) {
 		struct ceph_cap *cap = rb_entry(p, struct ceph_cap, ci_node);
 		p = rb_next(p);
 		__ceph_remove_cap(cap, true);
 	}
-	spin_unlock(&ci->i_ceph_lock);
 }
 
 /*
@@ -1260,6 +1142,10 @@ void __ceph_remove_caps(struct ceph_inode_info *ci)
  * Make note of max_size reported/requested from mds, revoked caps
  * that have now been implemented.
  *
+ * Make half-hearted attempt ot to invalidate page cache if we are
+ * dropping RDCACHE.  Note that this will leave behind locked pages
+ * that we'll then need to deal with elsewhere.
+ *
  * Return non-zero if delayed release, or we experienced an error
  * such that the caller should requeue + retry later.
  *
@@ -1267,13 +1153,12 @@ void __ceph_remove_caps(struct ceph_inode_info *ci)
  * caller should hold snap_rwsem (read), s_mutex.
  */
 static int __send_cap(struct ceph_mds_client *mdsc, struct ceph_cap *cap,
-		      int op, int flags, int used, int want, int retain,
+		      int op, bool sync, int used, int want, int retain,
 		      int flushing, u64 flush_tid, u64 oldest_flush_tid)
 	__releases(cap->ci->i_ceph_lock)
 {
 	struct ceph_inode_info *ci = cap->ci;
 	struct inode *inode = &ci->vfs_inode;
-	struct ceph_buffer *old_blob = NULL;
 	struct cap_msg_args arg;
 	int held, revoking;
 	int wake = 0;
@@ -1338,7 +1223,7 @@ static int __send_cap(struct ceph_mds_client *mdsc, struct ceph_cap *cap,
 	ci->i_requested_max_size = arg.max_size;
 
 	if (flushing & CEPH_CAP_XATTR_EXCL) {
-		old_blob = __ceph_build_xattrs_blob(ci);
+		__ceph_build_xattrs_blob(ci);
 		arg.xattr_version = ci->i_xattrs.version;
 		arg.xattr_buf = ci->i_xattrs.blob;
 	} else {
@@ -1348,8 +1233,6 @@ static int __send_cap(struct ceph_mds_client *mdsc, struct ceph_cap *cap,
 	arg.mtime = inode->i_mtime;
 	arg.atime = inode->i_atime;
 	arg.ctime = inode->i_ctime;
-	arg.btime = ci->i_btime;
-	arg.change_attr = inode_peek_iversion_raw(inode);
 
 	arg.op = op;
 	arg.caps = cap->implemented;
@@ -1366,23 +1249,14 @@ static int __send_cap(struct ceph_mds_client *mdsc, struct ceph_cap *cap,
 	arg.mode = inode->i_mode;
 
 	arg.inline_data = ci->i_inline_version != CEPH_INLINE_NONE;
-	if (!(flags & CEPH_CLIENT_CAPS_PENDING_CAPSNAP) &&
-	    !list_empty(&ci->i_cap_snaps)) {
-		struct ceph_cap_snap *capsnap;
-		list_for_each_entry_reverse(capsnap, &ci->i_cap_snaps, ci_item) {
-			if (capsnap->cap_flush.tid)
-				break;
-			if (capsnap->need_flush) {
-				flags |= CEPH_CLIENT_CAPS_PENDING_CAPSNAP;
-				break;
-			}
-		}
-	}
-	arg.flags = flags;
+	if (list_empty(&ci->i_cap_snaps))
+		arg.flags = CEPH_CLIENT_CAPS_NO_CAPSNAP;
+	else
+		arg.flags = CEPH_CLIENT_CAPS_PENDING_CAPSNAP;
+	if (sync)
+		arg.flags |= CEPH_CLIENT_CAPS_SYNC;
 
 	spin_unlock(&ci->i_ceph_lock);
-
-	ceph_buffer_put(old_blob);
 
 	ret = send_cap_msg(&arg);
 	if (ret < 0) {
@@ -1418,8 +1292,6 @@ static inline int __send_flush_snap(struct inode *inode,
 	arg.atime = capsnap->atime;
 	arg.mtime = capsnap->mtime;
 	arg.ctime = capsnap->ctime;
-	arg.btime = capsnap->btime;
-	arg.change_attr = capsnap->change_attr;
 
 	arg.op = CEPH_CAP_OP_FLUSHSNAP;
 	arg.caps = capsnap->issued;
@@ -1587,8 +1459,10 @@ retry:
 	}
 
 	// make sure flushsnap messages are sent in proper order.
-	if (ci->i_ceph_flags & CEPH_I_KICK_FLUSH)
+	if (ci->i_ceph_flags & CEPH_I_KICK_FLUSH) {
 		__kick_flushing_caps(mdsc, session, ci, 0);
+		ci->i_ceph_flags &= ~CEPH_I_KICK_FLUSH;
+	}
 
 	__ceph_flush_snaps(ci, session);
 out:
@@ -1657,7 +1531,7 @@ int __ceph_mark_dirty_caps(struct ceph_inode_info *ci, int mask,
 	if (((was | ci->i_flushing_caps) & CEPH_CAP_FILE_BUFFER) &&
 	    (mask & CEPH_CAP_FILE_BUFFER))
 		dirty |= I_DIRTY_DATASYNC;
-	__cap_delay_requeue(mdsc, ci, true);
+	__cap_delay_requeue(mdsc, ci);
 	return dirty;
 }
 
@@ -1718,11 +1592,11 @@ static bool __finish_cap_flush(struct ceph_mds_client *mdsc,
  * Add dirty inode to the flushing list.  Assigned a seq number so we
  * can wait for caps to flush without starving.
  *
- * Called under i_ceph_lock. Returns the flush tid.
+ * Called under i_ceph_lock.
  */
-static u64 __mark_caps_flushing(struct inode *inode,
+static int __mark_caps_flushing(struct inode *inode,
 				struct ceph_mds_session *session, bool wake,
-				u64 *oldest_flush_tid)
+				u64 *flush_tid, u64 *oldest_flush_tid)
 {
 	struct ceph_mds_client *mdsc = ceph_sb_to_client(inode->i_sb)->mdsc;
 	struct ceph_inode_info *ci = ceph_inode(inode);
@@ -1761,7 +1635,8 @@ static u64 __mark_caps_flushing(struct inode *inode,
 
 	list_add_tail(&cf->i_list, &ci->i_cap_flush_list);
 
-	return cf->tid;
+	*flush_tid = cf->tid;
+	return flushing;
 }
 
 /*
@@ -1828,23 +1703,20 @@ void ceph_check_caps(struct ceph_inode_info *ci, int flags,
 	int mds = -1;   /* keep track of how far we've gone through i_caps list
 			   to avoid an infinite loop on retry */
 	struct rb_node *p;
-	int delayed = 0, sent = 0;
-	bool no_delay = flags & CHECK_CAPS_NODELAY;
+	int delayed = 0, sent = 0, num;
+	bool is_delayed = flags & CHECK_CAPS_NODELAY;
 	bool queue_invalidate = false;
+	bool force_requeue = false;
 	bool tried_invalidate = false;
 
 	/* if we are unmounting, flush any unused caps immediately. */
 	if (mdsc->stopping)
-		no_delay = true;
+		is_delayed = true;
 
 	spin_lock(&ci->i_ceph_lock);
 
 	if (ci->i_ceph_flags & CEPH_I_FLUSH)
 		flags |= CHECK_CAPS_FLUSH;
-
-	if (!(flags & CHECK_CAPS_AUTHONLY) ||
-	    (ci->i_auth_cap && __ceph_is_single_caps(ci)))
-		__cap_delay_cancel(mdsc, ci);
 
 	goto retry_locked;
 retry:
@@ -1862,17 +1734,14 @@ retry_locked:
 			retain |= CEPH_CAP_ANY;       /* be greedy */
 		} else if (S_ISDIR(inode->i_mode) &&
 			   (issued & CEPH_CAP_FILE_SHARED) &&
-			   __ceph_dir_is_complete(ci)) {
+			    __ceph_dir_is_complete(ci)) {
 			/*
 			 * If a directory is complete, we want to keep
 			 * the exclusive cap. So that MDS does not end up
 			 * revoking the shared cap on every create/unlink
 			 * operation.
 			 */
-			if (IS_RDONLY(inode))
-				want = CEPH_CAP_ANY_SHARED;
-			else
-				want = CEPH_CAP_ANY_SHARED | CEPH_CAP_FILE_EXCL;
+			want = CEPH_CAP_ANY_SHARED | CEPH_CAP_FILE_EXCL;
 			retain |= want;
 		} else {
 
@@ -1903,7 +1772,7 @@ retry_locked:
 	 * have cached pages, but don't want them, then try to invalidate.
 	 * If we fail, it's because pages are locked.... try again later.
 	 */
-	if ((!no_delay || mdsc->stopping) &&
+	if ((!is_delayed || mdsc->stopping) &&
 	    !S_ISDIR(inode->i_mode) &&		/* ignore readdir cache */
 	    !(ci->i_wb_ref || ci->i_wrbuffer_ref) &&   /* no dirty pages... */
 	    inode->i_data.nrpages &&		/* have cached pages */
@@ -1912,16 +1781,27 @@ retry_locked:
 	    !tried_invalidate) {
 		dout("check_caps trying to invalidate on %p\n", inode);
 		if (try_nonblocking_invalidate(inode) < 0) {
-			dout("check_caps queuing invalidate\n");
-			queue_invalidate = true;
-			ci->i_rdcache_revoking = ci->i_rdcache_gen;
+			if (revoking & (CEPH_CAP_FILE_CACHE|
+					CEPH_CAP_FILE_LAZYIO)) {
+				dout("check_caps queuing invalidate\n");
+				queue_invalidate = true;
+				ci->i_rdcache_revoking = ci->i_rdcache_gen;
+			} else {
+				dout("check_caps failed to invalidate pages\n");
+				/* we failed to invalidate pages.  check these
+				   caps again later. */
+				force_requeue = true;
+				__cap_set_timeouts(mdsc, ci);
+			}
 		}
 		tried_invalidate = true;
 		goto retry_locked;
 	}
 
+	num = 0;
 	for (p = rb_first(&ci->i_caps); p; p = rb_next(p)) {
 		cap = rb_entry(p, struct ceph_cap, ci_node);
+		num++;
 
 		/* avoid looping forever */
 		if (mds >= cap->mds ||
@@ -1980,10 +1860,11 @@ retry_locked:
 			goto ack;
 
 		/* things we might delay */
-		if ((cap->issued & ~retain) == 0)
+		if ((cap->issued & ~retain) == 0 &&
+		    cap->mds_wanted == want)
 			continue;     /* nope, all good */
 
-		if (no_delay)
+		if (is_delayed)
 			goto ack;
 
 		/* delay? */
@@ -1999,6 +1880,11 @@ retry_locked:
 		}
 
 ack:
+		if (ci->i_ceph_flags & CEPH_I_NOFLUSH) {
+			dout(" skipping %p I_NOFLUSH set\n", inode);
+			continue;
+		}
+
 		if (session && session != cap->session) {
 			dout("oops, wrong session %p mutex\n", session);
 			mutex_unlock(&session->s_mutex);
@@ -2024,8 +1910,10 @@ ack:
 		if (cap == ci->i_auth_cap &&
 		    (ci->i_ceph_flags &
 		     (CEPH_I_KICK_FLUSH | CEPH_I_FLUSH_SNAPS))) {
-			if (ci->i_ceph_flags & CEPH_I_KICK_FLUSH)
+			if (ci->i_ceph_flags & CEPH_I_KICK_FLUSH) {
 				__kick_flushing_caps(mdsc, session, ci, 0);
+				ci->i_ceph_flags &= ~CEPH_I_KICK_FLUSH;
+			}
 			if (ci->i_ceph_flags & CEPH_I_FLUSH_SNAPS)
 				__ceph_flush_snaps(ci, session);
 
@@ -2046,9 +1934,9 @@ ack:
 		}
 
 		if (cap == ci->i_auth_cap && ci->i_dirty_caps) {
-			flushing = ci->i_dirty_caps;
-			flush_tid = __mark_caps_flushing(inode, session, false,
-							 &oldest_flush_tid);
+			flushing = __mark_caps_flushing(inode, session, false,
+							&flush_tid,
+							&oldest_flush_tid);
 		} else {
 			flushing = 0;
 			flush_tid = 0;
@@ -2061,15 +1949,22 @@ ack:
 		sent++;
 
 		/* __send_cap drops i_ceph_lock */
-		delayed += __send_cap(mdsc, cap, CEPH_CAP_OP_UPDATE, 0,
+		delayed += __send_cap(mdsc, cap, CEPH_CAP_OP_UPDATE, false,
 				cap_used, want, retain, flushing,
 				flush_tid, oldest_flush_tid);
 		goto retry; /* retake i_ceph_lock and restart our cap scan. */
 	}
 
-	/* Reschedule delayed caps release if we delayed anything */
-	if (delayed)
-		__cap_delay_requeue(mdsc, ci, false);
+	/*
+	 * Reschedule delayed caps release if we delayed anything,
+	 * otherwise cancel.
+	 */
+	if (delayed && is_delayed)
+		force_requeue = true;   /* __send_cap delayed release; requeue */
+	if (!delayed && !is_delayed)
+		__cap_delay_cancel(mdsc, ci);
+	else if (!is_delayed || force_requeue)
+		__cap_delay_requeue(mdsc, ci);
 
 	spin_unlock(&ci->i_ceph_lock);
 
@@ -2095,12 +1990,18 @@ static int try_flush_caps(struct inode *inode, u64 *ptid)
 
 retry:
 	spin_lock(&ci->i_ceph_lock);
-retry_locked:
+	if (ci->i_ceph_flags & CEPH_I_NOFLUSH) {
+		spin_unlock(&ci->i_ceph_lock);
+		dout("try_flush_caps skipping %p I_NOFLUSH set\n", inode);
+		goto out;
+	}
 	if (ci->i_dirty_caps && ci->i_auth_cap) {
 		struct ceph_cap *cap = ci->i_auth_cap;
+		int used = __ceph_caps_used(ci);
+		int want = __ceph_caps_wanted(ci);
 		int delayed;
 
-		if (session != cap->session) {
+		if (!session || session != cap->session) {
 			spin_unlock(&ci->i_ceph_lock);
 			if (session)
 				mutex_unlock(&session->s_mutex);
@@ -2113,30 +2014,17 @@ retry_locked:
 			goto out;
 		}
 
-		if (ci->i_ceph_flags &
-		    (CEPH_I_KICK_FLUSH | CEPH_I_FLUSH_SNAPS)) {
-			if (ci->i_ceph_flags & CEPH_I_KICK_FLUSH)
-				__kick_flushing_caps(mdsc, session, ci, 0);
-			if (ci->i_ceph_flags & CEPH_I_FLUSH_SNAPS)
-				__ceph_flush_snaps(ci, session);
-			goto retry_locked;
-		}
-
-		flushing = ci->i_dirty_caps;
-		flush_tid = __mark_caps_flushing(inode, session, true,
-						 &oldest_flush_tid);
+		flushing = __mark_caps_flushing(inode, session, true,
+						&flush_tid, &oldest_flush_tid);
 
 		/* __send_cap drops i_ceph_lock */
-		delayed = __send_cap(mdsc, cap, CEPH_CAP_OP_FLUSH,
-				     CEPH_CLIENT_CAPS_SYNC,
-				     __ceph_caps_used(ci),
-				     __ceph_caps_wanted(ci),
-				     (cap->issued | cap->implemented),
-				     flushing, flush_tid, oldest_flush_tid);
+		delayed = __send_cap(mdsc, cap, CEPH_CAP_OP_FLUSH, true,
+				used, want, (cap->issued | cap->implemented),
+				flushing, flush_tid, oldest_flush_tid);
 
 		if (delayed) {
 			spin_lock(&ci->i_ceph_lock);
-			__cap_delay_requeue(mdsc, ci, true);
+			__cap_delay_requeue(mdsc, ci);
 			spin_unlock(&ci->i_ceph_lock);
 		}
 	} else {
@@ -2223,45 +2111,38 @@ static int unsafe_request_wait(struct inode *inode)
 
 int ceph_fsync(struct file *file, loff_t start, loff_t end, int datasync)
 {
-	struct ceph_file_info *fi = file->private_data;
 	struct inode *inode = file->f_mapping->host;
 	struct ceph_inode_info *ci = ceph_inode(inode);
 	u64 flush_tid;
-	int ret, err;
+	int ret;
 	int dirty;
 
 	dout("fsync %p%s\n", inode, datasync ? " datasync" : "");
 
 	ret = file_write_and_wait_range(file, start, end);
+	if (ret < 0)
+		goto out;
+
 	if (datasync)
 		goto out;
+
+	inode_lock(inode);
 
 	dirty = try_flush_caps(inode, &flush_tid);
 	dout("fsync dirty caps are %s\n", ceph_cap_string(dirty));
 
-	err = unsafe_request_wait(inode);
+	ret = unsafe_request_wait(inode);
 
 	/*
 	 * only wait on non-file metadata writeback (the mds
 	 * can recover size and mtime, so we don't need to
 	 * wait for that)
 	 */
-	if (!err && (dirty & ~CEPH_CAP_ANY_FILE_WR)) {
-		err = wait_event_interruptible(ci->i_cap_wq,
+	if (!ret && (dirty & ~CEPH_CAP_ANY_FILE_WR)) {
+		ret = wait_event_interruptible(ci->i_cap_wq,
 					caps_are_flushed(inode, flush_tid));
 	}
-
-	if (err < 0)
-		ret = err;
-
-	if (errseq_check(&ci->i_meta_err, READ_ONCE(fi->meta_err))) {
-		spin_lock(&file->f_lock);
-		err = errseq_check_and_advance(&ci->i_meta_err,
-					       &fi->meta_err);
-		spin_unlock(&file->f_lock);
-		if (err < 0)
-			ret = err;
-	}
+	inode_unlock(inode);
 out:
 	dout("fsync %p%s result=%d\n", inode, datasync ? " datasync" : "", ret);
 	return ret;
@@ -2279,7 +2160,7 @@ int ceph_write_inode(struct inode *inode, struct writeback_control *wbc)
 	u64 flush_tid;
 	int err = 0;
 	int dirty;
-	int wait = (wbc->sync_mode == WB_SYNC_ALL && !wbc->for_sync);
+	int wait = wbc->sync_mode == WB_SYNC_ALL;
 
 	dout("write_inode %p wait=%d\n", inode, wait);
 	if (wait) {
@@ -2311,16 +2192,6 @@ static void __kick_flushing_caps(struct ceph_mds_client *mdsc,
 	struct ceph_cap_flush *cf;
 	int ret;
 	u64 first_tid = 0;
-	u64 last_snap_flush = 0;
-
-	ci->i_ceph_flags &= ~CEPH_I_KICK_FLUSH;
-
-	list_for_each_entry_reverse(cf, &ci->i_cap_flush_list, i_list) {
-		if (!cf->caps) {
-			last_snap_flush = cf->tid;
-			break;
-		}
-	}
 
 	list_for_each_entry(cf, &ci->i_cap_flush_list, i_list) {
 		if (cf->tid < first_tid)
@@ -2339,13 +2210,10 @@ static void __kick_flushing_caps(struct ceph_mds_client *mdsc,
 			dout("kick_flushing_caps %p cap %p tid %llu %s\n",
 			     inode, cap, cf->tid, ceph_cap_string(cf->caps));
 			ci->i_ceph_flags |= CEPH_I_NODELAY;
-
 			ret = __send_cap(mdsc, cap, CEPH_CAP_OP_FLUSH,
-					 (cf->tid < last_snap_flush ?
-					  CEPH_CLIENT_CAPS_PENDING_CAPSNAP : 0),
-					  __ceph_caps_used(ci),
+					  false, __ceph_caps_used(ci),
 					  __ceph_caps_wanted(ci),
-					  (cap->issued | cap->implemented),
+					  cap->issued | cap->implemented,
 					  cf->caps, cf->tid, oldest_flush_tid);
 			if (ret) {
 				pr_err("kick_flushing_caps: error sending "
@@ -2414,12 +2282,7 @@ void ceph_early_kick_flushing_caps(struct ceph_mds_client *mdsc,
 		 */
 		if ((cap->issued & ci->i_flushing_caps) !=
 		    ci->i_flushing_caps) {
-			/* encode_caps_cb() also will reset these sequence
-			 * numbers. make sure sequence numbers in cap flush
-			 * message match later reconnect message */
-			cap->seq = 0;
-			cap->issue_seq = 0;
-			cap->mseq = 0;
+			ci->i_ceph_flags &= ~CEPH_I_KICK_FLUSH;
 			__kick_flushing_caps(mdsc, session, ci,
 					     oldest_flush_tid);
 		} else {
@@ -2453,6 +2316,7 @@ void ceph_kick_flushing_caps(struct ceph_mds_client *mdsc,
 			continue;
 		}
 		if (ci->i_ceph_flags & CEPH_I_KICK_FLUSH) {
+			ci->i_ceph_flags &= ~CEPH_I_KICK_FLUSH;
 			__kick_flushing_caps(mdsc, session, ci,
 					     oldest_flush_tid);
 		}
@@ -2480,6 +2344,7 @@ static void kick_flushing_inode_caps(struct ceph_mds_client *mdsc,
 		oldest_flush_tid = __get_oldest_flush_tid(mdsc);
 		spin_unlock(&mdsc->cap_dirty_lock);
 
+		ci->i_ceph_flags &= ~CEPH_I_KICK_FLUSH;
 		__kick_flushing_caps(mdsc, session, ci, oldest_flush_tid);
 		spin_unlock(&ci->i_ceph_lock);
 	} else {
@@ -2526,21 +2391,11 @@ static void __take_cap_refs(struct ceph_inode_info *ci, int got,
  * to (when applicable), and check against max_size here as well.
  * Note that caller is responsible for ensuring max_size increases are
  * requested from the MDS.
- *
- * Returns 0 if caps were not able to be acquired (yet), a 1 if they were,
- * or a negative error code.
- *
- * FIXME: how does a 0 return differ from -EAGAIN?
  */
-enum {
-	NON_BLOCKING	= 1,
-	CHECK_FILELOCK	= 2,
-};
-
-static int try_get_cap_refs(struct inode *inode, int need, int want,
-			    loff_t endoff, int flags, int *got)
+static int try_get_cap_refs(struct ceph_inode_info *ci, int need, int want,
+			    loff_t endoff, bool nonblock, int *got, int *err)
 {
-	struct ceph_inode_info *ci = ceph_inode(inode);
+	struct inode *inode = &ci->vfs_inode;
 	struct ceph_mds_client *mdsc = ceph_inode_to_client(inode)->mdsc;
 	int ret = 0;
 	int have, implemented;
@@ -2553,19 +2408,13 @@ static int try_get_cap_refs(struct inode *inode, int need, int want,
 again:
 	spin_lock(&ci->i_ceph_lock);
 
-	if ((flags & CHECK_FILELOCK) &&
-	    (ci->i_ceph_flags & CEPH_I_ERROR_FILELOCK)) {
-		dout("try_get_cap_refs %p error filelock\n", inode);
-		ret = -EIO;
-		goto out_unlock;
-	}
-
 	/* make sure file is actually open */
 	file_wanted = __ceph_caps_file_wanted(ci);
 	if ((file_wanted & need) != need) {
 		dout("try_get_cap_refs need %s file_wanted %s, EBADF\n",
 		     ceph_cap_string(need), ceph_cap_string(file_wanted));
-		ret = -EBADF;
+		*err = -EBADF;
+		ret = 1;
 		goto out_unlock;
 	}
 
@@ -2586,8 +2435,10 @@ again:
 		if (endoff >= 0 && endoff > (loff_t)ci->i_max_size) {
 			dout("get_cap_refs %p endoff %llu > maxsize %llu\n",
 			     inode, endoff, ci->i_max_size);
-			if (endoff > ci->i_requested_max_size)
-				ret = -EAGAIN;
+			if (endoff > ci->i_requested_max_size) {
+				*err = -EAGAIN;
+				ret = 1;
+			}
 			goto out_unlock;
 		}
 		/*
@@ -2621,8 +2472,9 @@ again:
 					 * we can not call down_read() when
 					 * task isn't in TASK_RUNNING state
 					 */
-					if (flags & NON_BLOCKING) {
-						ret = -EAGAIN;
+					if (nonblock) {
+						*err = -EAGAIN;
+						ret = 1;
 						goto out_unlock;
 					}
 
@@ -2651,7 +2503,8 @@ again:
 		if (session_readonly) {
 			dout("get_cap_refs %p needed %s but mds%d readonly\n",
 			     inode, ceph_cap_string(need), ci->i_auth_cap->mds);
-			ret = -EROFS;
+			*err = -EROFS;
+			ret = 1;
 			goto out_unlock;
 		}
 
@@ -2660,14 +2513,16 @@ again:
 			if (READ_ONCE(mdsc->fsc->mount_state) ==
 			    CEPH_MOUNT_SHUTDOWN) {
 				dout("get_cap_refs %p forced umount\n", inode);
-				ret = -EIO;
+				*err = -EIO;
+				ret = 1;
 				goto out_unlock;
 			}
 			mds_wanted = __ceph_caps_mds_wanted(ci, false);
 			if (need & ~(mds_wanted & need)) {
 				dout("get_cap_refs %p caps were dropped"
 				     " (session killed?)\n", inode);
-				ret = -ESTALE;
+				*err = -ESTALE;
+				ret = 1;
 				goto out_unlock;
 			}
 			if (!(file_wanted & ~mds_wanted))
@@ -2715,20 +2570,25 @@ static void check_max_size(struct inode *inode, loff_t endoff)
 		ceph_check_caps(ci, CHECK_CAPS_AUTHONLY, NULL);
 }
 
-int ceph_try_get_caps(struct inode *inode, int need, int want,
-		      bool nonblock, int *got)
+int ceph_try_get_caps(struct ceph_inode_info *ci, int need, int want, int *got)
 {
-	int ret;
+	int ret, err = 0;
 
 	BUG_ON(need & ~CEPH_CAP_FILE_RD);
-	BUG_ON(want & ~(CEPH_CAP_FILE_CACHE|CEPH_CAP_FILE_LAZYIO|CEPH_CAP_FILE_SHARED));
-	ret = ceph_pool_perm_check(inode, need);
+	BUG_ON(want & ~(CEPH_CAP_FILE_CACHE|CEPH_CAP_FILE_LAZYIO));
+	ret = ceph_pool_perm_check(ci, need);
 	if (ret < 0)
 		return ret;
 
-	ret = try_get_cap_refs(inode, need, want, 0,
-			       (nonblock ? NON_BLOCKING : 0), got);
-	return ret == -EAGAIN ? 0 : ret;
+	ret = try_get_cap_refs(ci, need, want, 0, true, got, &err);
+	if (ret) {
+		if (err == -EAGAIN) {
+			ret = 0;
+		} else if (err < 0) {
+			ret = err;
+		}
+	}
+	return ret;
 }
 
 /*
@@ -2736,40 +2596,34 @@ int ceph_try_get_caps(struct inode *inode, int need, int want,
  * due to a small max_size, make sure we check_max_size (and possibly
  * ask the mds) so we don't get hung up indefinitely.
  */
-int ceph_get_caps(struct file *filp, int need, int want,
+int ceph_get_caps(struct ceph_inode_info *ci, int need, int want,
 		  loff_t endoff, int *got, struct page **pinned_page)
 {
-	struct ceph_file_info *fi = filp->private_data;
-	struct inode *inode = file_inode(filp);
-	struct ceph_inode_info *ci = ceph_inode(inode);
-	struct ceph_fs_client *fsc = ceph_inode_to_client(inode);
-	int ret, _got, flags;
+	int _got, ret, err = 0;
 
-	ret = ceph_pool_perm_check(inode, need);
+	ret = ceph_pool_perm_check(ci, need);
 	if (ret < 0)
 		return ret;
 
-	if ((fi->fmode & CEPH_FILE_MODE_WR) &&
-	    fi->filp_gen != READ_ONCE(fsc->filp_gen))
-		return -EBADF;
-
 	while (true) {
 		if (endoff > 0)
-			check_max_size(inode, endoff);
+			check_max_size(&ci->vfs_inode, endoff);
 
-		flags = atomic_read(&fi->num_locks) ? CHECK_FILELOCK : 0;
+		err = 0;
 		_got = 0;
-		ret = try_get_cap_refs(inode, need, want, endoff,
-				       flags, &_got);
-		if (ret == -EAGAIN)
-			continue;
-		if (!ret) {
+		ret = try_get_cap_refs(ci, need, want, endoff,
+				       false, &_got, &err);
+		if (ret) {
+			if (err == -EAGAIN)
+				continue;
+			if (err < 0)
+				ret = err;
+		} else {
 			DEFINE_WAIT_FUNC(wait, woken_wake_function);
 			add_wait_queue(&ci->i_cap_wq, &wait);
 
-			flags |= NON_BLOCKING;
-			while (!(ret = try_get_cap_refs(inode, need, want,
-							endoff, flags, &_got))) {
+			while (!try_get_cap_refs(ci, need, want, endoff,
+						 true, &_got, &err)) {
 				if (signal_pending(current)) {
 					ret = -ERESTARTSYS;
 					break;
@@ -2778,21 +2632,16 @@ int ceph_get_caps(struct file *filp, int need, int want,
 			}
 
 			remove_wait_queue(&ci->i_cap_wq, &wait);
-			if (ret == -EAGAIN)
+
+			if (err == -EAGAIN)
 				continue;
+			if (err < 0)
+				ret = err;
 		}
-
-		if ((fi->fmode & CEPH_FILE_MODE_WR) &&
-		    fi->filp_gen != READ_ONCE(fsc->filp_gen)) {
-			if (ret >= 0 && _got)
-				ceph_put_cap_refs(ci, _got);
-			return -EBADF;
-		}
-
 		if (ret < 0) {
-			if (ret == -ESTALE) {
+			if (err == -ESTALE) {
 				/* session was killed, try renew caps */
-				ret = ceph_renew_caps(inode);
+				ret = ceph_renew_caps(&ci->vfs_inode);
 				if (ret == 0)
 					continue;
 			}
@@ -2801,9 +2650,9 @@ int ceph_get_caps(struct file *filp, int need, int want,
 
 		if (ci->i_inline_version != CEPH_INLINE_NONE &&
 		    (_got & (CEPH_CAP_FILE_CACHE|CEPH_CAP_FILE_LAZYIO)) &&
-		    i_size_read(inode) > 0) {
+		    i_size_read(&ci->vfs_inode) > 0) {
 			struct page *page =
-				find_get_page(inode->i_mapping, 0);
+				find_get_page(ci->vfs_inode.i_mapping, 0);
 			if (page) {
 				if (PageUptodate(page)) {
 					*pinned_page = page;
@@ -2822,7 +2671,7 @@ int ceph_get_caps(struct file *filp, int need, int want,
 			 * getattr request will bring inline data into
 			 * page cache
 			 */
-			ret = __ceph_do_getattr(inode, NULL,
+			ret = __ceph_do_getattr(&ci->vfs_inode, NULL,
 						CEPH_STAT_CAP_INLINE_DATA,
 						true);
 			if (ret < 0)
@@ -3024,10 +2873,8 @@ void ceph_put_wrbuffer_cap_refs(struct ceph_inode_info *ci, int nr,
 	}
 	if (complete_capsnap)
 		wake_up_all(&ci->i_cap_wq);
-	while (put-- > 0) {
-		/* avoid calling iput_final() in osd dispatch threads */
-		ceph_async_iput(inode);
-	}
+	while (put-- > 0)
+		iput(inode);
 }
 
 /*
@@ -3062,45 +2909,31 @@ static void invalidate_aliases(struct inode *inode)
 		dput(prev);
 }
 
-struct cap_extra_info {
-	struct ceph_string *pool_ns;
-	/* inline data */
-	u64 inline_version;
-	void *inline_data;
-	u32 inline_len;
-	/* dirstat */
-	bool dirstat_valid;
-	u64 nfiles;
-	u64 nsubdirs;
-	u64 change_attr;
-	/* currently issued */
-	int issued;
-	struct timespec64 btime;
-};
-
 /*
  * Handle a cap GRANT message from the MDS.  (Note that a GRANT may
  * actually be a revocation if it specifies a smaller cap set.)
  *
  * caller holds s_mutex and i_ceph_lock, we drop both.
  */
-static void handle_cap_grant(struct inode *inode,
-			     struct ceph_mds_session *session,
-			     struct ceph_cap *cap,
-			     struct ceph_mds_caps *grant,
+static void handle_cap_grant(struct ceph_mds_client *mdsc,
+			     struct inode *inode, struct ceph_mds_caps *grant,
+			     struct ceph_string **pns, u64 inline_version,
+			     void *inline_data, u32 inline_len,
 			     struct ceph_buffer *xattr_buf,
-			     struct cap_extra_info *extra_info)
+			     struct ceph_mds_session *session,
+			     struct ceph_cap *cap, int issued)
 	__releases(ci->i_ceph_lock)
-	__releases(session->s_mdsc->snap_rwsem)
+	__releases(mdsc->snap_rwsem)
 {
 	struct ceph_inode_info *ci = ceph_inode(inode);
+	int mds = session->s_mds;
 	int seq = le32_to_cpu(grant->seq);
 	int newcaps = le32_to_cpu(grant->caps);
 	int used, wanted, dirty;
 	u64 size = le64_to_cpu(grant->size);
 	u64 max_size = le64_to_cpu(grant->max_size);
-	unsigned char check_caps = 0;
-	bool was_stale = cap->cap_gen < session->s_cap_gen;
+	struct timespec mtime, atime, ctime;
+	int check_caps = 0;
 	bool wake = false;
 	bool writeback = false;
 	bool queue_trunc = false;
@@ -3109,10 +2942,25 @@ static void handle_cap_grant(struct inode *inode,
 	bool fill_inline = false;
 
 	dout("handle_cap_grant inode %p cap %p mds%d seq %d %s\n",
-	     inode, cap, session->s_mds, seq, ceph_cap_string(newcaps));
+	     inode, cap, mds, seq, ceph_cap_string(newcaps));
 	dout(" size %llu max_size %llu, i_size %llu\n", size, max_size,
 		inode->i_size);
 
+
+	/*
+	 * auth mds of the inode changed. we received the cap export message,
+	 * but still haven't received the cap import message. handle_cap_export
+	 * updated the new auth MDS' cap.
+	 *
+	 * "ceph_seq_cmp(seq, cap->seq) <= 0" means we are processing a message
+	 * that was sent before the cap import message. So don't remove caps.
+	 */
+	if (ceph_seq_cmp(seq, cap->seq) <= 0) {
+		WARN_ON(cap != ci->i_auth_cap);
+		WARN_ON(cap->cap_id != le64_to_cpu(grant->cap_id));
+		seq = cap->seq;
+		newcaps |= cap->issued;
+	}
 
 	/*
 	 * If CACHE is being revoked, and we have no dirty buffers,
@@ -3133,53 +2981,31 @@ static void handle_cap_grant(struct inode *inode,
 		}
 	}
 
-	if (was_stale)
-		cap->issued = cap->implemented = CEPH_CAP_PIN;
-
-	/*
-	 * auth mds of the inode changed. we received the cap export message,
-	 * but still haven't received the cap import message. handle_cap_export
-	 * updated the new auth MDS' cap.
-	 *
-	 * "ceph_seq_cmp(seq, cap->seq) <= 0" means we are processing a message
-	 * that was sent before the cap import message. So don't remove caps.
-	 */
-	if (ceph_seq_cmp(seq, cap->seq) <= 0) {
-		WARN_ON(cap != ci->i_auth_cap);
-		WARN_ON(cap->cap_id != le64_to_cpu(grant->cap_id));
-		seq = cap->seq;
-		newcaps |= cap->issued;
-	}
-
 	/* side effects now are allowed */
 	cap->cap_gen = session->s_cap_gen;
 	cap->seq = seq;
 
 	__check_cap_issue(ci, cap, newcaps);
 
-	inode_set_max_iversion_raw(inode, extra_info->change_attr);
-
 	if ((newcaps & CEPH_CAP_AUTH_SHARED) &&
-	    (extra_info->issued & CEPH_CAP_AUTH_EXCL) == 0) {
+	    (issued & CEPH_CAP_AUTH_EXCL) == 0) {
 		inode->i_mode = le32_to_cpu(grant->mode);
 		inode->i_uid = make_kuid(&init_user_ns, le32_to_cpu(grant->uid));
 		inode->i_gid = make_kgid(&init_user_ns, le32_to_cpu(grant->gid));
-		ci->i_btime = extra_info->btime;
 		dout("%p mode 0%o uid.gid %d.%d\n", inode, inode->i_mode,
 		     from_kuid(&init_user_ns, inode->i_uid),
 		     from_kgid(&init_user_ns, inode->i_gid));
 	}
 
-	if ((newcaps & CEPH_CAP_LINK_SHARED) &&
-	    (extra_info->issued & CEPH_CAP_LINK_EXCL) == 0) {
+	if ((newcaps & CEPH_CAP_AUTH_SHARED) &&
+	    (issued & CEPH_CAP_LINK_EXCL) == 0) {
 		set_nlink(inode, le32_to_cpu(grant->nlink));
 		if (inode->i_nlink == 0 &&
 		    (newcaps & (CEPH_CAP_LINK_SHARED | CEPH_CAP_LINK_EXCL)))
 			deleted_inode = true;
 	}
 
-	if ((extra_info->issued & CEPH_CAP_XATTR_EXCL) == 0 &&
-	    grant->xattr_len) {
+	if ((issued & CEPH_CAP_XATTR_EXCL) == 0 && grant->xattr_len) {
 		int len = le32_to_cpu(grant->xattr_len);
 		u64 version = le64_to_cpu(grant->xattr_version);
 
@@ -3191,24 +3017,17 @@ static void handle_cap_grant(struct inode *inode,
 			ci->i_xattrs.blob = ceph_buffer_get(xattr_buf);
 			ci->i_xattrs.version = version;
 			ceph_forget_all_cached_acls(inode);
-			ceph_security_invalidate_secctx(inode);
 		}
 	}
 
 	if (newcaps & CEPH_CAP_ANY_RD) {
-		struct timespec64 mtime, atime, ctime;
 		/* ctime/mtime/atime? */
-		ceph_decode_timespec64(&mtime, &grant->mtime);
-		ceph_decode_timespec64(&atime, &grant->atime);
-		ceph_decode_timespec64(&ctime, &grant->ctime);
-		ceph_fill_file_time(inode, extra_info->issued,
+		ceph_decode_timespec(&mtime, &grant->mtime);
+		ceph_decode_timespec(&atime, &grant->atime);
+		ceph_decode_timespec(&ctime, &grant->ctime);
+		ceph_fill_file_time(inode, issued,
 				    le32_to_cpu(grant->time_warp_seq),
 				    &ctime, &mtime, &atime);
-	}
-
-	if ((newcaps & CEPH_CAP_FILE_SHARED) && extra_info->dirstat_valid) {
-		ci->i_files = extra_info->nfiles;
-		ci->i_subdirs = extra_info->nsubdirs;
 	}
 
 	if (newcaps & (CEPH_CAP_ANY_FILE_RD | CEPH_CAP_ANY_FILE_WR)) {
@@ -3219,16 +3038,15 @@ static void handle_cap_grant(struct inode *inode,
 		ceph_file_layout_from_legacy(&ci->i_layout, &grant->layout);
 		old_ns = rcu_dereference_protected(ci->i_layout.pool_ns,
 					lockdep_is_held(&ci->i_ceph_lock));
-		rcu_assign_pointer(ci->i_layout.pool_ns, extra_info->pool_ns);
+		rcu_assign_pointer(ci->i_layout.pool_ns, *pns);
 
-		if (ci->i_layout.pool_id != old_pool ||
-		    extra_info->pool_ns != old_ns)
+		if (ci->i_layout.pool_id != old_pool || *pns != old_ns)
 			ci->i_ceph_flags &= ~CEPH_I_POOL_PERM;
 
-		extra_info->pool_ns = old_ns;
+		*pns = old_ns;
 
 		/* size/truncate_seq? */
-		queue_trunc = ceph_fill_file_size(inode, extra_info->issued,
+		queue_trunc = ceph_fill_file_size(inode, issued,
 					le32_to_cpu(grant->truncate_seq),
 					le64_to_cpu(grant->truncate_size),
 					size);
@@ -3259,20 +3077,13 @@ static void handle_cap_grant(struct inode *inode,
 	     ceph_cap_string(wanted),
 	     ceph_cap_string(used),
 	     ceph_cap_string(dirty));
-
-	if ((was_stale || le32_to_cpu(grant->op) == CEPH_CAP_OP_IMPORT) &&
-	    (wanted & ~(cap->mds_wanted | newcaps))) {
-		/*
-		 * If mds is importing cap, prior cap messages that update
-		 * 'wanted' may get dropped by mds (migrate seq mismatch).
-		 *
-		 * We don't send cap message to update 'wanted' if what we
-		 * want are already issued. If mds revokes caps, cap message
-		 * that releases caps also tells mds what we want. But if
-		 * caps got revoked by mds forcedly (session stale). We may
-		 * haven't told mds what we want.
-		 */
-		check_caps = 1;
+	if (wanted != le32_to_cpu(grant->wanted)) {
+		dout("mds wanted %s -> %s\n",
+		     ceph_cap_string(le32_to_cpu(grant->wanted)),
+		     ceph_cap_string(wanted));
+		/* imported cap may not have correct mds_wanted */
+		if (le32_to_cpu(grant->op) == CEPH_CAP_OP_IMPORT)
+			check_caps = 1;
 	}
 
 	/* revocation, grant, or no-op? */
@@ -3314,26 +3125,24 @@ static void handle_cap_grant(struct inode *inode,
 	}
 	BUG_ON(cap->issued & ~cap->implemented);
 
-	if (extra_info->inline_version > 0 &&
-	    extra_info->inline_version >= ci->i_inline_version) {
-		ci->i_inline_version = extra_info->inline_version;
+	if (inline_version > 0 && inline_version >= ci->i_inline_version) {
+		ci->i_inline_version = inline_version;
 		if (ci->i_inline_version != CEPH_INLINE_NONE &&
 		    (newcaps & (CEPH_CAP_FILE_CACHE|CEPH_CAP_FILE_LAZYIO)))
 			fill_inline = true;
 	}
 
 	if (le32_to_cpu(grant->op) == CEPH_CAP_OP_IMPORT) {
-		if (newcaps & ~extra_info->issued)
+		if (newcaps & ~issued)
 			wake = true;
-		kick_flushing_inode_caps(session->s_mdsc, session, inode);
-		up_read(&session->s_mdsc->snap_rwsem);
+		kick_flushing_inode_caps(mdsc, session, inode);
+		up_read(&mdsc->snap_rwsem);
 	} else {
 		spin_unlock(&ci->i_ceph_lock);
 	}
 
 	if (fill_inline)
-		ceph_fill_inline_data(inode, NULL, extra_info->inline_data,
-				      extra_info->inline_len);
+		ceph_fill_inline_data(inode, NULL, inline_data, inline_len);
 
 	if (queue_trunc)
 		ceph_queue_vmtruncate(inode);
@@ -3605,9 +3414,9 @@ retry:
 		goto out_unlock;
 
 	if (target < 0) {
-		if (cap->mds_wanted | cap->issued)
-			ci->i_ceph_flags |= CEPH_I_CAP_DROPPED;
 		__ceph_remove_cap(cap, false);
+		if (!ci->i_auth_cap)
+			ci->i_ceph_flags |= CEPH_I_CAP_DROPPED;
 		goto out_unlock;
 	}
 
@@ -3617,14 +3426,7 @@ retry:
 	 */
 
 	issued = cap->issued;
-	if (issued != cap->implemented)
-		pr_err_ratelimited("handle_cap_export: issued != implemented: "
-				"ino (%llx.%llx) mds%d seq %d mseq %d "
-				"issued %s implemented %s\n",
-				ceph_vinop(inode), mds, cap->seq, cap->mseq,
-				ceph_cap_string(issued),
-				ceph_cap_string(cap->implemented));
-
+	WARN_ON(issued != cap->implemented);
 
 	tcap = __get_cap_for_mds(ci, target);
 	if (tcap) {
@@ -3635,6 +3437,7 @@ retry:
 			tcap->cap_id = t_cap_id;
 			tcap->seq = t_seq - 1;
 			tcap->issue_seq = t_seq - 1;
+			tcap->mseq = t_mseq;
 			tcap->issued |= issued;
 			tcap->implemented |= issued;
 			if (cap == ci->i_auth_cap)
@@ -3769,13 +3572,12 @@ retry:
 		if ((ph->flags & CEPH_CAP_FLAG_AUTH) &&
 		    (ocap->seq != le32_to_cpu(ph->seq) ||
 		     ocap->mseq != le32_to_cpu(ph->mseq))) {
-			pr_err_ratelimited("handle_cap_import: "
-					"mismatched seq/mseq: ino (%llx.%llx) "
-					"mds%d seq %d mseq %d importer mds%d "
-					"has peer seq %d mseq %d\n",
-					ceph_vinop(inode), peer, ocap->seq,
-					ocap->mseq, mds, le32_to_cpu(ph->seq),
-					le32_to_cpu(ph->mseq));
+			pr_err("handle_cap_import: mismatched seq/mseq: "
+			       "ino (%llx.%llx) mds%d seq %d mseq %d "
+			       "importer mds%d has peer seq %d mseq %d\n",
+			       ceph_vinop(inode), peer, ocap->seq,
+			       ocap->mseq, mds, le32_to_cpu(ph->seq),
+			       le32_to_cpu(ph->mseq));
 		}
 		__ceph_remove_cap(ocap, (ph->flags & CEPH_CAP_FLAG_RELEASE));
 	}
@@ -3797,25 +3599,31 @@ void ceph_handle_caps(struct ceph_mds_session *session,
 		      struct ceph_msg *msg)
 {
 	struct ceph_mds_client *mdsc = session->s_mdsc;
+	struct super_block *sb = mdsc->fsc->sb;
 	struct inode *inode;
 	struct ceph_inode_info *ci;
 	struct ceph_cap *cap;
 	struct ceph_mds_caps *h;
 	struct ceph_mds_cap_peer *peer = NULL;
 	struct ceph_snap_realm *realm = NULL;
-	int op;
-	int msg_version = le16_to_cpu(msg->hdr.version);
+	struct ceph_string *pool_ns = NULL;
+	int mds = session->s_mds;
+	int op, issued;
 	u32 seq, mseq;
 	struct ceph_vino vino;
+	u64 tid;
+	u64 inline_version = 0;
+	void *inline_data = NULL;
+	u32  inline_len = 0;
 	void *snaptrace;
 	size_t snaptrace_len;
 	void *p, *end;
-	struct cap_extra_info extra_info = {};
 
-	dout("handle_caps from mds%d\n", session->s_mds);
+	dout("handle_caps from mds%d\n", mds);
 
 	/* decode */
 	end = msg->front.iov_base + msg->front.iov_len;
+	tid = le64_to_cpu(msg->hdr.tid);
 	if (msg->front.iov_len < sizeof(*h))
 		goto bad;
 	h = msg->front.iov_base;
@@ -3829,7 +3637,7 @@ void ceph_handle_caps(struct ceph_mds_session *session,
 	snaptrace_len = le32_to_cpu(h->snap_trace_len);
 	p = snaptrace + snaptrace_len;
 
-	if (msg_version >= 2) {
+	if (le16_to_cpu(msg->hdr.version) >= 2) {
 		u32 flock_len;
 		ceph_decode_32_safe(&p, end, flock_len, bad);
 		if (p + flock_len > end)
@@ -3837,7 +3645,7 @@ void ceph_handle_caps(struct ceph_mds_session *session,
 		p += flock_len;
 	}
 
-	if (msg_version >= 3) {
+	if (le16_to_cpu(msg->hdr.version) >= 3) {
 		if (op == CEPH_CAP_OP_IMPORT) {
 			if (p + sizeof(*peer) > end)
 				goto bad;
@@ -3849,16 +3657,16 @@ void ceph_handle_caps(struct ceph_mds_session *session,
 		}
 	}
 
-	if (msg_version >= 4) {
-		ceph_decode_64_safe(&p, end, extra_info.inline_version, bad);
-		ceph_decode_32_safe(&p, end, extra_info.inline_len, bad);
-		if (p + extra_info.inline_len > end)
+	if (le16_to_cpu(msg->hdr.version) >= 4) {
+		ceph_decode_64_safe(&p, end, inline_version, bad);
+		ceph_decode_32_safe(&p, end, inline_len, bad);
+		if (p + inline_len > end)
 			goto bad;
-		extra_info.inline_data = p;
-		p += extra_info.inline_len;
+		inline_data = p;
+		p += inline_len;
 	}
 
-	if (msg_version >= 5) {
+	if (le16_to_cpu(msg->hdr.version) >= 5) {
 		struct ceph_osd_client	*osdc = &mdsc->fsc->client->osdc;
 		u32			epoch_barrier;
 
@@ -3866,7 +3674,7 @@ void ceph_handle_caps(struct ceph_mds_session *session,
 		ceph_osdc_update_epoch_barrier(osdc, epoch_barrier);
 	}
 
-	if (msg_version >= 8) {
+	if (le16_to_cpu(msg->hdr.version) >= 8) {
 		u64 flush_tid;
 		u32 caller_uid, caller_gid;
 		u32 pool_ns_len;
@@ -3880,35 +3688,13 @@ void ceph_handle_caps(struct ceph_mds_session *session,
 		ceph_decode_32_safe(&p, end, pool_ns_len, bad);
 		if (pool_ns_len > 0) {
 			ceph_decode_need(&p, end, pool_ns_len, bad);
-			extra_info.pool_ns =
-				ceph_find_or_create_string(p, pool_ns_len);
+			pool_ns = ceph_find_or_create_string(p, pool_ns_len);
 			p += pool_ns_len;
 		}
 	}
 
-	if (msg_version >= 9) {
-		struct ceph_timespec *btime;
-
-		if (p + sizeof(*btime) > end)
-			goto bad;
-		btime = p;
-		ceph_decode_timespec64(&extra_info.btime, btime);
-		p += sizeof(*btime);
-		ceph_decode_64_safe(&p, end, extra_info.change_attr, bad);
-	}
-
-	if (msg_version >= 11) {
-		u32 flags;
-		/* version >= 10 */
-		ceph_decode_32_safe(&p, end, flags, bad);
-		/* version >= 11 */
-		extra_info.dirstat_valid = true;
-		ceph_decode_64_safe(&p, end, extra_info.nfiles, bad);
-		ceph_decode_64_safe(&p, end, extra_info.nsubdirs, bad);
-	}
-
 	/* lookup ino */
-	inode = ceph_find_inode(mdsc->fsc->sb, vino);
+	inode = ceph_find_inode(sb, vino);
 	ci = ceph_inode(inode);
 	dout(" op %s ino %llx.%llx inode %p\n", ceph_cap_op_name(op), vino.ino,
 	     vino.snap, inode);
@@ -3930,17 +3716,18 @@ void ceph_handle_caps(struct ceph_mds_session *session,
 			cap->seq = seq;
 			cap->issue_seq = seq;
 			spin_lock(&session->s_cap_lock);
-			__ceph_queue_cap_release(session, cap);
+			list_add_tail(&cap->session_caps,
+					&session->s_cap_releases);
+			session->s_num_cap_releases++;
 			spin_unlock(&session->s_cap_lock);
 		}
-		goto done;
+		goto flush_cap_releases;
 	}
 
 	/* these will work even if we don't have a cap yet */
 	switch (op) {
 	case CEPH_CAP_OP_FLUSHSNAP_ACK:
-		handle_cap_flushsnap_ack(inode, le64_to_cpu(msg->hdr.tid),
-					 h, session);
+		handle_cap_flushsnap_ack(inode, tid, h, session);
 		goto done;
 
 	case CEPH_CAP_OP_EXPORT:
@@ -3959,9 +3746,10 @@ void ceph_handle_caps(struct ceph_mds_session *session,
 			down_read(&mdsc->snap_rwsem);
 		}
 		handle_cap_import(mdsc, inode, h, peer, session,
-				  &cap, &extra_info.issued);
-		handle_cap_grant(inode, session, cap,
-				 h, msg->middle, &extra_info);
+				  &cap, &issued);
+		handle_cap_grant(mdsc, inode, h, &pool_ns,
+				 inline_version, inline_data, inline_len,
+				 msg->middle, session, cap, issued);
 		if (realm)
 			ceph_put_snap_realm(mdsc, realm);
 		goto done_unlocked;
@@ -3969,11 +3757,10 @@ void ceph_handle_caps(struct ceph_mds_session *session,
 
 	/* the rest require a cap */
 	spin_lock(&ci->i_ceph_lock);
-	cap = __get_cap_for_mds(ceph_inode(inode), session->s_mds);
+	cap = __get_cap_for_mds(ceph_inode(inode), mds);
 	if (!cap) {
 		dout(" no cap on %p ino %llx.%llx from mds%d\n",
-		     inode, ceph_ino(inode), ceph_snap(inode),
-		     session->s_mds);
+		     inode, ceph_ino(inode), ceph_snap(inode), mds);
 		spin_unlock(&ci->i_ceph_lock);
 		goto flush_cap_releases;
 	}
@@ -3982,15 +3769,15 @@ void ceph_handle_caps(struct ceph_mds_session *session,
 	switch (op) {
 	case CEPH_CAP_OP_REVOKE:
 	case CEPH_CAP_OP_GRANT:
-		__ceph_caps_issued(ci, &extra_info.issued);
-		extra_info.issued |= __ceph_caps_dirty(ci);
-		handle_cap_grant(inode, session, cap,
-				 h, msg->middle, &extra_info);
+		__ceph_caps_issued(ci, &issued);
+		issued |= __ceph_caps_dirty(ci);
+		handle_cap_grant(mdsc, inode, h, &pool_ns,
+				 inline_version, inline_data, inline_len,
+				 msg->middle, session, cap, issued);
 		goto done_unlocked;
 
 	case CEPH_CAP_OP_FLUSH_ACK:
-		handle_cap_flush_ack(inode, le64_to_cpu(msg->hdr.tid),
-				     h, session, cap);
+		handle_cap_flush_ack(inode, tid, h, session, cap);
 		break;
 
 	case CEPH_CAP_OP_TRUNC:
@@ -4003,13 +3790,7 @@ void ceph_handle_caps(struct ceph_mds_session *session,
 		       ceph_cap_op_name(op));
 	}
 
-done:
-	mutex_unlock(&session->s_mutex);
-done_unlocked:
-	ceph_put_string(extra_info.pool_ns);
-	/* avoid calling iput_final() in mds dispatch threads */
-	ceph_async_iput(inode);
-	return;
+	goto done;
 
 flush_cap_releases:
 	/*
@@ -4017,8 +3798,14 @@ flush_cap_releases:
 	 * along for the mds (who clearly thinks we still have this
 	 * cap).
 	 */
-	ceph_flush_cap_releases(mdsc, session);
-	goto done;
+	ceph_send_cap_releases(mdsc, session);
+
+done:
+	mutex_unlock(&session->s_mutex);
+done_unlocked:
+	iput(inode);
+	ceph_put_string(pool_ns);
+	return;
 
 bad:
 	pr_err("ceph_handle_caps: corrupt message\n");
@@ -4054,8 +3841,7 @@ void ceph_check_delayed_caps(struct ceph_mds_client *mdsc)
 		if (inode) {
 			dout("check_delayed_caps on %p\n", inode);
 			ceph_check_caps(ci, flags, NULL);
-			/* avoid calling iput_final() in tick thread */
-			ceph_async_iput(inode);
+			iput(inode);
 		}
 	}
 	spin_unlock(&mdsc->cap_delay_lock);
@@ -4124,32 +3910,6 @@ void ceph_put_fmode(struct ceph_inode_info *ci, int fmode)
 }
 
 /*
- * For a soon-to-be unlinked file, drop the LINK caps. If it
- * looks like the link count will hit 0, drop any other caps (other
- * than PIN) we don't specifically want (due to the file still being
- * open).
- */
-int ceph_drop_caps_for_unlink(struct inode *inode)
-{
-	struct ceph_inode_info *ci = ceph_inode(inode);
-	int drop = CEPH_CAP_LINK_SHARED | CEPH_CAP_LINK_EXCL;
-
-	spin_lock(&ci->i_ceph_lock);
-	if (inode->i_nlink == 1) {
-		drop |= ~(__ceph_caps_wanted(ci) | CEPH_CAP_PIN);
-
-		ci->i_ceph_flags |= CEPH_I_NODELAY;
-		if (__ceph_caps_dirty(ci)) {
-			struct ceph_mds_client *mdsc =
-				ceph_inode_to_client(inode)->mdsc;
-			__cap_delay_requeue_front(mdsc, ci);
-		}
-	}
-	spin_unlock(&ci->i_ceph_lock);
-	return drop;
-}
-
-/*
  * Helpers for embedding cap and dentry lease releases into mds
  * requests.
  *
@@ -4179,20 +3939,11 @@ int ceph_encode_inode_release(void **p, struct inode *inode,
 
 	cap = __get_cap_for_mds(ci, mds);
 	if (cap && __cap_is_valid(cap)) {
-		unless &= cap->issued;
-		if (unless) {
-			if (unless & CEPH_CAP_AUTH_EXCL)
-				drop &= ~CEPH_CAP_AUTH_SHARED;
-			if (unless & CEPH_CAP_LINK_EXCL)
-				drop &= ~CEPH_CAP_LINK_SHARED;
-			if (unless & CEPH_CAP_XATTR_EXCL)
-				drop &= ~CEPH_CAP_XATTR_SHARED;
-			if (unless & CEPH_CAP_FILE_EXCL)
-				drop &= ~CEPH_CAP_FILE_SHARED;
-		}
-
-		if (force || (cap->issued & drop)) {
-			if (cap->issued & drop) {
+		if (force ||
+		    ((cap->issued & drop) &&
+		     (cap->issued & unless) == 0)) {
+			if ((cap->issued & drop) &&
+			    (cap->issued & unless) == 0) {
 				int wanted = __ceph_caps_wanted(ci);
 				if ((ci->i_ceph_flags & CEPH_I_NODELAY) == 0)
 					wanted |= cap->mds_wanted;
@@ -4224,7 +3975,7 @@ int ceph_encode_inode_release(void **p, struct inode *inode,
 			*p += sizeof(*rel);
 			ret = 1;
 		} else {
-			dout("encode_inode_release %p cap %p %s (noop)\n",
+			dout("encode_inode_release %p cap %p %s\n",
 			     inode, cap, ceph_cap_string(cap->issued));
 		}
 	}

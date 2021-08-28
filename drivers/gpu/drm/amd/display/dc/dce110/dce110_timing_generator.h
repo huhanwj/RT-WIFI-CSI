@@ -174,12 +174,6 @@ void dce110_timing_generator_setup_global_swap_lock(
 void dce110_timing_generator_tear_down_global_swap_lock(
 	struct timing_generator *tg);
 
-/* Reset crtc position on master VSync */
-void dce110_timing_generator_enable_crtc_reset(
-	struct timing_generator *tg,
-	int source,
-	struct crtc_trigger_info *crtc_tp);
-
 /* Reset slave controllers on master VSync */
 void dce110_timing_generator_enable_reset_trigger(
 	struct timing_generator *tg,
@@ -256,11 +250,6 @@ void dce110_tg_set_overscan_color(struct timing_generator *tg,
 
 void dce110_tg_program_timing(struct timing_generator *tg,
 	const struct dc_crtc_timing *timing,
-	int vready_offset,
-	int vstartup_start,
-	int vupdate_offset,
-	int vupdate_width,
-	const enum signal_type signal,
 	bool use_vbios);
 
 bool dce110_tg_is_blanked(struct timing_generator *tg);
@@ -280,11 +269,5 @@ void dce110_tg_set_colors(struct timing_generator *tg,
 
 bool dce110_arm_vert_intr(
 		struct timing_generator *tg, uint8_t width);
-
-bool dce110_configure_crc(struct timing_generator *tg,
-			  const struct crc_params *params);
-
-bool dce110_get_crc(struct timing_generator *tg,
-		    uint32_t *r_cr, uint32_t *g_y, uint32_t *b_cb);
 
 #endif /* __DC_TIMING_GENERATOR_DCE110_H__ */

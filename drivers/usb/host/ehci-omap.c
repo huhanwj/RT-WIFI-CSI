@@ -115,8 +115,10 @@ static int ehci_hcd_omap_probe(struct platform_device *pdev)
 	}
 
 	irq = platform_get_irq(pdev, 0);
-	if (irq < 0)
+	if (irq < 0) {
+		dev_err(dev, "EHCI irq failed: %d\n", irq);
 		return irq;
+	}
 
 	res =  platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	regs = devm_ioremap_resource(dev, res);
@@ -155,16 +157,17 @@ static int ehci_hcd_omap_probe(struct platform_device *pdev)
 		struct usb_phy *phy;
 
 		/* get the PHY device */
-		phy = devm_usb_get_phy_by_phandle(dev, "phys", i);
+		if (dev->of_node)
+			phy = devm_usb_get_phy_by_phandle(dev, "phys", i);
+		else
+			phy = devm_usb_get_phy_dev(dev, i);
 		if (IS_ERR(phy)) {
-			ret = PTR_ERR(phy);
-			if (ret == -ENODEV) { /* no PHY */
-				phy = NULL;
+			/* Don't bail out if PHY is not absolutely necessary */
+			if (pdata->port_mode[i] != OMAP_EHCI_PORT_MODE_PHY)
 				continue;
-			}
 
-			if (ret != -EPROBE_DEFER)
-				dev_err(dev, "Can't get PHY for port %d: %d\n",
+			ret = PTR_ERR(phy);
+			dev_err(dev, "Can't get PHY device for port %d: %d\n",
 					i, ret);
 			goto err_phy;
 		}

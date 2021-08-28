@@ -1,5 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0-only
-config CRYPTO_DEV_STM32_CRC
+config CRC_DEV_STM32
 	tristate "Support for STM32 crc accelerators"
 	depends on ARCH_STM32
 	select CRYPTO_HASH
@@ -7,7 +6,7 @@ config CRYPTO_DEV_STM32_CRC
           This enables support for the CRC32 hw accelerator which can be found
 	  on STMicroelectronics STM32 SOC.
 
-config CRYPTO_DEV_STM32_HASH
+config HASH_DEV_STM32
 	tristate "Support for STM32 hash accelerators"
 	depends on ARCH_STM32
 	depends on HAS_DMA
@@ -19,13 +18,3 @@ config CRYPTO_DEV_STM32_HASH
 	help
           This enables support for the HASH hw accelerator which can be found
 	  on STMicroelectronics STM32 SOC.
-
-config CRYPTO_DEV_STM32_CRYP
-	tristate "Support for STM32 cryp accelerators"
-	depends on ARCH_STM32
-	select CRYPTO_HASH
-	select CRYPTO_ENGINE
-	select CRYPTO_LIB_DES
-	help
-          This enables support for the CRYP (AES/DES/TDES) hw accelerator which
-	  can be found on STMicroelectronics STM32 SOC.

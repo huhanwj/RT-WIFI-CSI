@@ -29,7 +29,6 @@
 MODULE_DESCRIPTION("Driver for Freecom USB/IDE adaptor");
 MODULE_AUTHOR("David Brown <usb-storage@davidb.org>");
 MODULE_LICENSE("GPL");
-MODULE_IMPORT_NS(USB_STORAGE);
 
 #ifdef CONFIG_USB_STORAGE_DEBUG
 static void pdump(struct us_data *us, void *ibuffer, int length);
@@ -465,7 +464,7 @@ static int init_freecom(struct us_data *us)
 	usb_stor_dbg(us, "result from activate reset is %d\n", result);
 
 	/* wait 250ms */
-	msleep(250);
+	mdelay(250);
 
 	/* clear reset */
 	result = usb_stor_control_msg(us, us->send_ctrl_pipe,
@@ -473,7 +472,7 @@ static int init_freecom(struct us_data *us)
 	usb_stor_dbg(us, "result from clear reset is %d\n", result);
 
 	/* wait 3 seconds */
-	msleep(3 * 1000);
+	mdelay(3 * 1000);
 
 	return USB_STOR_TRANSPORT_GOOD;
 }

@@ -120,7 +120,7 @@ struct clk *clk_register_gpt(const char *name, const char *parent_name, unsigned
 	struct clk *clk;
 
 	if (!name || !parent_name || !reg || !rtbl || !rtbl_cnt) {
-		pr_err("Invalid arguments passed\n");
+		pr_err("Invalid arguments passed");
 		return ERR_PTR(-EINVAL);
 	}
 

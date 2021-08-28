@@ -1,13 +1,25 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * OMAP5 HDMI CORE IP driver library
  *
- * Copyright (C) 2014 Texas Instruments Incorporated - http://www.ti.com/
+ * Copyright (C) 2014 Texas Instruments Incorporated
+ *
  * Authors:
  *	Yong Zhi
  *	Mythri pk
  *	Archit Taneja <archit@ti.com>
  *	Tomi Valkeinen <tomi.valkeinen@ti.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/kernel.h>
@@ -39,14 +51,14 @@ static void hdmi_core_ddc_init(struct hdmi_core_data *core)
 {
 	void __iomem *base = core->base;
 	const unsigned long long iclk = 266000000;	/* DSS L3 ICLK */
-	const unsigned int ss_scl_high = 4600;		/* ns */
-	const unsigned int ss_scl_low = 5400;		/* ns */
-	const unsigned int fs_scl_high = 600;		/* ns */
-	const unsigned int fs_scl_low = 1300;		/* ns */
-	const unsigned int sda_hold = 1000;		/* ns */
-	const unsigned int sfr_div = 10;
+	const unsigned ss_scl_high = 4600;		/* ns */
+	const unsigned ss_scl_low = 5400;		/* ns */
+	const unsigned fs_scl_high = 600;		/* ns */
+	const unsigned fs_scl_low = 1300;		/* ns */
+	const unsigned sda_hold = 1000;			/* ns */
+	const unsigned sfr_div = 10;
 	unsigned long long sfr;
-	unsigned int v;
+	unsigned v;
 
 	sfr = iclk / sfr_div;	/* SFR_DIV */
 	sfr /= 1000;		/* SFR clock in kHz */
@@ -276,7 +288,7 @@ void hdmi5_core_dump(struct hdmi_core_data *core, struct seq_file *s)
 }
 
 static void hdmi_core_init(struct hdmi_core_vid_config *video_cfg,
-			   const struct hdmi_config *cfg)
+			struct hdmi_config *cfg)
 {
 	DSSDBG("hdmi_core_init\n");
 
@@ -314,10 +326,10 @@ static void hdmi_core_init(struct hdmi_core_vid_config *video_cfg,
 
 /* DSS_HDMI_CORE_VIDEO_CONFIG */
 static void hdmi_core_video_config(struct hdmi_core_data *core,
-			const struct hdmi_core_vid_config *cfg)
+			struct hdmi_core_vid_config *cfg)
 {
 	void __iomem *base = core->base;
-	const struct videomode *vm = &cfg->v_fc_config.vm;
+	struct videomode *vm = &cfg->v_fc_config.vm;
 	unsigned char r = 0;
 	bool vsync_pol, hsync_pol;
 
@@ -419,11 +431,11 @@ static void hdmi_core_write_avi_infoframe(struct hdmi_core_data *core,
 	void __iomem *base = core->base;
 	u8 data[HDMI_INFOFRAME_SIZE(AVI)];
 	u8 *ptr;
-	unsigned int y, a, b, s;
-	unsigned int c, m, r;
-	unsigned int itc, ec, q, sc;
-	unsigned int vic;
-	unsigned int yq, cn, pr;
+	unsigned y, a, b, s;
+	unsigned c, m, r;
+	unsigned itc, ec, q, sc;
+	unsigned vic;
+	unsigned yq, cn, pr;
 
 	hdmi_avi_infoframe_pack(frame, data, sizeof(data));
 

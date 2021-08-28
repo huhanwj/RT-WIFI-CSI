@@ -3,16 +3,13 @@
  * Renesas USB driver
  *
  * Copyright (C) 2011 Renesas Solutions Corp.
- * Copyright (C) 2019 Renesas Electronics Corporation
  * Kuninori Morimoto <kuninori.morimoto.gx@renesas.com>
  */
 #ifndef RENESAS_USB_DRIVER_H
 #define RENESAS_USB_DRIVER_H
 
-#include <linux/clk.h>
 #include <linux/extcon.h>
 #include <linux/platform_device.h>
-#include <linux/reset.h>
 #include <linux/usb/renesas_usbhs.h>
 
 struct usbhs_priv;
@@ -101,18 +98,14 @@ struct usbhs_priv;
 #define D2FIFOCTR	0x00F2	/* for R-Car Gen2 */
 #define D3FIFOSEL	0x00F4	/* for R-Car Gen2 */
 #define D3FIFOCTR	0x00F6	/* for R-Car Gen2 */
-#define SUSPMODE	0x0102	/* for RZ/A */
 
 /* SYSCFG */
 #define SCKE	(1 << 10)	/* USB Module Clock Enable */
-#define CNEN	(1 << 8)	/* Single-ended receiver operation Enable */
 #define HSE	(1 << 7)	/* High-Speed Operation Enable */
 #define DCFM	(1 << 6)	/* Controller Function Select */
 #define DRPD	(1 << 5)	/* D+ Line/D- Line Resistance Control */
 #define DPRPU	(1 << 4)	/* D+ Line Resistance Control */
 #define USBE	(1 << 0)	/* USB Module Operation Enable */
-#define UCKSEL	(1 << 2)	/* Clock Select for RZ/A1 */
-#define UPLLE	(1 << 1)	/* USB PLL Enable for RZ/A1 */
 
 /* DVSTCTR */
 #define EXTLP	(1 << 10)	/* Controls the EXTLP pin output state */
@@ -211,7 +204,6 @@ struct usbhs_priv;
 /* DCPCTR */
 #define BSTS		(1 << 15)	/* Buffer Status */
 #define SUREQ		(1 << 14)	/* Sending SETUP Token */
-#define INBUFM		(1 << 14)	/* (PIPEnCTR) Transfer Buffer Monitor */
 #define CSSTS		(1 << 12)	/* CSSTS Status */
 #define	ACLRM		(1 << 9)	/* Buffer Auto-Clear Mode */
 #define SQCLR		(1 << 8)	/* Toggle Bit Clear */
@@ -241,9 +233,6 @@ struct usbhs_priv;
 #define USBSPD_SPEED_FULL	0x2
 #define USBSPD_SPEED_HIGH	0x3
 
-/* SUSPMODE */
-#define SUSPM		(1 << 14)	/* SuspendM Control */
-
 /*
  *		struct
  */
@@ -253,7 +242,7 @@ struct usbhs_priv {
 	unsigned int irq;
 	unsigned long irqflags;
 
-	const struct renesas_usbhs_platform_callback *pfunc;
+	struct renesas_usbhs_platform_callback	pfunc;
 	struct renesas_usbhs_driver_param	dparam;
 
 	struct delayed_work notify_hotplug_work;
@@ -262,6 +251,8 @@ struct usbhs_priv {
 	struct extcon_dev *edev;
 
 	spinlock_t		lock;
+
+	u32 flags;
 
 	/*
 	 * module control
@@ -278,9 +269,8 @@ struct usbhs_priv {
 	 */
 	struct usbhs_fifo_info fifo_info;
 
+	struct usb_phy *usb_phy;
 	struct phy *phy;
-	struct reset_control *rsts;
-	struct clk *clks[2];
 };
 
 /*
@@ -292,8 +282,6 @@ void usbhs_bset(struct usbhs_priv *priv, u32 reg, u16 mask, u16 data);
 
 #define usbhs_lock(p, f) spin_lock_irqsave(usbhs_priv_to_lock(p), f)
 #define usbhs_unlock(p, f) spin_unlock_irqrestore(usbhs_priv_to_lock(p), f)
-
-int usbhs_get_id_as_gadget(struct platform_device *pdev);
 
 /*
  * sysconfig
@@ -316,7 +304,6 @@ void usbhs_bus_send_sof_enable(struct usbhs_priv *priv);
 void usbhs_bus_send_reset(struct usbhs_priv *priv);
 int usbhs_bus_get_speed(struct usbhs_priv *priv);
 int usbhs_vbus_ctrl(struct usbhs_priv *priv, int enable);
-int usbhsc_schedule_notify_hotplug(struct platform_device *pdev);
 
 /*
  * frame

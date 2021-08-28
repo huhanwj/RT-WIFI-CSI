@@ -245,13 +245,12 @@ struct ib_qp *pvrdma_create_qp(struct ib_pd *pd,
 		spin_lock_init(&qp->sq.lock);
 		spin_lock_init(&qp->rq.lock);
 		mutex_init(&qp->mutex);
-		refcount_set(&qp->refcnt, 1);
+		atomic_set(&qp->refcnt, 1);
 		init_completion(&qp->free);
 
 		qp->state = IB_QPS_RESET;
-		qp->is_kernel = !udata;
 
-		if (!qp->is_kernel) {
+		if (pd->uobject && udata) {
 			dev_dbg(&dev->pdev->dev,
 				"create queuepair from user space\n");
 
@@ -262,7 +261,8 @@ struct ib_qp *pvrdma_create_qp(struct ib_pd *pd,
 
 			if (!is_srq) {
 				/* set qp->sq.wqe_cnt, shift, buf_size.. */
-				qp->rumem = ib_umem_get(udata, ucmd.rbuf_addr,
+				qp->rumem = ib_umem_get(pd->uobject->context,
+							ucmd.rbuf_addr,
 							ucmd.rbuf_size, 0, 0);
 				if (IS_ERR(qp->rumem)) {
 					ret = PTR_ERR(qp->rumem);
@@ -274,7 +274,8 @@ struct ib_qp *pvrdma_create_qp(struct ib_pd *pd,
 				qp->srq = to_vsrq(init_attr->srq);
 			}
 
-			qp->sumem = ib_umem_get(udata, ucmd.sbuf_addr,
+			qp->sumem = ib_umem_get(pd->uobject->context,
+						ucmd.sbuf_addr,
 						ucmd.sbuf_size, 0, 0);
 			if (IS_ERR(qp->sumem)) {
 				if (!is_srq)
@@ -290,6 +291,8 @@ struct ib_qp *pvrdma_create_qp(struct ib_pd *pd,
 				qp->npages_recv = 0;
 			qp->npages = qp->npages_send + qp->npages_recv;
 		} else {
+			qp->is_kernel = true;
+
 			ret = pvrdma_set_sq_size(to_vdev(pd->device),
 						 &init_attr->cap, qp);
 			if (ret)
@@ -391,8 +394,12 @@ struct ib_qp *pvrdma_create_qp(struct ib_pd *pd,
 err_pdir:
 	pvrdma_page_dir_cleanup(dev, &qp->pdir);
 err_umem:
-	ib_umem_release(qp->rumem);
-	ib_umem_release(qp->sumem);
+	if (pd->uobject && udata) {
+		if (qp->rumem)
+			ib_umem_release(qp->rumem);
+		if (qp->sumem)
+			ib_umem_release(qp->sumem);
+	}
 err_qp:
 	kfree(qp);
 	atomic_dec(&dev->num_qps);
@@ -421,12 +428,16 @@ static void pvrdma_free_qp(struct pvrdma_qp *qp)
 
 	pvrdma_unlock_cqs(scq, rcq, &scq_flags, &rcq_flags);
 
-	if (refcount_dec_and_test(&qp->refcnt))
+	if (atomic_dec_and_test(&qp->refcnt))
 		complete(&qp->free);
 	wait_for_completion(&qp->free);
 
-	ib_umem_release(qp->rumem);
-	ib_umem_release(qp->sumem);
+	if (!qp->is_kernel) {
+		if (qp->rumem)
+			ib_umem_release(qp->rumem);
+		if (qp->sumem)
+			ib_umem_release(qp->sumem);
+	}
 
 	pvrdma_page_dir_cleanup(dev, &qp->pdir);
 
@@ -438,11 +449,10 @@ static void pvrdma_free_qp(struct pvrdma_qp *qp)
 /**
  * pvrdma_destroy_qp - destroy a queue pair
  * @qp: the queue pair to destroy
- * @udata: user data or null for kernel object
  *
  * @return: 0 on success.
  */
-int pvrdma_destroy_qp(struct ib_qp *qp, struct ib_udata *udata)
+int pvrdma_destroy_qp(struct ib_qp *qp)
 {
 	struct pvrdma_qp *vqp = to_vqp(qp);
 	union pvrdma_cmd_req req;
@@ -480,7 +490,7 @@ int pvrdma_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 	union pvrdma_cmd_req req;
 	union pvrdma_cmd_resp rsp;
 	struct pvrdma_cmd_modify_qp *cmd = &req.modify_qp;
-	enum ib_qp_state cur_state, next_state;
+	int cur_state, next_state;
 	int ret;
 
 	/* Sanity checking. Should need lock here */
@@ -490,7 +500,7 @@ int pvrdma_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 	next_state = (attr_mask & IB_QP_STATE) ? attr->qp_state : cur_state;
 
 	if (!ib_modify_qp_is_ok(cur_state, next_state, ibqp->qp_type,
-				attr_mask)) {
+				attr_mask, IB_LINK_LAYER_ETHERNET)) {
 		ret = -EINVAL;
 		goto out;
 	}
@@ -590,8 +600,7 @@ static inline void *get_rq_wqe(struct pvrdma_qp *qp, unsigned int n)
 				       qp->rq.offset + n * qp->rq.wqe_size);
 }
 
-static int set_reg_seg(struct pvrdma_sq_wqe_hdr *wqe_hdr,
-		       const struct ib_reg_wr *wr)
+static int set_reg_seg(struct pvrdma_sq_wqe_hdr *wqe_hdr, struct ib_reg_wr *wr)
 {
 	struct pvrdma_user_mr *mr = to_vmr(wr->mr);
 
@@ -615,8 +624,8 @@ static int set_reg_seg(struct pvrdma_sq_wqe_hdr *wqe_hdr,
  *
  * @return: 0 on success, otherwise errno returned.
  */
-int pvrdma_post_send(struct ib_qp *ibqp, const struct ib_send_wr *wr,
-		     const struct ib_send_wr **bad_wr)
+int pvrdma_post_send(struct ib_qp *ibqp, struct ib_send_wr *wr,
+		     struct ib_send_wr **bad_wr)
 {
 	struct pvrdma_qp *qp = to_vqp(ibqp);
 	struct pvrdma_dev *dev = to_vdev(ibqp->device);
@@ -711,12 +720,6 @@ int pvrdma_post_send(struct ib_qp *ibqp, const struct ib_send_wr *wr,
 		if (wr->opcode == IB_WR_SEND_WITH_IMM ||
 		    wr->opcode == IB_WR_RDMA_WRITE_WITH_IMM)
 			wqe_hdr->ex.imm_data = wr->ex.imm_data;
-
-		if (unlikely(wqe_hdr->opcode == PVRDMA_WR_ERROR)) {
-			*bad_wr = wr;
-			ret = -EINVAL;
-			goto out;
-		}
 
 		switch (qp->ibqp.qp_type) {
 		case IB_QPT_GSI:
@@ -825,8 +828,8 @@ out:
  *
  * @return: 0 on success, otherwise errno returned.
  */
-int pvrdma_post_recv(struct ib_qp *ibqp, const struct ib_recv_wr *wr,
-		     const struct ib_recv_wr **bad_wr)
+int pvrdma_post_recv(struct ib_qp *ibqp, struct ib_recv_wr *wr,
+		     struct ib_recv_wr **bad_wr)
 {
 	struct pvrdma_dev *dev = to_vdev(ibqp->device);
 	unsigned long flags;

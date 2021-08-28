@@ -91,22 +91,14 @@ static int __init ingenic_early_console_setup(struct earlycon_device *dev,
 					      const char *opt)
 {
 	struct uart_port *port = &dev->port;
-	unsigned int divisor;
-	int baud = 115200;
+	unsigned int baud, divisor;
 
 	if (!dev->port.membase)
 		return -ENODEV;
 
-	if (opt) {
-		unsigned int parity, bits, flow; /* unused for now */
-
-		uart_parse_options(opt, &baud, &parity, &bits, &flow);
-	}
-
 	ingenic_early_console_setup_clock(dev);
 
-	if (dev->baud)
-		baud = dev->baud;
+	baud = dev->baud ?: 115200;
 	divisor = DIV_ROUND_CLOSEST(port->uartclk, 16 * baud);
 
 	early_out(port, UART_IER, 0);
@@ -129,19 +121,16 @@ static int __init ingenic_early_console_setup(struct earlycon_device *dev,
 	return 0;
 }
 
+EARLYCON_DECLARE(jz4740_uart, ingenic_early_console_setup);
 OF_EARLYCON_DECLARE(jz4740_uart, "ingenic,jz4740-uart",
 		    ingenic_early_console_setup);
 
-OF_EARLYCON_DECLARE(jz4770_uart, "ingenic,jz4770-uart",
-		    ingenic_early_console_setup);
-
+EARLYCON_DECLARE(jz4775_uart, ingenic_early_console_setup);
 OF_EARLYCON_DECLARE(jz4775_uart, "ingenic,jz4775-uart",
 		    ingenic_early_console_setup);
 
+EARLYCON_DECLARE(jz4780_uart, ingenic_early_console_setup);
 OF_EARLYCON_DECLARE(jz4780_uart, "ingenic,jz4780-uart",
-		    ingenic_early_console_setup);
-
-OF_EARLYCON_DECLARE(x1000_uart, "ingenic,x1000-uart",
 		    ingenic_early_console_setup);
 
 static void ingenic_uart_serial_out(struct uart_port *p, int offset, int value)
@@ -327,18 +316,11 @@ static const struct ingenic_uart_config jz4780_uart_config = {
 	.fifosize = 64,
 };
 
-static const struct ingenic_uart_config x1000_uart_config = {
-	.tx_loadsz = 32,
-	.fifosize = 64,
-};
-
 static const struct of_device_id of_match[] = {
 	{ .compatible = "ingenic,jz4740-uart", .data = &jz4740_uart_config },
 	{ .compatible = "ingenic,jz4760-uart", .data = &jz4760_uart_config },
-	{ .compatible = "ingenic,jz4770-uart", .data = &jz4760_uart_config },
 	{ .compatible = "ingenic,jz4775-uart", .data = &jz4760_uart_config },
 	{ .compatible = "ingenic,jz4780-uart", .data = &jz4780_uart_config },
-	{ .compatible = "ingenic,x1000-uart", .data = &x1000_uart_config },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, of_match);

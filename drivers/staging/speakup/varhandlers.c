@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/ctype.h>
 #include "spk_types.h"
 #include "spk_priv.h"
@@ -45,7 +44,6 @@ static struct st_var_header var_headers[] = {
 	{ "lang", LANG, VAR_NUM, NULL, NULL },
 	{ "chartab", CHARTAB, VAR_PROC, NULL, NULL },
 	{ "direct", DIRECT, VAR_NUM, NULL, NULL },
-	{ "pause", PAUSE, VAR_STRING, spk_str_pause, NULL },
 };
 
 static struct st_var_header *var_ptrs[MAXVARS] = { NULL, NULL, NULL };
@@ -179,6 +177,7 @@ int spk_set_num_var(int input, struct st_var_header *var, int how)
 {
 	int val;
 	int *p_val = var->p_val;
+	int l;
 	char buf[32];
 	char *cp;
 	struct var_t *var_data = var->data;
@@ -236,10 +235,9 @@ int spk_set_num_var(int input, struct st_var_header *var, int how)
 	else
 		cp = buf;
 	if (!var_data->u.n.out_str)
-		sprintf(cp, var_data->u.n.synth_fmt, (int)val);
+		l = sprintf(cp, var_data->u.n.synth_fmt, (int)val);
 	else
-		sprintf(cp, var_data->u.n.synth_fmt,
-			var_data->u.n.out_str[val]);
+		l = sprintf(cp,	var_data->u.n.synth_fmt, var_data->u.n.out_str[val]);
 	synth_printf("%s", cp);
 	return 0;
 }
@@ -329,7 +327,6 @@ char *spk_s2uchar(char *start, char *dest)
 {
 	int val;
 
-	/* Do not replace with kstrtoul: here we need start to be updated */
 	val = simple_strtoul(skip_spaces(start), &start, 10);
 	if (*start == ',')
 		start++;

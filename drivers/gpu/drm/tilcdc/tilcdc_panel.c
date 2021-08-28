@@ -1,21 +1,28 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2012 Texas Instruments
  * Author: Rob Clark <robdclark@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <linux/gpio/consumer.h>
+#include <linux/pinctrl/pinmux.h>
 #include <linux/pinctrl/consumer.h>
-#include <linux/platform_device.h>
-
+#include <linux/backlight.h>
+#include <linux/gpio/consumer.h>
 #include <video/display_timing.h>
 #include <video/of_display_timing.h>
 #include <video/videomode.h>
-
-#include <drm/drm_atomic_state_helper.h>
-#include <drm/drm_connector.h>
-#include <drm/drm_modeset_helper_vtables.h>
-#include <drm/drm_probe_helper.h>
+#include <drm/drm_atomic_helper.h>
 
 #include "tilcdc_drv.h"
 #include "tilcdc_panel.h"
@@ -94,8 +101,10 @@ static struct drm_encoder *panel_encoder_create(struct drm_device *dev,
 
 	panel_encoder = devm_kzalloc(dev->dev, sizeof(*panel_encoder),
 				     GFP_KERNEL);
-	if (!panel_encoder)
+	if (!panel_encoder) {
+		dev_err(dev->dev, "allocation failed\n");
 		return NULL;
+	}
 
 	panel_encoder->mod = mod;
 
@@ -163,6 +172,14 @@ static int panel_connector_get_modes(struct drm_connector *connector)
 	return i;
 }
 
+static int panel_connector_mode_valid(struct drm_connector *connector,
+		  struct drm_display_mode *mode)
+{
+	struct tilcdc_drm_private *priv = connector->dev->dev_private;
+	/* our only constraints are what the crtc can generate: */
+	return tilcdc_crtc_mode_valid(priv->crtc, mode);
+}
+
 static struct drm_encoder *panel_connector_best_encoder(
 		struct drm_connector *connector)
 {
@@ -180,6 +197,7 @@ static const struct drm_connector_funcs panel_connector_funcs = {
 
 static const struct drm_connector_helper_funcs panel_connector_helper_funcs = {
 	.get_modes          = panel_connector_get_modes,
+	.mode_valid         = panel_connector_mode_valid,
 	.best_encoder       = panel_connector_best_encoder,
 };
 
@@ -192,8 +210,10 @@ static struct drm_connector *panel_connector_create(struct drm_device *dev,
 
 	panel_connector = devm_kzalloc(dev->dev, sizeof(*panel_connector),
 				       GFP_KERNEL);
-	if (!panel_connector)
+	if (!panel_connector) {
+		dev_err(dev->dev, "allocation failed\n");
 		return NULL;
+	}
 
 	panel_connector->encoder = encoder;
 	panel_connector->mod = mod;
@@ -207,7 +227,7 @@ static struct drm_connector *panel_connector_create(struct drm_device *dev,
 	connector->interlace_allowed = 0;
 	connector->doublescan_allowed = 0;
 
-	ret = drm_connector_attach_encoder(connector, encoder);
+	ret = drm_mode_connector_attach_encoder(connector, encoder);
 	if (ret)
 		goto fail;
 
@@ -273,8 +293,11 @@ static struct tilcdc_panel_info *of_get_panel_info(struct device_node *np)
 	}
 
 	info = kzalloc(sizeof(*info), GFP_KERNEL);
-	if (!info)
-		goto put_node;
+	if (!info) {
+		pr_err("%s: allocation failed\n", __func__);
+		of_node_put(info_np);
+		return NULL;
+	}
 
 	ret |= of_property_read_u32(info_np, "ac-bias", &info->ac_bias);
 	ret |= of_property_read_u32(info_np, "ac-bias-intrpt", &info->ac_bias_intrpt);
@@ -293,11 +316,11 @@ static struct tilcdc_panel_info *of_get_panel_info(struct device_node *np)
 	if (ret) {
 		pr_err("%s: error reading panel-info properties\n", __func__);
 		kfree(info);
-		info = NULL;
+		of_node_put(info_np);
+		return NULL;
 	}
-
-put_node:
 	of_node_put(info_np);
+
 	return info;
 }
 
@@ -405,7 +428,7 @@ struct platform_driver panel_driver = {
 	.remove = panel_remove,
 	.driver = {
 		.owner = THIS_MODULE,
-		.name = "tilcdc-panel",
+		.name = "panel",
 		.of_match_table = panel_of_match,
 	},
 };

@@ -115,7 +115,7 @@ qed_sp_fcoe_func_start(struct qed_hwfn *p_hwfn,
 	struct qed_fcoe_pf_params *fcoe_pf_params = NULL;
 	struct fcoe_init_ramrod_params *p_ramrod = NULL;
 	struct fcoe_init_func_ramrod_data *p_data;
-	struct e4_fcoe_conn_context *p_cxt = NULL;
+	struct fcoe_conn_context *p_cxt = NULL;
 	struct qed_spq_entry *p_ent = NULL;
 	struct qed_sp_init_data init_data;
 	struct qed_cxt_info cxt_info;
@@ -147,8 +147,7 @@ qed_sp_fcoe_func_start(struct qed_hwfn *p_hwfn,
 		       "Cannot satisfy CQ amount. CQs requested %d, CQs available %d. Aborting function start\n",
 		       fcoe_pf_params->num_cqs,
 		       p_hwfn->hw_info.feat_num[QED_FCOE_CQ]);
-		rc = -EINVAL;
-		goto err;
+		return -EINVAL;
 	}
 
 	p_data->mtu = cpu_to_le16(fcoe_pf_params->mtu);
@@ -157,18 +156,18 @@ qed_sp_fcoe_func_start(struct qed_hwfn *p_hwfn,
 
 	rc = qed_cxt_acquire_cid(p_hwfn, PROTOCOLID_FCOE, &dummy_cid);
 	if (rc)
-		goto err;
+		return rc;
 
 	cxt_info.iid = dummy_cid;
 	rc = qed_cxt_get_cid_info(p_hwfn, &cxt_info);
 	if (rc) {
 		DP_NOTICE(p_hwfn, "Cannot find context info for dummy cid=%d\n",
 			  dummy_cid);
-		goto err;
+		return rc;
 	}
 	p_cxt = cxt_info.p_cxt;
 	SET_FIELD(p_cxt->tstorm_ag_context.flags3,
-		  E4_TSTORM_FCOE_CONN_AG_CTX_DUMMY_TIMER_CF_EN, 1);
+		  TSTORM_FCOE_CONN_AG_CTX_DUMMY_TIMER_CF_EN, 1);
 
 	fcoe_pf_params->dummy_icid = (u16)dummy_cid;
 
@@ -240,10 +239,6 @@ qed_sp_fcoe_func_start(struct qed_hwfn *p_hwfn,
 
 	rc = qed_spq_post(p_hwfn, p_ent, NULL);
 
-	return rc;
-
-err:
-	qed_sp_destroy_request(p_hwfn, p_ent);
 	return rc;
 }
 
@@ -318,9 +313,6 @@ qed_sp_fcoe_conn_offload(struct qed_hwfn *p_hwfn,
 	p_data->d_id.addr_mid = p_conn->d_id.addr_mid;
 	p_data->d_id.addr_lo = p_conn->d_id.addr_lo;
 	p_data->flags = p_conn->flags;
-	if (test_bit(QED_MF_UFP_SPECIFIC, &p_hwfn->cdev->mf_bits))
-		SET_FIELD(p_data->flags,
-			  FCOE_CONN_OFFLOAD_RAMROD_DATA_B_SINGLE_VLAN, 1);
 	p_data->def_q_idx = p_conn->def_q_idx;
 
 	return qed_spq_post(p_hwfn, p_ent, NULL);
@@ -576,7 +568,7 @@ int qed_fcoe_alloc(struct qed_hwfn *p_hwfn)
 
 void qed_fcoe_setup(struct qed_hwfn *p_hwfn)
 {
-	struct e4_fcoe_task_context *p_task_ctx = NULL;
+	struct fcoe_task_context *p_task_ctx = NULL;
 	int rc;
 	u32 i;
 
@@ -588,13 +580,13 @@ void qed_fcoe_setup(struct qed_hwfn *p_hwfn)
 		if (rc)
 			continue;
 
-		memset(p_task_ctx, 0, sizeof(struct e4_fcoe_task_context));
+		memset(p_task_ctx, 0, sizeof(struct fcoe_task_context));
 		SET_FIELD(p_task_ctx->timer_context.logical_client_0,
 			  TIMERS_CONTEXT_VALIDLC0, 1);
 		SET_FIELD(p_task_ctx->timer_context.logical_client_1,
 			  TIMERS_CONTEXT_VALIDLC1, 1);
 		SET_FIELD(p_task_ctx->tstorm_ag_context.flags0,
-			  E4_TSTORM_FCOE_TASK_AG_CTX_CONNECTION_TYPE, 1);
+			  TSTORM_FCOE_TASK_AG_CTX_CONNECTION_TYPE, 1);
 	}
 }
 
@@ -745,7 +737,7 @@ struct qed_hash_fcoe_con {
 static int qed_fill_fcoe_dev_info(struct qed_dev *cdev,
 				  struct qed_dev_fcoe_info *info)
 {
-	struct qed_hwfn *hwfn = QED_AFFIN_HWFN(cdev);
+	struct qed_hwfn *hwfn = QED_LEADING_HWFN(cdev);
 	int rc;
 
 	memset(info, 0, sizeof(*info));
@@ -806,15 +798,15 @@ static int qed_fcoe_stop(struct qed_dev *cdev)
 		return -EINVAL;
 	}
 
-	p_ptt = qed_ptt_acquire(QED_AFFIN_HWFN(cdev));
+	p_ptt = qed_ptt_acquire(QED_LEADING_HWFN(cdev));
 	if (!p_ptt)
 		return -EAGAIN;
 
 	/* Stop the fcoe */
-	rc = qed_sp_fcoe_func_stop(QED_AFFIN_HWFN(cdev), p_ptt,
+	rc = qed_sp_fcoe_func_stop(QED_LEADING_HWFN(cdev), p_ptt,
 				   QED_SPQ_MODE_EBLOCK, NULL);
 	cdev->flags &= ~QED_FLAG_STORAGE_STARTED;
-	qed_ptt_release(QED_AFFIN_HWFN(cdev), p_ptt);
+	qed_ptt_release(QED_LEADING_HWFN(cdev), p_ptt);
 
 	return rc;
 }
@@ -828,8 +820,8 @@ static int qed_fcoe_start(struct qed_dev *cdev, struct qed_fcoe_tid *tasks)
 		return 0;
 	}
 
-	rc = qed_sp_fcoe_func_start(QED_AFFIN_HWFN(cdev), QED_SPQ_MODE_EBLOCK,
-				    NULL);
+	rc = qed_sp_fcoe_func_start(QED_LEADING_HWFN(cdev),
+				    QED_SPQ_MODE_EBLOCK, NULL);
 	if (rc) {
 		DP_NOTICE(cdev, "Failed to start fcoe\n");
 		return rc;
@@ -849,7 +841,7 @@ static int qed_fcoe_start(struct qed_dev *cdev, struct qed_fcoe_tid *tasks)
 			return -ENOMEM;
 		}
 
-		rc = qed_cxt_get_tid_mem_info(QED_AFFIN_HWFN(cdev), tid_info);
+		rc = qed_cxt_get_tid_mem_info(QED_LEADING_HWFN(cdev), tid_info);
 		if (rc) {
 			DP_NOTICE(cdev, "Failed to gather task information\n");
 			qed_fcoe_stop(cdev);
@@ -884,7 +876,7 @@ static int qed_fcoe_acquire_conn(struct qed_dev *cdev,
 	}
 
 	/* Acquire the connection */
-	rc = qed_fcoe_acquire_connection(QED_AFFIN_HWFN(cdev), NULL,
+	rc = qed_fcoe_acquire_connection(QED_LEADING_HWFN(cdev), NULL,
 					 &hash_con->con);
 	if (rc) {
 		DP_NOTICE(cdev, "Failed to acquire Connection\n");
@@ -898,7 +890,7 @@ static int qed_fcoe_acquire_conn(struct qed_dev *cdev,
 	hash_add(cdev->connections, &hash_con->node, *handle);
 
 	if (p_doorbell)
-		*p_doorbell = qed_fcoe_get_db_addr(QED_AFFIN_HWFN(cdev),
+		*p_doorbell = qed_fcoe_get_db_addr(QED_LEADING_HWFN(cdev),
 						   *handle);
 
 	return 0;
@@ -916,7 +908,7 @@ static int qed_fcoe_release_conn(struct qed_dev *cdev, u32 handle)
 	}
 
 	hlist_del(&hash_con->node);
-	qed_fcoe_release_connection(QED_AFFIN_HWFN(cdev), hash_con->con);
+	qed_fcoe_release_connection(QED_LEADING_HWFN(cdev), hash_con->con);
 	kfree(hash_con);
 
 	return 0;
@@ -971,7 +963,7 @@ static int qed_fcoe_offload_conn(struct qed_dev *cdev,
 	con->d_id.addr_mid = conn_info->d_id.addr_mid;
 	con->d_id.addr_lo = conn_info->d_id.addr_lo;
 
-	return qed_sp_fcoe_conn_offload(QED_AFFIN_HWFN(cdev), con,
+	return qed_sp_fcoe_conn_offload(QED_LEADING_HWFN(cdev), con,
 					QED_SPQ_MODE_EBLOCK, NULL);
 }
 
@@ -992,13 +984,13 @@ static int qed_fcoe_destroy_conn(struct qed_dev *cdev,
 	con = hash_con->con;
 	con->terminate_params = terminate_params;
 
-	return qed_sp_fcoe_conn_destroy(QED_AFFIN_HWFN(cdev), con,
+	return qed_sp_fcoe_conn_destroy(QED_LEADING_HWFN(cdev), con,
 					QED_SPQ_MODE_EBLOCK, NULL);
 }
 
 static int qed_fcoe_stats(struct qed_dev *cdev, struct qed_fcoe_stats *stats)
 {
-	return qed_fcoe_get_stats(QED_AFFIN_HWFN(cdev), stats);
+	return qed_fcoe_get_stats(QED_LEADING_HWFN(cdev), stats);
 }
 
 void qed_get_protocol_stats_fcoe(struct qed_dev *cdev,

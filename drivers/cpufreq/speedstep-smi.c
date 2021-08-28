@@ -1,8 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Intel SpeedStep SMI driver.
  *
  * (C) 2003  Hiroshi Miura <miura@da-cha.org>
+ *
+ *  Licensed under the terms of the GNU GPL License version 2.
+ *
  */
 
 
@@ -264,9 +266,7 @@ static int speedstep_cpu_init(struct cpufreq_policy *policy)
 			pr_debug("workaround worked.\n");
 	}
 
-	policy->freq_table = speedstep_freqs;
-
-	return 0;
+	return cpufreq_table_validate_and_show(policy, speedstep_freqs);
 }
 
 static unsigned int speedstep_get(unsigned int cpu)

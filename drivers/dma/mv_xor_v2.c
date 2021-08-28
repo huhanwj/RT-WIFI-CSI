@@ -1,7 +1,15 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2015-2016 Marvell International Ltd.
 
+ * This program is free software: you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation, either version 2 of the
+ * License, or any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
  */
 
 #include <linux/clk.h>
@@ -33,6 +41,7 @@
 #define MV_XOR_V2_DMA_IMSG_CDAT_OFF			0x014
 #define MV_XOR_V2_DMA_IMSG_THRD_OFF			0x018
 #define   MV_XOR_V2_DMA_IMSG_THRD_MASK			0x7FFF
+#define   MV_XOR_V2_DMA_IMSG_THRD_SHIFT			0x0
 #define   MV_XOR_V2_DMA_IMSG_TIMER_EN			BIT(18)
 #define MV_XOR_V2_DMA_DESQ_AWATTR_OFF			0x01C
   /* Same flags as MV_XOR_V2_DMA_DESQ_ARATTR_OFF */
@@ -49,6 +58,7 @@
 #define MV_XOR_V2_DMA_DESQ_ADD_OFF			0x808
 #define MV_XOR_V2_DMA_IMSG_TMOT				0x810
 #define   MV_XOR_V2_DMA_IMSG_TIMER_THRD_MASK		0x1FFF
+#define   MV_XOR_V2_DMA_IMSG_TIMER_THRD_SHIFT		0
 
 /* XOR Global registers */
 #define MV_XOR_V2_GLOB_BW_CTRL				0x4
@@ -153,7 +163,6 @@ struct mv_xor_v2_device {
 	void __iomem *dma_base;
 	void __iomem *glob_base;
 	struct clk *clk;
-	struct clk *reg_clk;
 	struct tasklet_struct irq_tasklet;
 	struct list_head free_sw_desc;
 	struct dma_device dmadev;
@@ -164,7 +173,6 @@ struct mv_xor_v2_device {
 	int desc_size;
 	unsigned int npendings;
 	unsigned int hw_queue_idx;
-	struct msi_desc *msi_desc;
 };
 
 /**
@@ -259,15 +267,16 @@ void mv_xor_v2_enable_imsg_thrd(struct mv_xor_v2_device *xor_dev)
 
 	/* Configure threshold of number of descriptors, and enable timer */
 	reg = readl(xor_dev->dma_base + MV_XOR_V2_DMA_IMSG_THRD_OFF);
-	reg &= ~MV_XOR_V2_DMA_IMSG_THRD_MASK;
-	reg |= MV_XOR_V2_DONE_IMSG_THRD;
+	reg &= (~MV_XOR_V2_DMA_IMSG_THRD_MASK << MV_XOR_V2_DMA_IMSG_THRD_SHIFT);
+	reg |= (MV_XOR_V2_DONE_IMSG_THRD << MV_XOR_V2_DMA_IMSG_THRD_SHIFT);
 	reg |= MV_XOR_V2_DMA_IMSG_TIMER_EN;
 	writel(reg, xor_dev->dma_base + MV_XOR_V2_DMA_IMSG_THRD_OFF);
 
 	/* Configure Timer Threshold */
 	reg = readl(xor_dev->dma_base + MV_XOR_V2_DMA_IMSG_TMOT);
-	reg &= ~MV_XOR_V2_DMA_IMSG_TIMER_THRD_MASK;
-	reg |= MV_XOR_V2_TIMER_THRD;
+	reg &= (~MV_XOR_V2_DMA_IMSG_TIMER_THRD_MASK <<
+		MV_XOR_V2_DMA_IMSG_TIMER_THRD_SHIFT);
+	reg |= (MV_XOR_V2_TIMER_THRD << MV_XOR_V2_DMA_IMSG_TIMER_THRD_SHIFT);
 	writel(reg, xor_dev->dma_base + MV_XOR_V2_DMA_IMSG_TMOT);
 }
 
@@ -578,9 +587,11 @@ static void mv_xor_v2_tasklet(unsigned long data)
 			 */
 			dma_cookie_complete(&next_pending_sw_desc->async_tx);
 
+			if (next_pending_sw_desc->async_tx.callback)
+				next_pending_sw_desc->async_tx.callback(
+				next_pending_sw_desc->async_tx.callback_param);
+
 			dma_descriptor_unmap(&next_pending_sw_desc->async_tx);
-			dmaengine_desc_get_callback_invoke(
-					&next_pending_sw_desc->async_tx, NULL);
 		}
 
 		dma_run_dependencies(&next_pending_sw_desc->async_tx);
@@ -631,9 +642,9 @@ static int mv_xor_v2_descq_init(struct mv_xor_v2_device *xor_dev)
 	       xor_dev->dma_base + MV_XOR_V2_DMA_DESQ_SIZE_OFF);
 
 	/* write the DESQ address to the DMA enngine*/
-	writel(lower_32_bits(xor_dev->hw_desq),
+	writel(xor_dev->hw_desq & 0xFFFFFFFF,
 	       xor_dev->dma_base + MV_XOR_V2_DMA_DESQ_BALR_OFF);
-	writel(upper_32_bits(xor_dev->hw_desq),
+	writel((xor_dev->hw_desq & 0xFFFF00000000) >> 32,
 	       xor_dev->dma_base + MV_XOR_V2_DMA_DESQ_BAHR_OFF);
 
 	/*
@@ -738,26 +749,13 @@ static int mv_xor_v2_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	xor_dev->reg_clk = devm_clk_get(&pdev->dev, "reg");
-	if (PTR_ERR(xor_dev->reg_clk) != -ENOENT) {
-		if (!IS_ERR(xor_dev->reg_clk)) {
-			ret = clk_prepare_enable(xor_dev->reg_clk);
-			if (ret)
-				return ret;
-		} else {
-			return PTR_ERR(xor_dev->reg_clk);
-		}
-	}
-
 	xor_dev->clk = devm_clk_get(&pdev->dev, NULL);
-	if (IS_ERR(xor_dev->clk) && PTR_ERR(xor_dev->clk) == -EPROBE_DEFER) {
-		ret = EPROBE_DEFER;
-		goto disable_reg_clk;
-	}
+	if (IS_ERR(xor_dev->clk) && PTR_ERR(xor_dev->clk) == -EPROBE_DEFER)
+		return -EPROBE_DEFER;
 	if (!IS_ERR(xor_dev->clk)) {
 		ret = clk_prepare_enable(xor_dev->clk);
 		if (ret)
-			goto disable_reg_clk;
+			return ret;
 	}
 
 	ret = platform_msi_domain_alloc_irqs(&pdev->dev, 1,
@@ -768,7 +766,6 @@ static int mv_xor_v2_probe(struct platform_device *pdev)
 	msi_desc = first_msi_entry(&pdev->dev);
 	if (!msi_desc)
 		goto free_msi_irqs;
-	xor_dev->msi_desc = msi_desc;
 
 	ret = devm_request_irq(&pdev->dev, msi_desc->irq,
 			       mv_xor_v2_interrupt_handler, 0,
@@ -798,9 +795,8 @@ static int mv_xor_v2_probe(struct platform_device *pdev)
 	}
 
 	/* alloc memory for the SW descriptors */
-	xor_dev->sw_desq = devm_kcalloc(&pdev->dev,
-					MV_XOR_V2_DESC_NUM, sizeof(*sw_desc),
-					GFP_KERNEL);
+	xor_dev->sw_desq = devm_kzalloc(&pdev->dev, sizeof(*sw_desc) *
+					MV_XOR_V2_DESC_NUM, GFP_KERNEL);
 	if (!xor_dev->sw_desq) {
 		ret = -ENOMEM;
 		goto free_hw_desq;
@@ -870,9 +866,8 @@ free_hw_desq:
 free_msi_irqs:
 	platform_msi_domain_free_irqs(&pdev->dev);
 disable_clk:
-	clk_disable_unprepare(xor_dev->clk);
-disable_reg_clk:
-	clk_disable_unprepare(xor_dev->reg_clk);
+	if (!IS_ERR(xor_dev->clk))
+		clk_disable_unprepare(xor_dev->clk);
 	return ret;
 }
 
@@ -886,11 +881,7 @@ static int mv_xor_v2_remove(struct platform_device *pdev)
 			  xor_dev->desc_size * MV_XOR_V2_DESC_NUM,
 			  xor_dev->hw_desq_virt, xor_dev->hw_desq);
 
-	devm_free_irq(&pdev->dev, xor_dev->msi_desc->irq, xor_dev);
-
 	platform_msi_domain_free_irqs(&pdev->dev);
-
-	tasklet_kill(&xor_dev->irq_tasklet);
 
 	clk_disable_unprepare(xor_dev->clk);
 

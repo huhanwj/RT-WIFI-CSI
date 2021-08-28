@@ -702,9 +702,11 @@ static struct octeon_device *octeon_allocate_device_mem(u32 pci_id,
 	size = octdevsize + priv_size + configsize +
 		(sizeof(struct octeon_dispatch) * DISPATCH_LIST_SIZE);
 
-	buf = vzalloc(size);
+	buf = vmalloc(size);
 	if (!buf)
 		return NULL;
+
+	memset(buf, 0, size);
 
 	oct = (struct octeon_device *)buf;
 	oct->priv = (void *)(buf + octdevsize);
@@ -824,18 +826,24 @@ int octeon_deregister_device(struct octeon_device *oct)
 }
 
 int
-octeon_allocate_ioq_vector(struct octeon_device *oct, u32 num_ioqs)
+octeon_allocate_ioq_vector(struct octeon_device  *oct)
 {
+	int i, num_ioqs = 0;
 	struct octeon_ioq_vector *ioq_vector;
 	int cpu_num;
 	int size;
-	int i;
+
+	if (OCTEON_CN23XX_PF(oct))
+		num_ioqs = oct->sriov_info.num_pf_rings;
+	else if (OCTEON_CN23XX_VF(oct))
+		num_ioqs = oct->sriov_info.rings_per_vf;
 
 	size = sizeof(struct octeon_ioq_vector) * num_ioqs;
 
-	oct->ioq_vector = vzalloc(size);
+	oct->ioq_vector = vmalloc(size);
 	if (!oct->ioq_vector)
-		return -1;
+		return 1;
+	memset(oct->ioq_vector, 0, size);
 	for (i = 0; i < num_ioqs; i++) {
 		ioq_vector		= &oct->ioq_vector[i];
 		ioq_vector->oct_dev	= oct;
@@ -851,7 +859,6 @@ octeon_allocate_ioq_vector(struct octeon_device *oct, u32 num_ioqs)
 		else
 			ioq_vector->ioq_num	= i;
 	}
-
 	return 0;
 }
 
@@ -1044,7 +1051,8 @@ void octeon_delete_dispatch_list(struct octeon_device *oct)
 		dispatch = &oct->dispatch.dlist[i].list;
 		while (dispatch->next != dispatch) {
 			temp = dispatch->next;
-			list_move_tail(temp, &freelist);
+			list_del(temp);
+			list_add_tail(temp, &freelist);
 		}
 
 		oct->dispatch.dlist[i].opcode = 0;
@@ -1439,16 +1447,20 @@ void lio_enable_irq(struct octeon_droq *droq, struct octeon_instr_queue *iq)
 	/* the whole thing needs to be atomic, ideally */
 	if (droq) {
 		pkts_pend = (u32)atomic_read(&droq->pkts_pending);
+		spin_lock_bh(&droq->lock);
 		writel(droq->pkt_count - pkts_pend, droq->pkts_sent_reg);
 		droq->pkt_count = pkts_pend;
+		/* this write needs to be flushed before we release the lock */
+		mmiowb();
+		spin_unlock_bh(&droq->lock);
 		oct = droq->oct_dev;
 	}
 	if (iq) {
 		spin_lock_bh(&iq->lock);
-		writel(iq->pkts_processed, iq->inst_cnt_reg);
-		iq->pkt_in_done -= iq->pkts_processed;
-		iq->pkts_processed = 0;
+		writel(iq->pkt_in_done, iq->inst_cnt_reg);
+		iq->pkt_in_done = 0;
 		/* this write needs to be flushed before we release the lock */
+		mmiowb();
 		spin_unlock_bh(&iq->lock);
 		oct = iq->oct_dev;
 	}

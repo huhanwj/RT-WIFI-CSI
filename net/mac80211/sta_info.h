@@ -1,8 +1,11 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright 2002-2005, Devicescape Software, Inc.
  * Copyright 2013-2014  Intel Mobile Communications GmbH
  * Copyright(c) 2015-2017 Intel Deutschland GmbH
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #ifndef STA_INFO_H
@@ -116,22 +119,11 @@ enum ieee80211_sta_info_flags {
 #define HT_AGG_STATE_START_CB		6
 #define HT_AGG_STATE_STOP_CB		7
 
-DECLARE_EWMA(avg_signal, 10, 8)
 enum ieee80211_agg_stop_reason {
 	AGG_STOP_DECLINED,
 	AGG_STOP_LOCAL_REQUEST,
 	AGG_STOP_PEER_REQUEST,
 	AGG_STOP_DESTROY_STA,
-};
-
-/* Debugfs flags to enable/disable use of RX/TX airtime in scheduler */
-#define AIRTIME_USE_TX		BIT(0)
-#define AIRTIME_USE_RX		BIT(1)
-
-struct airtime_info {
-	u64 rx_airtime;
-	u64 tx_airtime;
-	s64 deficit;
 };
 
 struct sta_info;
@@ -177,7 +169,7 @@ struct tid_ampdu_tx {
 	u8 dialog_token;
 	u8 stop_initiator;
 	bool tx_stop;
-	u16 buf_size;
+	u8 buf_size;
 
 	u16 failed_bar_ssn;
 	bool bar_pending;
@@ -350,7 +342,6 @@ struct ieee80211_fast_rx {
 
 /* we use only values in the range 0-100, so pick a large precision */
 DECLARE_EWMA(mesh_fail_avg, 20, 8)
-DECLARE_EWMA(mesh_tx_rate_avg, 8, 16)
 
 /**
  * struct mesh_sta - mesh STA information
@@ -372,9 +363,7 @@ DECLARE_EWMA(mesh_tx_rate_avg, 8, 16)
  * @nonpeer_pm: STA power save mode towards non-peer neighbors
  * @processed_beacon: set to true after peer rates and capabilities are
  *	processed
- * @connected_to_gate: true if mesh STA has a path to a mesh gate
  * @fail_avg: moving percentage of failed MSDUs
- * @tx_rate_avg: moving average of tx bitrate
  */
 struct mesh_sta {
 	struct timer_list plink_timer;
@@ -391,7 +380,6 @@ struct mesh_sta {
 	u8 plink_retries;
 
 	bool processed_beacon;
-	bool connected_to_gate;
 
 	enum nl80211_plink_state plink_state;
 	u32 plink_timeout;
@@ -403,8 +391,6 @@ struct mesh_sta {
 
 	/* moving percentage of failed MSDUs */
 	struct ewma_mesh_fail_avg fail_avg;
-	/* moving average of tx bitrate */
-	struct ewma_mesh_tx_rate_avg tx_rate_avg;
 };
 
 DECLARE_EWMA(signal, 10, 8)
@@ -418,7 +404,7 @@ struct ieee80211_sta_rx_stats {
 	int last_signal;
 	u8 chains;
 	s8 chain_signal_last[IEEE80211_MAX_CHAINS];
-	u32 last_rate;
+	u16 last_rate;
 	struct u64_stats_sync syncp;
 	u64 bytes;
 	u64 msdu[IEEE80211_NUM_TIDS + 1];
@@ -466,14 +452,10 @@ struct ieee80211_sta_rx_stats {
  *	the station when it leaves powersave or polls for frames
  * @driver_buffered_tids: bitmap of TIDs the driver has data buffered on
  * @txq_buffered_tids: bitmap of TIDs that mac80211 has txq data buffered on
- * @assoc_at: clock boottime (in ns) of last association
  * @last_connected: time (in seconds) when a station got connected
  * @last_seq_ctrl: last received seq/frag number from this STA (per TID
  *	plus one for non-QoS frames)
  * @tid_seq: per-TID sequence numbers for sending to this STA
- * @airtime: per-AC struct airtime_info describing airtime statistics for this
- *	station
- * @airtime_weight: station weight for airtime fairness calculation purposes
  * @ampdu_mlme: A-MPDU state machine state
  * @mesh: mesh STA information
  * @debugfs_dir: debug filesystem directory dentry
@@ -495,28 +477,10 @@ struct ieee80211_sta_rx_stats {
  * @tdls_chandef: a TDLS peer can have a wider chandef that is compatible to
  *	the BSS one.
  * @tx_stats: TX statistics
- * @tx_stats.packets: # of packets transmitted
- * @tx_stats.bytes: # of bytes in all packets transmitted
- * @tx_stats.last_rate: last TX rate
- * @tx_stats.msdu: # of transmitted MSDUs per TID
  * @rx_stats: RX statistics
- * @rx_stats_avg: averaged RX statistics
- * @rx_stats_avg.signal: averaged signal
- * @rx_stats_avg.chain_signal: averaged per-chain signal
  * @pcpu_rx_stats: per-CPU RX statistics, assigned only if the driver needs
  *	this (by advertising the USES_RSS hw flag)
  * @status_stats: TX status statistics
- * @status_stats.filtered: # of filtered frames
- * @status_stats.retry_failed: # of frames that failed after retry
- * @status_stats.retry_count: # of retries attempted
- * @status_stats.lost_packets: # of lost packets
- * @status_stats.last_tdls_pkt_time: timestamp of last TDLS packet
- * @status_stats.msdu_retries: # of MSDU retries
- * @status_stats.msdu_failed: # of failed MSDUs
- * @status_stats.last_ack: last ack timestamp (jiffies)
- * @status_stats.last_ack_signal: last ACK signal
- * @status_stats.ack_signal_filled: last ACK signal validity
- * @status_stats.avg_ack_signal: average ACK signal
  */
 struct sta_info {
 	/* General information, mostly static */
@@ -563,7 +527,6 @@ struct sta_info {
 	unsigned long driver_buffered_tids;
 	unsigned long txq_buffered_tids;
 
-	u64 assoc_at;
 	long last_connected;
 
 	/* Updated from RX path only, no locking requirements */
@@ -585,9 +548,6 @@ struct sta_info {
 		u64 msdu_retries[IEEE80211_NUM_TIDS + 1];
 		u64 msdu_failed[IEEE80211_NUM_TIDS + 1];
 		unsigned long last_ack;
-		s8 last_ack_signal;
-		bool ack_signal_filled;
-		struct ewma_avg_signal avg_ack_signal;
 	} status_stats;
 
 	/* Updated from TX path only, no locking requirements */
@@ -598,9 +558,6 @@ struct sta_info {
 		u64 msdu[IEEE80211_NUM_TIDS + 1];
 	} tx_stats;
 	u16 tid_seq[IEEE80211_QOS_CTL_TID_MASK + 1];
-
-	struct airtime_info airtime[IEEE80211_NUM_ACS];
-	u16 airtime_weight;
 
 	/*
 	 * Aggregation information, locked with lock.
@@ -783,8 +740,7 @@ static inline int sta_info_flush(struct ieee80211_sub_if_data *sdata)
 void sta_set_rate_info_tx(struct sta_info *sta,
 			  const struct ieee80211_tx_rate *rate,
 			  struct rate_info *rinfo);
-void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
-		   bool tidstats);
+void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo);
 
 u32 sta_get_expected_throughput(struct sta_info *sta);
 
@@ -803,7 +759,6 @@ enum sta_stats_type {
 	STA_STATS_RATE_TYPE_LEGACY,
 	STA_STATS_RATE_TYPE_HT,
 	STA_STATS_RATE_TYPE_VHT,
-	STA_STATS_RATE_TYPE_HE,
 };
 
 #define STA_STATS_FIELD_HT_MCS		GENMASK( 7,  0)
@@ -811,14 +766,9 @@ enum sta_stats_type {
 #define STA_STATS_FIELD_LEGACY_BAND	GENMASK( 7,  4)
 #define STA_STATS_FIELD_VHT_MCS		GENMASK( 3,  0)
 #define STA_STATS_FIELD_VHT_NSS		GENMASK( 7,  4)
-#define STA_STATS_FIELD_HE_MCS		GENMASK( 3,  0)
-#define STA_STATS_FIELD_HE_NSS		GENMASK( 7,  4)
 #define STA_STATS_FIELD_BW		GENMASK(11,  8)
 #define STA_STATS_FIELD_SGI		GENMASK(12, 12)
 #define STA_STATS_FIELD_TYPE		GENMASK(15, 13)
-#define STA_STATS_FIELD_HE_RU		GENMASK(18, 16)
-#define STA_STATS_FIELD_HE_GI		GENMASK(20, 19)
-#define STA_STATS_FIELD_HE_DCM		GENMASK(21, 21)
 
 #define STA_STATS_FIELD(_n, _v)		FIELD_PREP(STA_STATS_FIELD_ ## _n, _v)
 #define STA_STATS_GET(_n, _v)		FIELD_GET(STA_STATS_FIELD_ ## _n, _v)
@@ -827,7 +777,7 @@ enum sta_stats_type {
 
 static inline u32 sta_stats_encode_rate(struct ieee80211_rx_status *s)
 {
-	u32 r;
+	u16 r;
 
 	r = STA_STATS_FIELD(BW, s->bw);
 
@@ -848,14 +798,6 @@ static inline u32 sta_stats_encode_rate(struct ieee80211_rx_status *s)
 		r |= STA_STATS_FIELD(TYPE, STA_STATS_RATE_TYPE_LEGACY);
 		r |= STA_STATS_FIELD(LEGACY_BAND, s->band);
 		r |= STA_STATS_FIELD(LEGACY_IDX, s->rate_idx);
-		break;
-	case RX_ENC_HE:
-		r |= STA_STATS_FIELD(TYPE, STA_STATS_RATE_TYPE_HE);
-		r |= STA_STATS_FIELD(HE_NSS, s->nss);
-		r |= STA_STATS_FIELD(HE_MCS, s->rate_idx);
-		r |= STA_STATS_FIELD(HE_GI, s->he_gi);
-		r |= STA_STATS_FIELD(HE_RU, s->he_ru);
-		r |= STA_STATS_FIELD(HE_DCM, s->he_dcm);
 		break;
 	default:
 		WARN_ON(1);

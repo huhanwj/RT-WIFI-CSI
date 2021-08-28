@@ -1,5 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* Linux driver for devices based on the DiBcom DiB0700 USB bridge
+ *
+ *	This program is free software; you can redistribute it and/or modify it
+ *	under the terms of the GNU General Public License as published by the Free
+ *	Software Foundation, version 2.
  *
  *  Copyright (C) 2005-9 DiBcom, SA et al
  */
@@ -20,13 +23,10 @@
 #include "dib0090.h"
 #include "lgdt3305.h"
 #include "mxl5007t.h"
-#include "mn88472.h"
-#include "tda18250.h"
-
 
 static int force_lna_activation;
 module_param(force_lna_activation, int, 0644);
-MODULE_PARM_DESC(force_lna_activation, "force the activation of Low-Noise-Amplifier(s) (LNA), if applicable for the device (default: 0=automatic/off).");
+MODULE_PARM_DESC(force_lna_activation, "force the activation of Low-Noise-Amplifyer(s) (LNA), if applicable for the device (default: 0=automatic/off).");
 
 struct dib0700_adapter_state {
 	int (*set_param_save) (struct dvb_frontend *);
@@ -430,7 +430,6 @@ static int stk7700ph_xc3028_callback(void *ptr, int component,
 		state->dib7000p_ops.set_gpio(adap->fe_adap[0].fe, 8, 0, 1);
 		break;
 	case XC2028_RESET_CLK:
-	case XC2028_I2C_FLUSH:
 		break;
 	default:
 		err("%s: unknown command %d, arg %d\n", __func__,
@@ -1742,7 +1741,6 @@ static int dib809x_tuner_attach(struct dvb_usb_adapter *adap)
 		if (dvb_attach(dib0090_register, adap->fe_adap[0].fe, tun_i2c, &dib809x_dib0090_config) == NULL)
 			return -ENODEV;
 	} else {
-		/* FIXME: check if it is fe_adap[1] */
 		if (dvb_attach(dib0090_register, adap->fe_adap[0].fe, tun_i2c, &dib809x_dib0090_config) == NULL)
 			return -ENODEV;
 	}
@@ -2439,13 +2437,9 @@ static int dib9090_tuner_attach(struct dvb_usb_adapter *adap)
 		8, 0x0486,
 	};
 
-	if (!IS_ENABLED(CONFIG_DVB_DIB9000))
-		return -ENODEV;
 	if (dvb_attach(dib0090_fw_register, adap->fe_adap[0].fe, i2c, &dib9090_dib0090_config) == NULL)
 		return -ENODEV;
 	i2c = dib9000_get_i2c_master(adap->fe_adap[0].fe, DIBX000_I2C_INTERFACE_GPIO_1_2, 0);
-	if (!i2c)
-		return -ENODEV;
 	if (dib01x0_pmu_update(i2c, data_dib190, 10) != 0)
 		return -ENODEV;
 	dib0700_set_i2c_speed(adap->dev, 1500);
@@ -2521,14 +2515,10 @@ static int nim9090md_tuner_attach(struct dvb_usb_adapter *adap)
 		0, 0x00ef,
 		8, 0x0406,
 	};
-	if (!IS_ENABLED(CONFIG_DVB_DIB9000))
-		return -ENODEV;
 	i2c = dib9000_get_tuner_interface(adap->fe_adap[0].fe);
 	if (dvb_attach(dib0090_fw_register, adap->fe_adap[0].fe, i2c, &nim9090md_dib0090_config[0]) == NULL)
 		return -ENODEV;
 	i2c = dib9000_get_i2c_master(adap->fe_adap[0].fe, DIBX000_I2C_INTERFACE_GPIO_1_2, 0);
-	if (!i2c)
-		return -ENODEV;
 	if (dib01x0_pmu_update(i2c, data_dib190, 10) < 0)
 		return -ENODEV;
 
@@ -3418,7 +3408,7 @@ static int novatd_frontend_attach(struct dvb_usb_adapter *adap)
 static struct s5h1411_config pinnacle_801e_config = {
 	.output_mode   = S5H1411_PARALLEL_OUTPUT,
 	.gpio          = S5H1411_GPIO_OFF,
-	.mpeg_timing   = S5H1411_MPEGTIMING_NONCONTINUOUS_NONINVERTING_CLOCK,
+	.mpeg_timing   = S5H1411_MPEGTIMING_NONCONTINOUS_NONINVERTING_CLOCK,
 	.qam_if        = S5H1411_IF_44000,
 	.vsb_if        = S5H1411_IF_44000,
 	.inversion     = S5H1411_INVERSION_OFF,
@@ -3735,90 +3725,6 @@ static int mxl5007t_tuner_attach(struct dvb_usb_adapter *adap)
 			  &hcw_mxl5007t_config) == NULL ? -ENODEV : 0;
 }
 
-static int xbox_one_attach(struct dvb_usb_adapter *adap)
-{
-	struct dib0700_state *st = adap->dev->priv;
-	struct i2c_client *client_demod, *client_tuner;
-	struct dvb_usb_device *d = adap->dev;
-	struct mn88472_config mn88472_config = { };
-	struct tda18250_config tda18250_config;
-	struct i2c_board_info info;
-
-	st->fw_use_new_i2c_api = 1;
-	st->disable_streaming_master_mode = 1;
-
-	/* fe power enable */
-	dib0700_set_gpio(adap->dev, GPIO6, GPIO_OUT, 0);
-	msleep(30);
-	dib0700_set_gpio(adap->dev, GPIO6, GPIO_OUT, 1);
-	msleep(30);
-
-	/* demod reset */
-	dib0700_set_gpio(adap->dev, GPIO10, GPIO_OUT, 1);
-	msleep(30);
-	dib0700_set_gpio(adap->dev, GPIO10, GPIO_OUT, 0);
-	msleep(30);
-	dib0700_set_gpio(adap->dev, GPIO10, GPIO_OUT, 1);
-	msleep(30);
-
-	/* attach demod */
-	mn88472_config.fe = &adap->fe_adap[0].fe;
-	mn88472_config.i2c_wr_max = 22;
-	mn88472_config.xtal = 20500000;
-	mn88472_config.ts_mode = PARALLEL_TS_MODE;
-	mn88472_config.ts_clock = FIXED_TS_CLOCK;
-	memset(&info, 0, sizeof(struct i2c_board_info));
-	strscpy(info.type, "mn88472", I2C_NAME_SIZE);
-	info.addr = 0x18;
-	info.platform_data = &mn88472_config;
-	request_module(info.type);
-	client_demod = i2c_new_device(&d->i2c_adap, &info);
-	if (client_demod == NULL || client_demod->dev.driver == NULL)
-		goto fail_demod_device;
-	if (!try_module_get(client_demod->dev.driver->owner))
-		goto fail_demod_module;
-
-	st->i2c_client_demod = client_demod;
-
-	adap->fe_adap[0].fe = mn88472_config.get_dvb_frontend(client_demod);
-
-	/* attach tuner */
-	memset(&tda18250_config, 0, sizeof(tda18250_config));
-	tda18250_config.if_dvbt_6 = 3950;
-	tda18250_config.if_dvbt_7 = 4450;
-	tda18250_config.if_dvbt_8 = 4950;
-	tda18250_config.if_dvbc_6 = 4950;
-	tda18250_config.if_dvbc_8 = 4950;
-	tda18250_config.if_atsc = 4079;
-	tda18250_config.loopthrough = true;
-	tda18250_config.xtal_freq = TDA18250_XTAL_FREQ_27MHZ;
-	tda18250_config.fe = adap->fe_adap[0].fe;
-
-	memset(&info, 0, sizeof(struct i2c_board_info));
-	strscpy(info.type, "tda18250", I2C_NAME_SIZE);
-	info.addr = 0x60;
-	info.platform_data = &tda18250_config;
-
-	request_module(info.type);
-	client_tuner = i2c_new_device(&adap->dev->i2c_adap, &info);
-	if (client_tuner == NULL || client_tuner->dev.driver == NULL)
-		goto fail_tuner_device;
-	if (!try_module_get(client_tuner->dev.driver->owner))
-		goto fail_tuner_module;
-
-	st->i2c_client_tuner = client_tuner;
-	return 0;
-
-fail_tuner_module:
-	i2c_unregister_device(client_tuner);
-fail_tuner_device:
-	module_put(client_demod->dev.driver->owner);
-fail_demod_module:
-	i2c_unregister_device(client_demod);
-fail_demod_device:
-	return -ENODEV;
-}
-
 
 /* DVB-USB and USB stuff follows */
 struct usb_device_id dib0700_usb_id_table[] = {
@@ -3910,8 +3816,7 @@ struct usb_device_id dib0700_usb_id_table[] = {
 	{ USB_DEVICE(USB_VID_PCTV,      USB_PID_PCTV_2002E_SE) },
 	{ USB_DEVICE(USB_VID_PCTV,      USB_PID_DIBCOM_STK8096PVR) },
 	{ USB_DEVICE(USB_VID_DIBCOM,    USB_PID_DIBCOM_STK8096PVR) },
-/* 85 */{ USB_DEVICE(USB_VID_HAMA,	USB_PID_HAMA_DVBT_HYBRID) },
-	{ USB_DEVICE(USB_VID_MICROSOFT,	USB_PID_XBOX_ONE_TUNER) },
+	{ USB_DEVICE(USB_VID_HAMA,	USB_PID_HAMA_DVBT_HYBRID) },
 	{ 0 }		/* Terminating entry */
 };
 MODULE_DEVICE_TABLE(usb, dib0700_usb_id_table);
@@ -5134,25 +5039,6 @@ struct dvb_usb_device_properties dib0700_devices[] = {
 				RC_PROTO_BIT_RC6_MCE |
 				RC_PROTO_BIT_NEC,
 			.change_protocol  = dib0700_change_protocol,
-		},
-	}, { DIB0700_DEFAULT_DEVICE_PROPERTIES,
-		.num_adapters = 1,
-		.adapter = {
-			{
-				DIB0700_NUM_FRONTENDS(1),
-				.fe = {{
-					.frontend_attach = xbox_one_attach,
-
-					DIB0700_DEFAULT_STREAMING_CONFIG(0x82),
-				} },
-			},
-		},
-		.num_device_descs = 1,
-		.devices = {
-			{ "Microsoft Xbox One Digital TV Tuner",
-				{ &dib0700_usb_id_table[86], NULL },
-				{ NULL },
-			},
 		},
 	},
 };

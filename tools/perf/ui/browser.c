@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
-#include "../util/string2.h"
-#include "../util/config.h"
+#include "../util.h"
+#include "../string2.h"
+#include "../config.h"
+#include "../../perf.h"
 #include "libslang.h"
 #include "ui.h"
 #include "util.h"
@@ -13,9 +15,8 @@
 #include "browser.h"
 #include "helpline.h"
 #include "keysyms.h"
-#include "../util/color.h"
-#include <linux/ctype.h>
-#include <linux/zalloc.h>
+#include "../color.h"
+#include "sane_ctype.h"
 
 static int ui_browser__percent_color(struct ui_browser *browser,
 				     double percent, bool current)
@@ -44,14 +45,9 @@ void ui_browser__set_percent_color(struct ui_browser *browser,
 	 ui_browser__set_color(browser, color);
 }
 
-void ui_browser__gotorc_title(struct ui_browser *browser, int y, int x)
-{
-	SLsmg_gotorc(browser->y + y, browser->x + x);
-}
-
 void ui_browser__gotorc(struct ui_browser *browser, int y, int x)
 {
-	SLsmg_gotorc(browser->y + y + browser->extra_title_lines, browser->x + x);
+	SLsmg_gotorc(browser->y + y, browser->x + x);
 }
 
 void ui_browser__write_nstring(struct ui_browser *browser __maybe_unused, const char *msg,
@@ -60,17 +56,12 @@ void ui_browser__write_nstring(struct ui_browser *browser __maybe_unused, const 
 	slsmg_write_nstring(msg, width);
 }
 
-void ui_browser__vprintf(struct ui_browser *browser __maybe_unused, const char *fmt, va_list args)
-{
-	slsmg_vprintf(fmt, args);
-}
-
 void ui_browser__printf(struct ui_browser *browser __maybe_unused, const char *fmt, ...)
 {
 	va_list args;
 
 	va_start(args, fmt);
-	ui_browser__vprintf(browser, fmt, args);
+	slsmg_vprintf(fmt, args);
 	va_end(args);
 }
 
@@ -195,7 +186,6 @@ void ui_browser__refresh_dimensions(struct ui_browser *browser)
 {
 	browser->width = SLtt_Screen_Cols - 1;
 	browser->height = browser->rows = SLtt_Screen_Rows - 2;
-	browser->rows -= browser->extra_title_lines;
 	browser->y = 1;
 	browser->x = 0;
 }
@@ -342,11 +332,9 @@ static int __ui_browser__refresh(struct ui_browser *browser)
 	else
 		width += 1;
 
-	SLsmg_fill_region(browser->y + row + browser->extra_title_lines, browser->x,
-			  browser->rows - row, width, ' ');
+	SLsmg_fill_region(browser->y + row, browser->x,
+			  browser->height - row, width, ' ');
 
-	if (browser->nr_entries == 0 && browser->no_samples_msg)
-		__ui__info_window(NULL, browser->no_samples_msg, NULL);
 	return 0;
 }
 
@@ -595,7 +583,7 @@ static int ui_browser__color_config(const char *var, const char *value,
 			break;
 
 		*bg = '\0';
-		bg = skip_spaces(bg + 1);
+		bg = ltrim(++bg);
 		ui_browser__colorsets[i].bg = bg;
 		ui_browser__colorsets[i].fg = fg;
 		return 0;
@@ -612,16 +600,14 @@ void ui_browser__argv_seek(struct ui_browser *browser, off_t offset, int whence)
 		browser->top = browser->entries;
 		break;
 	case SEEK_CUR:
-		browser->top = (char **)browser->top + offset;
+		browser->top = browser->top + browser->top_idx + offset;
 		break;
 	case SEEK_END:
-		browser->top = (char **)browser->entries + browser->nr_entries - 1 + offset;
+		browser->top = browser->top + browser->nr_entries - 1 + offset;
 		break;
 	default:
 		return;
 	}
-	assert((char **)browser->top < (char **)browser->entries + browser->nr_entries);
-	assert((char **)browser->top >= (char **)browser->entries);
 }
 
 unsigned int ui_browser__argv_refresh(struct ui_browser *browser)
@@ -633,9 +619,7 @@ unsigned int ui_browser__argv_refresh(struct ui_browser *browser)
 		browser->top = browser->entries;
 
 	pos = (char **)browser->top;
-	while (idx < browser->nr_entries &&
-	       row < (unsigned)SLtt_Screen_Rows - 1) {
-		assert(pos < (char **)browser->entries + browser->nr_entries);
+	while (idx < browser->nr_entries) {
 		if (!browser->filter || !browser->filter(browser, *pos)) {
 			ui_browser__gotorc(browser, row, 0);
 			browser->write(browser, pos, row);
@@ -795,4 +779,6 @@ void ui_browser__init(void)
 		struct ui_browser_colorset *c = &ui_browser__colorsets[i++];
 		sltt_set_color(c->colorset, c->name, c->fg, c->bg);
 	}
+
+	annotate_browser__init();
 }

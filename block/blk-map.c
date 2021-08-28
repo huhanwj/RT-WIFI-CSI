@@ -18,19 +18,13 @@
 int blk_rq_append_bio(struct request *rq, struct bio **bio)
 {
 	struct bio *orig_bio = *bio;
-	struct bvec_iter iter;
-	struct bio_vec bv;
-	unsigned int nr_segs = 0;
 
 	blk_queue_bounce(rq->q, bio);
 
-	bio_for_each_bvec(bv, *bio, iter)
-		nr_segs++;
-
 	if (!rq->bio) {
-		blk_rq_bio_prep(rq, *bio, nr_segs);
+		blk_rq_bio_prep(rq->q, rq, *bio);
 	} else {
-		if (!ll_back_merge_fn(rq, *bio, nr_segs)) {
+		if (!ll_back_merge_fn(rq->q, rq, *bio)) {
 			if (orig_bio != *bio) {
 				bio_put(*bio);
 				*bio = orig_bio;
@@ -125,7 +119,7 @@ int blk_rq_map_user_iov(struct request_queue *q, struct request *rq,
 	unsigned long align = q->dma_pad_mask | queue_dma_alignment(q);
 	struct bio *bio = NULL;
 	struct iov_iter i;
-	int ret = -EINVAL;
+	int ret;
 
 	if (!iter_is_iovec(iter))
 		goto fail;
@@ -154,7 +148,7 @@ unmap_rq:
 	__blk_rq_unmap_user(bio);
 fail:
 	rq->bio = NULL;
-	return ret;
+	return -EINVAL;
 }
 EXPORT_SYMBOL(blk_rq_map_user_iov);
 

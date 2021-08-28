@@ -1,8 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) STMicroelectronics SA 2015
  * Authors: Yannick Fertre <yannick.fertre@st.com>
  *          Hugues Fruchet <hugues.fruchet@st.com>
+ * License terms:  GNU General Public License (GPL), version 2
  */
 
 #include "hva.h"
@@ -626,7 +626,7 @@ static int hva_h264_prepare_task(struct hva_ctx *pctx,
 	td->frame_width = frame_width;
 	td->frame_height = frame_height;
 
-	/* set frame alignment */
+	/* set frame alignement */
 	td->window_width =  frame_width;
 	td->window_height = frame_height;
 	td->window_horizontal_offset = 0;

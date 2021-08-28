@@ -1,9 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *	Cyrix MediaGX and NatSemi Geode Suspend Modulation
  *	(C) 2002 Zwane Mwaikambo <zwane@commfireservices.com>
  *	(C) 2002 Hiroshi Miura   <miura@da-cha.org>
  *	All Rights Reserved
+ *
+ *	This program is free software; you can redistribute it and/or
+ *      modify it under the terms of the GNU General Public License
+ *      version 2 as published by the Free Software Foundation
  *
  *      The author(s) of this software shall not be held liable for damages
  *      of any nature resulting due to the use of this software. This
@@ -44,6 +47,7 @@
  *
  *      off_duration  =  (freq * DURATION) / stock_freq
  *      on_duration = DURATION - off_duration
+ *
  *
  *---------------------------------------------------------------------------
  *

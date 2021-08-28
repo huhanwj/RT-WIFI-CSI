@@ -14,6 +14,7 @@
 #include <asm/current.h>
 #include <linux/list.h>
 #include <linux/spinlock_types.h>
+#include <linux/linkage.h>
 #include <linux/lockdep.h>
 #include <linux/atomic.h>
 #include <asm/processor.h>
@@ -64,6 +65,11 @@ struct mutex {
 	struct lockdep_map	dep_map;
 #endif
 };
+
+static inline struct task_struct *__mutex_owner(struct mutex *lock)
+{
+	return (struct task_struct *)(atomic_long_read(&lock->owner) & ~0x07);
+}
 
 /*
  * This is the control structure for tasks blocked on mutex,
@@ -132,13 +138,19 @@ extern void __mutex_init(struct mutex *lock, const char *name,
  * mutex_is_locked - is the mutex locked
  * @lock: the mutex to be queried
  *
- * Returns true if the mutex is locked, false if unlocked.
+ * Returns 1 if the mutex is locked, 0 if unlocked.
  */
-extern bool mutex_is_locked(struct mutex *lock);
+static inline int mutex_is_locked(struct mutex *lock)
+{
+	/*
+	 * XXX think about spin_is_locked
+	 */
+	return __mutex_owner(lock) != NULL;
+}
 
 /*
  * See kernel/locking/mutex.c for detailed documentation of these APIs.
- * Also see Documentation/locking/mutex-design.rst.
+ * Also see Documentation/locking/mutex-design.txt.
  */
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 extern void mutex_lock_nested(struct mutex *lock, unsigned int subclass);
@@ -207,7 +219,13 @@ enum mutex_trylock_recursive_enum {
  *  - MUTEX_TRYLOCK_SUCCESS   - lock acquired,
  *  - MUTEX_TRYLOCK_RECURSIVE - we already owned the lock.
  */
-extern /* __deprecated */ __must_check enum mutex_trylock_recursive_enum
-mutex_trylock_recursive(struct mutex *lock);
+static inline /* __deprecated */ __must_check enum mutex_trylock_recursive_enum
+mutex_trylock_recursive(struct mutex *lock)
+{
+	if (unlikely(__mutex_owner(lock) == current))
+		return MUTEX_TRYLOCK_RECURSIVE;
+
+	return mutex_trylock(lock);
+}
 
 #endif /* __LINUX_MUTEX_H */

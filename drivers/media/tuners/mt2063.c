@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Driver for mt2063 Micronas tuner
  *
@@ -8,6 +7,16 @@
  *		Henry Wang <Henry.wang@AzureWave.com>
  * Made publicly available by Terratec, at:
  *	http://linux.terratec.de/files/TERRATEC_H7/20110323_TERRATEC_H7_Linux.tar.gz
+ * The original driver's license is GPL, as declared with MODULE_LICENSE()
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation under version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/init.h>
@@ -1159,7 +1168,7 @@ static u32 mt2063_set_dnc_output_enable(struct mt2063_state *state,
 
 /*
  * MT2063_SetReceiverMode() - Set the MT2063 receiver mode, according with
- *			      the selected enum mt2063_delivery_sys type.
+ * 			      the selected enum mt2063_delivery_sys type.
  *
  *  (DNC1GC & DNC2GC are the values, which are used, when the specific
  *   DNC Output is selected, the other is always off)
@@ -1535,7 +1544,7 @@ static u32 MT2063_Tune(struct mt2063_state *state, u32 f_in)
 	 * Save original LO1 and LO2 register values
 	 */
 	ofLO1 = state->AS_Data.f_LO1;
-	ofLO2 = state->AS_Data.f_LO2;
+	ofLO2 = state->AS_Data.f_LO2; 
 
 	/*
 	 * Find and set RF Band setting
@@ -2191,9 +2200,10 @@ static int mt2063_get_bandwidth(struct dvb_frontend *fe, u32 *bw)
 static const struct dvb_tuner_ops mt2063_ops = {
 	.info = {
 		 .name = "MT2063 Silicon Tuner",
-		 .frequency_min_hz  =  45 * MHz,
-		 .frequency_max_hz  = 865 * MHz,
-	 },
+		 .frequency_min = 45000000,
+		 .frequency_max = 865000000,
+		 .frequency_step = 0,
+		 },
 
 	.init = mt2063_init,
 	.sleep = MT2063_Sleep,

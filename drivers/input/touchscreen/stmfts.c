@@ -2,7 +2,7 @@
 // STMicroelectronics FTS Touchscreen device driver
 //
 // Copyright (c) 2017 Samsung Electronics Co., Ltd.
-// Copyright (c) 2017 Andi Shyti <andi@etezian.org>
+// Copyright (c) 2017 Andi Shyti <andi.shyti@samsung.com>
 
 #include <linux/delay.h>
 #include <linux/i2c.h>
@@ -106,29 +106,27 @@ struct stmfts_data {
 	bool running;
 };
 
-static int stmfts_brightness_set(struct led_classdev *led_cdev,
+static void stmfts_brightness_set(struct led_classdev *led_cdev,
 					enum led_brightness value)
 {
 	struct stmfts_data *sdata = container_of(led_cdev,
 					struct stmfts_data, led_cdev);
 	int err;
 
-	if (value != sdata->led_status && sdata->ledvdd) {
-		if (!value) {
-			regulator_disable(sdata->ledvdd);
-		} else {
-			err = regulator_enable(sdata->ledvdd);
-			if (err) {
-				dev_warn(&sdata->client->dev,
-					 "failed to disable ledvdd regulator: %d\n",
-					 err);
-				return err;
-			}
-		}
-		sdata->led_status = value;
+	if (value == sdata->led_status || !sdata->ledvdd)
+		return;
+
+	if (!value) {
+		regulator_disable(sdata->ledvdd);
+	} else {
+		err = regulator_enable(sdata->ledvdd);
+		if (err)
+			dev_warn(&sdata->client->dev,
+				 "failed to disable ledvdd regulator: %d\n",
+				 err);
 	}
 
-	return 0;
+	sdata->led_status = value;
 }
 
 static enum led_brightness stmfts_brightness_get(struct led_classdev *led_cdev)
@@ -610,7 +608,7 @@ static int stmfts_enable_led(struct stmfts_data *sdata)
 	sdata->led_cdev.name = STMFTS_DEV_NAME;
 	sdata->led_cdev.max_brightness = LED_ON;
 	sdata->led_cdev.brightness = LED_OFF;
-	sdata->led_cdev.brightness_set_blocking = stmfts_brightness_set;
+	sdata->led_cdev.brightness_set = stmfts_brightness_set;
 	sdata->led_cdev.brightness_get = stmfts_brightness_get;
 
 	err = devm_led_classdev_register(&sdata->client->dev, &sdata->led_cdev);
@@ -684,20 +682,15 @@ static int stmfts_probe(struct i2c_client *client,
 
 	input_set_drvdata(sdata->input, sdata);
 
-	/*
-	 * stmfts_power_on expects interrupt to be disabled, but
-	 * at this point the device is still off and I do not trust
-	 * the status of the irq line that can generate some spurious
-	 * interrupts. To be on the safe side it's better to not enable
-	 * the interrupts during their request.
-	 */
-	irq_set_status_flags(client->irq, IRQ_NOAUTOEN);
 	err = devm_request_threaded_irq(&client->dev, client->irq,
 					NULL, stmfts_irq_handler,
 					IRQF_ONESHOT,
 					"stmfts_irq", sdata);
 	if (err)
 		return err;
+
+	/* stmfts_power_on expects interrupt to be disabled */
+	disable_irq(client->irq);
 
 	dev_dbg(&client->dev, "initializing ST-Microelectronics FTS...\n");
 
@@ -732,7 +725,6 @@ static int stmfts_probe(struct i2c_client *client,
 		return err;
 
 	pm_runtime_enable(&client->dev);
-	device_enable_async_suspend(&client->dev);
 
 	return 0;
 }
@@ -808,7 +800,6 @@ static struct i2c_driver stmfts_driver = {
 		.name = STMFTS_DEV_NAME,
 		.of_match_table = of_match_ptr(stmfts_of_match),
 		.pm = &stmfts_pm_ops,
-		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
 	},
 	.probe = stmfts_probe,
 	.remove = stmfts_remove,

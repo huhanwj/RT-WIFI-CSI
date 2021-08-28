@@ -1,5 +1,9 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (C) 2013 Jozsef Kadlecsik <kadlec@netfilter.org> */
+/* Copyright (C) 2013 Jozsef Kadlecsik <kadlec@blackhole.kfki.hu>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
 
 #ifndef _IP_SET_HASH_GEN_H
 #define _IP_SET_HASH_GEN_H
@@ -7,11 +11,11 @@
 #include <linux/rcupdate.h>
 #include <linux/jhash.h>
 #include <linux/types.h>
-#include <linux/netfilter/ipset/ip_set.h>
+#include <linux/netfilter/ipset/ip_set_timeout.h>
 
 #define __ipset_dereference_protected(p, c)	rcu_dereference_protected(p, c)
 #define ipset_dereference_protected(p, set) \
-	__ipset_dereference_protected(p, lockdep_is_held(&(set)->lock))
+	__ipset_dereference_protected(p, spin_is_locked(&(set)->lock))
 
 #define rcu_dereference_bh_nfnl(p)	rcu_dereference_bh_check(p, 1)
 
@@ -63,7 +67,7 @@ tune_ahash_max(u8 curr, u32 multi)
 
 /* A hash bucket */
 struct hbucket {
-	struct rcu_head rcu;	/* for call_rcu */
+	struct rcu_head rcu;	/* for call_rcu_bh */
 	/* Which positions are used in the array */
 	DECLARE_BITMAP(used, AHASH_MAX_TUNED);
 	u8 size;		/* size of the array */
@@ -621,7 +625,7 @@ retry:
 					goto cleanup;
 				}
 				m->size = AHASH_INIT_SIZE;
-				extsize += ext_size(AHASH_INIT_SIZE, dsize);
+				extsize = ext_size(AHASH_INIT_SIZE, dsize);
 				RCU_INIT_POINTER(hbucket(t, key), m);
 			} else if (m->pos >= m->size) {
 				struct hbucket *ht;
@@ -660,7 +664,7 @@ retry:
 	spin_unlock_bh(&set->lock);
 
 	/* Give time to other readers of the set */
-	synchronize_rcu();
+	synchronize_rcu_bh();
 
 	pr_debug("set %s resized from %u (%p) to %u (%p)\n", set->name,
 		 orig->htable_bits, orig, t->htable_bits, t);
@@ -913,9 +917,12 @@ static inline int
 mtype_data_match(struct mtype_elem *data, const struct ip_set_ext *ext,
 		 struct ip_set_ext *mext, struct ip_set *set, u32 flags)
 {
-	if (!ip_set_match_extensions(set, ext, mext, flags, data))
-		return 0;
-	/* nomatch entries return -ENOTEMPTY */
+	if (SET_WITH_COUNTER(set))
+		ip_set_update_counter(ext_counter(data, set),
+				      ext, mext, flags);
+	if (SET_WITH_SKBINFO(set))
+		ip_set_get_skbinfo(ext_skbinfo(data, set),
+				   ext, mext, flags);
 	return mtype_do_data_match(data);
 }
 
@@ -934,9 +941,9 @@ mtype_test_cidrs(struct ip_set *set, struct mtype_elem *d,
 	struct mtype_elem *data;
 #if IPSET_NET_COUNT == 2
 	struct mtype_elem orig = *d;
-	int ret, i, j = 0, k;
+	int i, j = 0, k;
 #else
-	int ret, i, j = 0;
+	int i, j = 0;
 #endif
 	u32 key, multi = 0;
 
@@ -953,7 +960,7 @@ mtype_test_cidrs(struct ip_set *set, struct mtype_elem *d,
 		mtype_data_netmask(d, NCIDR_GET(h->nets[j].cidr[0]));
 #endif
 		key = HKEY(d, h->initval, t->htable_bits);
-		n = rcu_dereference_bh(hbucket(t, key));
+		n =  rcu_dereference_bh(hbucket(t, key));
 		if (!n)
 			continue;
 		for (i = 0; i < n->pos; i++) {
@@ -962,13 +969,18 @@ mtype_test_cidrs(struct ip_set *set, struct mtype_elem *d,
 			data = ahash_data(n, i, set->dsize);
 			if (!mtype_data_equal(data, d, &multi))
 				continue;
-			ret = mtype_data_match(data, ext, mext, set, flags);
-			if (ret != 0)
-				return ret;
+			if (SET_WITH_TIMEOUT(set)) {
+				if (!ip_set_timeout_expired(
+						ext_timeout(data, set)))
+					return mtype_data_match(data, ext,
+								mext, set,
+								flags);
 #ifdef IP_SET_HASH_WITH_MULTI
-			/* No match, reset multiple match flag */
-			multi = 0;
+				multi = 0;
 #endif
+			} else
+				return mtype_data_match(data, ext,
+							mext, set, flags);
 		}
 #if IPSET_NET_COUNT == 2
 		}
@@ -1015,11 +1027,12 @@ mtype_test(struct ip_set *set, void *value, const struct ip_set_ext *ext,
 		if (!test_bit(i, n->used))
 			continue;
 		data = ahash_data(n, i, set->dsize);
-		if (!mtype_data_equal(data, d, &multi))
-			continue;
-		ret = mtype_data_match(data, ext, mext, set, flags);
-		if (ret != 0)
+		if (mtype_data_equal(data, d, &multi) &&
+		    !(SET_WITH_TIMEOUT(set) &&
+		      ip_set_timeout_expired(ext_timeout(data, set)))) {
+			ret = mtype_data_match(data, ext, mext, set, flags);
 			goto out;
+		}
 	}
 out:
 	return ret;
@@ -1053,7 +1066,7 @@ mtype_head(struct ip_set *set, struct sk_buff *skb)
 	htable_bits = t->htable_bits;
 	rcu_read_unlock_bh();
 
-	nested = nla_nest_start(skb, IPSET_ATTR_DATA);
+	nested = ipset_nest_start(skb, IPSET_ATTR_DATA);
 	if (!nested)
 		goto nla_put_failure;
 	if (nla_put_net32(skb, IPSET_ATTR_HASHSIZE,
@@ -1075,7 +1088,7 @@ mtype_head(struct ip_set *set, struct sk_buff *skb)
 		goto nla_put_failure;
 	if (unlikely(ip_set_put_flags(skb, set)))
 		goto nla_put_failure;
-	nla_nest_end(skb, nested);
+	ipset_nest_end(skb, nested);
 
 	return 0;
 nla_put_failure:
@@ -1120,7 +1133,7 @@ mtype_list(const struct ip_set *set,
 	void *incomplete;
 	int i, ret = 0;
 
-	atd = nla_nest_start(skb, IPSET_ATTR_ADT);
+	atd = ipset_nest_start(skb, IPSET_ATTR_ADT);
 	if (!atd)
 		return -EMSGSIZE;
 
@@ -1130,7 +1143,6 @@ mtype_list(const struct ip_set *set,
 	rcu_read_lock();
 	for (; cb->args[IPSET_CB_ARG0] < jhash_size(t->htable_bits);
 	     cb->args[IPSET_CB_ARG0]++) {
-		cond_resched_rcu();
 		incomplete = skb_tail_pointer(skb);
 		n = rcu_dereference(hbucket(t, cb->args[IPSET_CB_ARG0]));
 		pr_debug("cb->arg bucket: %lu, t %p n %p\n",
@@ -1146,7 +1158,7 @@ mtype_list(const struct ip_set *set,
 				continue;
 			pr_debug("list hash %lu hbucket %p i %u, data %p\n",
 				 cb->args[IPSET_CB_ARG0], n, i, e);
-			nested = nla_nest_start(skb, IPSET_ATTR_DATA);
+			nested = ipset_nest_start(skb, IPSET_ATTR_DATA);
 			if (!nested) {
 				if (cb->args[IPSET_CB_ARG0] == first) {
 					nla_nest_cancel(skb, atd);
@@ -1159,10 +1171,10 @@ mtype_list(const struct ip_set *set,
 				goto nla_put_failure;
 			if (ip_set_put_extensions(skb, set, e, true))
 				goto nla_put_failure;
-			nla_nest_end(skb, nested);
+			ipset_nest_end(skb, nested);
 		}
 	}
-	nla_nest_end(skb, atd);
+	ipset_nest_end(skb, atd);
 	/* Set listing finished */
 	cb->args[IPSET_CB_ARG0] = 0;
 
@@ -1176,7 +1188,7 @@ nla_put_failure:
 		cb->args[IPSET_CB_ARG0] = 0;
 		ret = -EMSGSIZE;
 	} else {
-		nla_nest_end(skb, atd);
+		ipset_nest_end(skb, atd);
 	}
 out:
 	rcu_read_unlock();
@@ -1230,10 +1242,7 @@ IPSET_TOKEN(HTYPE, _create)(struct net *net, struct ip_set *set,
 	pr_debug("Create set %s with family %s\n",
 		 set->name, set->family == NFPROTO_IPV4 ? "inet" : "inet6");
 
-#ifdef IP_SET_PROTO_UNDEF
-	if (set->family != NFPROTO_UNSPEC)
-		return -IPSET_ERR_INVALID_FAMILY;
-#else
+#ifndef IP_SET_PROTO_UNDEF
 	if (!(set->family == NFPROTO_IPV4 || set->family == NFPROTO_IPV6))
 		return -IPSET_ERR_INVALID_FAMILY;
 #endif

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Debug helper to dump the current kernel pagetables of the system
  * so that we can see what the various memory ranges are set to.
@@ -7,6 +6,11 @@
  * (C) Copyright 2008 Intel Corporation
  *
  * Author: Arjan van de Ven <arjan@linux.intel.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; version 2
+ * of the License.
  */
 #include <linux/debugfs.h>
 #include <linux/fs.h>
@@ -17,7 +21,11 @@
 #include <asm/fixmap.h>
 #include <asm/memory.h>
 #include <asm/pgtable.h>
-#include <asm/ptdump.h>
+
+struct addr_marker {
+	unsigned long start_address;
+	const char *name;
+};
 
 static struct addr_marker address_markers[] = {
 	{ MODULES_VADDR,	"Modules" },
@@ -30,26 +38,12 @@ static struct addr_marker address_markers[] = {
 	{ -1,			NULL },
 };
 
-#define pt_dump_seq_printf(m, fmt, args...) \
-({                      \
-	if (m)					\
-		seq_printf(m, fmt, ##args);	\
-})
-
-#define pt_dump_seq_puts(m, fmt)    \
-({						\
-	if (m)					\
-		seq_printf(m, fmt);	\
-})
-
 struct pg_state {
 	struct seq_file *seq;
 	const struct addr_marker *marker;
 	unsigned long start_address;
 	unsigned level;
 	u64 current_prot;
-	bool check_wx;
-	unsigned long wx_pages;
 	const char *current_domain;
 };
 
@@ -58,8 +52,6 @@ struct prot_bits {
 	u64		val;
 	const char	*set;
 	const char	*clear;
-	bool		ro_bit;
-	bool		nx_bit;
 };
 
 static const struct prot_bits pte_bits[] = {
@@ -73,13 +65,11 @@ static const struct prot_bits pte_bits[] = {
 		.val	= L_PTE_RDONLY,
 		.set	= "ro",
 		.clear	= "RW",
-		.ro_bit	= true,
 	}, {
 		.mask	= L_PTE_XN,
 		.val	= L_PTE_XN,
 		.set	= "NX",
 		.clear	= "x ",
-		.nx_bit	= true,
 	}, {
 		.mask	= L_PTE_SHARED,
 		.val	= L_PTE_SHARED,
@@ -143,13 +133,11 @@ static const struct prot_bits section_bits[] = {
 		.val	= L_PMD_SECT_RDONLY | PMD_SECT_AP2,
 		.set	= "ro",
 		.clear	= "RW",
-		.ro_bit	= true,
 #elif __LINUX_ARM_ARCH__ >= 6
 	{
 		.mask	= PMD_SECT_APX | PMD_SECT_AP_READ | PMD_SECT_AP_WRITE,
 		.val	= PMD_SECT_APX | PMD_SECT_AP_WRITE,
 		.set	= "    ro",
-		.ro_bit	= true,
 	}, {
 		.mask	= PMD_SECT_APX | PMD_SECT_AP_READ | PMD_SECT_AP_WRITE,
 		.val	= PMD_SECT_AP_WRITE,
@@ -168,7 +156,6 @@ static const struct prot_bits section_bits[] = {
 		.mask   = PMD_SECT_AP_READ | PMD_SECT_AP_WRITE,
 		.val    = 0,
 		.set    = "    ro",
-		.ro_bit	= true,
 	}, {
 		.mask   = PMD_SECT_AP_READ | PMD_SECT_AP_WRITE,
 		.val    = PMD_SECT_AP_WRITE,
@@ -187,7 +174,6 @@ static const struct prot_bits section_bits[] = {
 		.val	= PMD_SECT_XN,
 		.set	= "NX",
 		.clear	= "x ",
-		.nx_bit	= true,
 	}, {
 		.mask	= PMD_SECT_S,
 		.val	= PMD_SECT_S,
@@ -200,8 +186,6 @@ struct pg_level {
 	const struct prot_bits *bits;
 	size_t num;
 	u64 mask;
-	const struct prot_bits *ro_bit;
-	const struct prot_bits *nx_bit;
 };
 
 static struct pg_level pg_level[] = {
@@ -230,25 +214,8 @@ static void dump_prot(struct pg_state *st, const struct prot_bits *bits, size_t 
 			s = bits->clear;
 
 		if (s)
-			pt_dump_seq_printf(st->seq, " %s", s);
+			seq_printf(st->seq, " %s", s);
 	}
-}
-
-static void note_prot_wx(struct pg_state *st, unsigned long addr)
-{
-	if (!st->check_wx)
-		return;
-	if ((st->current_prot & pg_level[st->level].ro_bit->mask) ==
-				pg_level[st->level].ro_bit->val)
-		return;
-	if ((st->current_prot & pg_level[st->level].nx_bit->mask) ==
-				pg_level[st->level].nx_bit->val)
-		return;
-
-	WARN_ONCE(1, "arm/mm: Found insecure W+X mapping at address %pS\n",
-			(void *)st->start_address);
-
-	st->wx_pages += (addr - st->start_address) / PAGE_SIZE;
 }
 
 static void note_page(struct pg_state *st, unsigned long addr,
@@ -261,7 +228,7 @@ static void note_page(struct pg_state *st, unsigned long addr,
 		st->level = level;
 		st->current_prot = prot;
 		st->current_domain = domain;
-		pt_dump_seq_printf(st->seq, "---[ %s ]---\n", st->marker->name);
+		seq_printf(st->seq, "---[ %s ]---\n", st->marker->name);
 	} else if (prot != st->current_prot || level != st->level ||
 		   domain != st->current_domain ||
 		   addr >= st->marker[1].start_address) {
@@ -269,8 +236,7 @@ static void note_page(struct pg_state *st, unsigned long addr,
 		unsigned long delta;
 
 		if (st->current_prot) {
-			note_prot_wx(st, addr);
-			pt_dump_seq_printf(st->seq, "0x%08lx-0x%08lx   ",
+			seq_printf(st->seq, "0x%08lx-0x%08lx   ",
 				   st->start_address, addr);
 
 			delta = (addr - st->start_address) >> 10;
@@ -278,19 +244,17 @@ static void note_page(struct pg_state *st, unsigned long addr,
 				delta >>= 10;
 				unit++;
 			}
-			pt_dump_seq_printf(st->seq, "%9lu%c", delta, *unit);
+			seq_printf(st->seq, "%9lu%c", delta, *unit);
 			if (st->current_domain)
-				pt_dump_seq_printf(st->seq, " %s",
-							st->current_domain);
+				seq_printf(st->seq, " %s", st->current_domain);
 			if (pg_level[st->level].bits)
 				dump_prot(st, pg_level[st->level].bits, pg_level[st->level].num);
-			pt_dump_seq_printf(st->seq, "\n");
+			seq_printf(st->seq, "\n");
 		}
 
 		if (addr >= st->marker[1].start_address) {
 			st->marker++;
-			pt_dump_seq_printf(st->seq, "---[ %s ]---\n",
-							st->marker->name);
+			seq_printf(st->seq, "---[ %s ]---\n", st->marker->name);
 		}
 		st->start_address = addr;
 		st->current_prot = prot;
@@ -371,82 +335,61 @@ static void walk_pud(struct pg_state *st, pgd_t *pgd, unsigned long start)
 	}
 }
 
-static void walk_pgd(struct pg_state *st, struct mm_struct *mm,
-			unsigned long start)
+static void walk_pgd(struct seq_file *m)
 {
-	pgd_t *pgd = pgd_offset(mm, 0UL);
-	unsigned i;
+	pgd_t *pgd = swapper_pg_dir;
+	struct pg_state st;
 	unsigned long addr;
+	unsigned i;
+
+	memset(&st, 0, sizeof(st));
+	st.seq = m;
+	st.marker = address_markers;
 
 	for (i = 0; i < PTRS_PER_PGD; i++, pgd++) {
-		addr = start + i * PGDIR_SIZE;
+		addr = i * PGDIR_SIZE;
 		if (!pgd_none(*pgd)) {
-			walk_pud(st, pgd, addr);
+			walk_pud(&st, pgd, addr);
 		} else {
-			note_page(st, addr, 1, pgd_val(*pgd), NULL);
+			note_page(&st, addr, 1, pgd_val(*pgd), NULL);
 		}
 	}
-}
 
-void ptdump_walk_pgd(struct seq_file *m, struct ptdump_info *info)
-{
-	struct pg_state st = {
-		.seq = m,
-		.marker = info->markers,
-		.check_wx = false,
-	};
-
-	walk_pgd(&st, info->mm, info->base_addr);
 	note_page(&st, 0, 0, 0, NULL);
 }
 
-static void ptdump_initialize(void)
+static int ptdump_show(struct seq_file *m, void *v)
 {
+	walk_pgd(m);
+	return 0;
+}
+
+static int ptdump_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, ptdump_show, NULL);
+}
+
+static const struct file_operations ptdump_fops = {
+	.open		= ptdump_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+static int ptdump_init(void)
+{
+	struct dentry *pe;
 	unsigned i, j;
 
 	for (i = 0; i < ARRAY_SIZE(pg_level); i++)
 		if (pg_level[i].bits)
-			for (j = 0; j < pg_level[i].num; j++) {
+			for (j = 0; j < pg_level[i].num; j++)
 				pg_level[i].mask |= pg_level[i].bits[j].mask;
-				if (pg_level[i].bits[j].ro_bit)
-					pg_level[i].ro_bit = &pg_level[i].bits[j];
-				if (pg_level[i].bits[j].nx_bit)
-					pg_level[i].nx_bit = &pg_level[i].bits[j];
-			}
 
 	address_markers[2].start_address = VMALLOC_START;
-}
 
-static struct ptdump_info kernel_ptdump_info = {
-	.mm = &init_mm,
-	.markers = address_markers,
-	.base_addr = 0,
-};
-
-void ptdump_check_wx(void)
-{
-	struct pg_state st = {
-		.seq = NULL,
-		.marker = (struct addr_marker[]) {
-			{ 0, NULL},
-			{ -1, NULL},
-		},
-		.check_wx = true,
-	};
-
-	walk_pgd(&st, &init_mm, 0);
-	note_page(&st, 0, 0, 0, NULL);
-	if (st.wx_pages)
-		pr_warn("Checked W+X mappings: FAILED, %lu W+X pages found\n",
-			st.wx_pages);
-	else
-		pr_info("Checked W+X mappings: passed, no W+X pages found\n");
-}
-
-static int ptdump_init(void)
-{
-	ptdump_initialize();
-	ptdump_debugfs_register(&kernel_ptdump_info, "kernel_page_tables");
-	return 0;
+	pe = debugfs_create_file("kernel_page_tables", 0400, NULL, NULL,
+				 &ptdump_fops);
+	return pe ? 0 : -ENOMEM;
 }
 __initcall(ptdump_init);

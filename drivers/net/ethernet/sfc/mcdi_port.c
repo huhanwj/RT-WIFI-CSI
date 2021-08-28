@@ -1,7 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /****************************************************************************
  * Driver for Solarflare network controllers and boards
  * Copyright 2009-2013 Solarflare Communications Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published
+ * by the Free Software Foundation, incorporated herein by reference.
  */
 
 /*
@@ -168,107 +171,88 @@ static int efx_mcdi_mdio_write(struct net_device *net_dev,
 	return 0;
 }
 
-static void mcdi_to_ethtool_linkset(u32 media, u32 cap, unsigned long *linkset)
+static u32 mcdi_to_ethtool_cap(u32 media, u32 cap)
 {
-	#define SET_BIT(name)	__set_bit(ETHTOOL_LINK_MODE_ ## name ## _BIT, \
-					  linkset)
+	u32 result = 0;
 
-	bitmap_zero(linkset, __ETHTOOL_LINK_MODE_MASK_NBITS);
 	switch (media) {
 	case MC_CMD_MEDIA_KX4:
-		SET_BIT(Backplane);
+		result |= SUPPORTED_Backplane;
 		if (cap & (1 << MC_CMD_PHY_CAP_1000FDX_LBN))
-			SET_BIT(1000baseKX_Full);
+			result |= SUPPORTED_1000baseKX_Full;
 		if (cap & (1 << MC_CMD_PHY_CAP_10000FDX_LBN))
-			SET_BIT(10000baseKX4_Full);
+			result |= SUPPORTED_10000baseKX4_Full;
 		if (cap & (1 << MC_CMD_PHY_CAP_40000FDX_LBN))
-			SET_BIT(40000baseKR4_Full);
+			result |= SUPPORTED_40000baseKR4_Full;
 		break;
 
 	case MC_CMD_MEDIA_XFP:
 	case MC_CMD_MEDIA_SFP_PLUS:
 	case MC_CMD_MEDIA_QSFP_PLUS:
-		SET_BIT(FIBRE);
+		result |= SUPPORTED_FIBRE;
 		if (cap & (1 << MC_CMD_PHY_CAP_1000FDX_LBN))
-			SET_BIT(1000baseT_Full);
+			result |= SUPPORTED_1000baseT_Full;
 		if (cap & (1 << MC_CMD_PHY_CAP_10000FDX_LBN))
-			SET_BIT(10000baseT_Full);
+			result |= SUPPORTED_10000baseT_Full;
 		if (cap & (1 << MC_CMD_PHY_CAP_40000FDX_LBN))
-			SET_BIT(40000baseCR4_Full);
-		if (cap & (1 << MC_CMD_PHY_CAP_100000FDX_LBN))
-			SET_BIT(100000baseCR4_Full);
-		if (cap & (1 << MC_CMD_PHY_CAP_25000FDX_LBN))
-			SET_BIT(25000baseCR_Full);
-		if (cap & (1 << MC_CMD_PHY_CAP_50000FDX_LBN))
-			SET_BIT(50000baseCR2_Full);
+			result |= SUPPORTED_40000baseCR4_Full;
 		break;
 
 	case MC_CMD_MEDIA_BASE_T:
-		SET_BIT(TP);
+		result |= SUPPORTED_TP;
 		if (cap & (1 << MC_CMD_PHY_CAP_10HDX_LBN))
-			SET_BIT(10baseT_Half);
+			result |= SUPPORTED_10baseT_Half;
 		if (cap & (1 << MC_CMD_PHY_CAP_10FDX_LBN))
-			SET_BIT(10baseT_Full);
+			result |= SUPPORTED_10baseT_Full;
 		if (cap & (1 << MC_CMD_PHY_CAP_100HDX_LBN))
-			SET_BIT(100baseT_Half);
+			result |= SUPPORTED_100baseT_Half;
 		if (cap & (1 << MC_CMD_PHY_CAP_100FDX_LBN))
-			SET_BIT(100baseT_Full);
+			result |= SUPPORTED_100baseT_Full;
 		if (cap & (1 << MC_CMD_PHY_CAP_1000HDX_LBN))
-			SET_BIT(1000baseT_Half);
+			result |= SUPPORTED_1000baseT_Half;
 		if (cap & (1 << MC_CMD_PHY_CAP_1000FDX_LBN))
-			SET_BIT(1000baseT_Full);
+			result |= SUPPORTED_1000baseT_Full;
 		if (cap & (1 << MC_CMD_PHY_CAP_10000FDX_LBN))
-			SET_BIT(10000baseT_Full);
+			result |= SUPPORTED_10000baseT_Full;
 		break;
 	}
 
 	if (cap & (1 << MC_CMD_PHY_CAP_PAUSE_LBN))
-		SET_BIT(Pause);
+		result |= SUPPORTED_Pause;
 	if (cap & (1 << MC_CMD_PHY_CAP_ASYM_LBN))
-		SET_BIT(Asym_Pause);
+		result |= SUPPORTED_Asym_Pause;
 	if (cap & (1 << MC_CMD_PHY_CAP_AN_LBN))
-		SET_BIT(Autoneg);
+		result |= SUPPORTED_Autoneg;
 
-	#undef SET_BIT
+	return result;
 }
 
-static u32 ethtool_linkset_to_mcdi_cap(const unsigned long *linkset)
+static u32 ethtool_to_mcdi_cap(u32 cap)
 {
 	u32 result = 0;
 
-	#define TEST_BIT(name)	test_bit(ETHTOOL_LINK_MODE_ ## name ## _BIT, \
-					 linkset)
-
-	if (TEST_BIT(10baseT_Half))
+	if (cap & SUPPORTED_10baseT_Half)
 		result |= (1 << MC_CMD_PHY_CAP_10HDX_LBN);
-	if (TEST_BIT(10baseT_Full))
+	if (cap & SUPPORTED_10baseT_Full)
 		result |= (1 << MC_CMD_PHY_CAP_10FDX_LBN);
-	if (TEST_BIT(100baseT_Half))
+	if (cap & SUPPORTED_100baseT_Half)
 		result |= (1 << MC_CMD_PHY_CAP_100HDX_LBN);
-	if (TEST_BIT(100baseT_Full))
+	if (cap & SUPPORTED_100baseT_Full)
 		result |= (1 << MC_CMD_PHY_CAP_100FDX_LBN);
-	if (TEST_BIT(1000baseT_Half))
+	if (cap & SUPPORTED_1000baseT_Half)
 		result |= (1 << MC_CMD_PHY_CAP_1000HDX_LBN);
-	if (TEST_BIT(1000baseT_Full) || TEST_BIT(1000baseKX_Full))
+	if (cap & (SUPPORTED_1000baseT_Full | SUPPORTED_1000baseKX_Full))
 		result |= (1 << MC_CMD_PHY_CAP_1000FDX_LBN);
-	if (TEST_BIT(10000baseT_Full) || TEST_BIT(10000baseKX4_Full))
+	if (cap & (SUPPORTED_10000baseT_Full | SUPPORTED_10000baseKX4_Full))
 		result |= (1 << MC_CMD_PHY_CAP_10000FDX_LBN);
-	if (TEST_BIT(40000baseCR4_Full) || TEST_BIT(40000baseKR4_Full))
+	if (cap & (SUPPORTED_40000baseCR4_Full | SUPPORTED_40000baseKR4_Full))
 		result |= (1 << MC_CMD_PHY_CAP_40000FDX_LBN);
-	if (TEST_BIT(100000baseCR4_Full))
-		result |= (1 << MC_CMD_PHY_CAP_100000FDX_LBN);
-	if (TEST_BIT(25000baseCR_Full))
-		result |= (1 << MC_CMD_PHY_CAP_25000FDX_LBN);
-	if (TEST_BIT(50000baseCR2_Full))
-		result |= (1 << MC_CMD_PHY_CAP_50000FDX_LBN);
-	if (TEST_BIT(Pause))
+	if (cap & SUPPORTED_Pause)
 		result |= (1 << MC_CMD_PHY_CAP_PAUSE_LBN);
-	if (TEST_BIT(Asym_Pause))
+	if (cap & SUPPORTED_Asym_Pause)
 		result |= (1 << MC_CMD_PHY_CAP_ASYM_LBN);
-	if (TEST_BIT(Autoneg))
+	if (cap & SUPPORTED_Autoneg)
 		result |= (1 << MC_CMD_PHY_CAP_AN_LBN);
-
-	#undef TEST_BIT
 
 	return result;
 }
@@ -301,7 +285,7 @@ static u32 efx_get_mcdi_phy_flags(struct efx_nic *efx)
 	return flags;
 }
 
-static u8 mcdi_to_ethtool_media(u32 media)
+static u32 mcdi_to_ethtool_media(u32 media)
 {
 	switch (media) {
 	case MC_CMD_MEDIA_XAUI:
@@ -339,7 +323,6 @@ static void efx_mcdi_phy_decode_link(struct efx_nic *efx,
 		break;
 	default:
 		WARN_ON(1);
-		/* Fall through */
 	case MC_CMD_FCNTL_OFF:
 		link_state->fc = 0;
 		break;
@@ -348,64 +331,6 @@ static void efx_mcdi_phy_decode_link(struct efx_nic *efx,
 	link_state->up = !!(flags & (1 << MC_CMD_GET_LINK_OUT_LINK_UP_LBN));
 	link_state->fd = !!(flags & (1 << MC_CMD_GET_LINK_OUT_FULL_DUPLEX_LBN));
 	link_state->speed = speed;
-}
-
-/* The semantics of the ethtool FEC mode bitmask are not well defined,
- * particularly the meaning of combinations of bits.  Which means we get to
- * define our own semantics, as follows:
- * OFF overrides any other bits, and means "disable all FEC" (with the
- * exception of 25G KR4/CR4, where it is not possible to reject it if AN
- * partner requests it).
- * AUTO on its own means use cable requirements and link partner autoneg with
- * fw-default preferences for the cable type.
- * AUTO and either RS or BASER means use the specified FEC type if cable and
- * link partner support it, otherwise autoneg/fw-default.
- * RS or BASER alone means use the specified FEC type if cable and link partner
- * support it and either requests it, otherwise no FEC.
- * Both RS and BASER (whether AUTO or not) means use FEC if cable and link
- * partner support it, preferring RS to BASER.
- */
-static u32 ethtool_fec_caps_to_mcdi(u32 ethtool_cap)
-{
-	u32 ret = 0;
-
-	if (ethtool_cap & ETHTOOL_FEC_OFF)
-		return 0;
-
-	if (ethtool_cap & ETHTOOL_FEC_AUTO)
-		ret |= (1 << MC_CMD_PHY_CAP_BASER_FEC_LBN) |
-		       (1 << MC_CMD_PHY_CAP_25G_BASER_FEC_LBN) |
-		       (1 << MC_CMD_PHY_CAP_RS_FEC_LBN);
-	if (ethtool_cap & ETHTOOL_FEC_RS)
-		ret |= (1 << MC_CMD_PHY_CAP_RS_FEC_LBN) |
-		       (1 << MC_CMD_PHY_CAP_RS_FEC_REQUESTED_LBN);
-	if (ethtool_cap & ETHTOOL_FEC_BASER)
-		ret |= (1 << MC_CMD_PHY_CAP_BASER_FEC_LBN) |
-		       (1 << MC_CMD_PHY_CAP_25G_BASER_FEC_LBN) |
-		       (1 << MC_CMD_PHY_CAP_BASER_FEC_REQUESTED_LBN) |
-		       (1 << MC_CMD_PHY_CAP_25G_BASER_FEC_REQUESTED_LBN);
-	return ret;
-}
-
-/* Invert ethtool_fec_caps_to_mcdi.  There are two combinations that function
- * can never produce, (baser xor rs) and neither req; the implementation below
- * maps both of those to AUTO.  This should never matter, and it's not clear
- * what a better mapping would be anyway.
- */
-static u32 mcdi_fec_caps_to_ethtool(u32 caps, bool is_25g)
-{
-	bool rs = caps & (1 << MC_CMD_PHY_CAP_RS_FEC_LBN),
-	     rs_req = caps & (1 << MC_CMD_PHY_CAP_RS_FEC_REQUESTED_LBN),
-	     baser = is_25g ? caps & (1 << MC_CMD_PHY_CAP_25G_BASER_FEC_LBN)
-			    : caps & (1 << MC_CMD_PHY_CAP_BASER_FEC_LBN),
-	     baser_req = is_25g ? caps & (1 << MC_CMD_PHY_CAP_25G_BASER_FEC_REQUESTED_LBN)
-				: caps & (1 << MC_CMD_PHY_CAP_BASER_FEC_REQUESTED_LBN);
-
-	if (!baser && !rs)
-		return ETHTOOL_FEC_OFF;
-	return (rs_req ? ETHTOOL_FEC_RS : 0) |
-	       (baser_req ? ETHTOOL_FEC_BASER : 0) |
-	       (baser == baser_req && rs == rs_req ? 0 : ETHTOOL_FEC_AUTO);
 }
 
 static int efx_mcdi_phy_probe(struct efx_nic *efx)
@@ -446,8 +371,8 @@ static int efx_mcdi_phy_probe(struct efx_nic *efx)
 
 	caps = MCDI_DWORD(outbuf, GET_LINK_OUT_CAP);
 	if (caps & (1 << MC_CMD_PHY_CAP_AN_LBN))
-		mcdi_to_ethtool_linkset(phy_data->media, caps,
-					efx->link_advertising);
+		efx->link_advertising =
+			mcdi_to_ethtool_cap(phy_data->media, caps);
 	else
 		phy_data->forced_cap = caps;
 
@@ -494,13 +419,6 @@ static int efx_mcdi_phy_probe(struct efx_nic *efx)
 		MCDI_DWORD(outbuf, GET_LINK_OUT_FLAGS),
 		MCDI_DWORD(outbuf, GET_LINK_OUT_FCNTL));
 
-	/* Record the initial FEC configuration (or nearest approximation
-	 * representable in the ethtool configuration space)
-	 */
-	efx->fec_config = mcdi_fec_caps_to_ethtool(caps,
-						   efx->link_state.speed == 25000 ||
-						   efx->link_state.speed == 50000);
-
 	/* Default to Autonegotiated flow control if the PHY supports it */
 	efx->wanted_fc = EFX_FC_RX | EFX_FC_TX;
 	if (phy_data->supported_cap & (1 << MC_CMD_PHY_CAP_AN_LBN))
@@ -517,11 +435,9 @@ fail:
 int efx_mcdi_port_reconfigure(struct efx_nic *efx)
 {
 	struct efx_mcdi_phy_data *phy_cfg = efx->phy_data;
-	u32 caps = (efx->link_advertising[0] ?
-		    ethtool_linkset_to_mcdi_cap(efx->link_advertising) :
+	u32 caps = (efx->link_advertising ?
+		    ethtool_to_mcdi_cap(efx->link_advertising) :
 		    phy_cfg->forced_cap);
-
-	caps |= ethtool_fec_caps_to_mcdi(efx->fec_config);
 
 	return efx_mcdi_set_link(efx, caps, efx_get_mcdi_phy_flags(efx),
 				 efx->loopback_mode, 0);
@@ -593,28 +509,34 @@ static void efx_mcdi_phy_get_link_ksettings(struct efx_nic *efx,
 	struct efx_mcdi_phy_data *phy_cfg = efx->phy_data;
 	MCDI_DECLARE_BUF(outbuf, MC_CMD_GET_LINK_OUT_LEN);
 	int rc;
+	u32 supported, advertising, lp_advertising;
 
+	supported = mcdi_to_ethtool_cap(phy_cfg->media, phy_cfg->supported_cap);
+	advertising = efx->link_advertising;
 	cmd->base.speed = efx->link_state.speed;
 	cmd->base.duplex = efx->link_state.fd;
 	cmd->base.port = mcdi_to_ethtool_media(phy_cfg->media);
 	cmd->base.phy_address = phy_cfg->port;
-	cmd->base.autoneg = !!(efx->link_advertising[0] & ADVERTISED_Autoneg);
+	cmd->base.autoneg = !!(efx->link_advertising & ADVERTISED_Autoneg);
 	cmd->base.mdio_support = (efx->mdio.mode_support &
 			      (MDIO_SUPPORTS_C45 | MDIO_SUPPORTS_C22));
 
-	mcdi_to_ethtool_linkset(phy_cfg->media, phy_cfg->supported_cap,
-				cmd->link_modes.supported);
-	memcpy(cmd->link_modes.advertising, efx->link_advertising,
-	       sizeof(__ETHTOOL_DECLARE_LINK_MODE_MASK()));
+	ethtool_convert_legacy_u32_to_link_mode(cmd->link_modes.supported,
+						supported);
+	ethtool_convert_legacy_u32_to_link_mode(cmd->link_modes.advertising,
+						advertising);
 
 	BUILD_BUG_ON(MC_CMD_GET_LINK_IN_LEN != 0);
 	rc = efx_mcdi_rpc(efx, MC_CMD_GET_LINK, NULL, 0,
 			  outbuf, sizeof(outbuf), NULL);
 	if (rc)
 		return;
-	mcdi_to_ethtool_linkset(phy_cfg->media,
-				MCDI_DWORD(outbuf, GET_LINK_OUT_LP_CAP),
-				cmd->link_modes.lp_advertising);
+	lp_advertising =
+		mcdi_to_ethtool_cap(phy_cfg->media,
+				    MCDI_DWORD(outbuf, GET_LINK_OUT_LP_CAP));
+
+	ethtool_convert_legacy_u32_to_link_mode(cmd->link_modes.lp_advertising,
+						lp_advertising);
 }
 
 static int
@@ -624,32 +546,31 @@ efx_mcdi_phy_set_link_ksettings(struct efx_nic *efx,
 	struct efx_mcdi_phy_data *phy_cfg = efx->phy_data;
 	u32 caps;
 	int rc;
+	u32 advertising;
+
+	ethtool_convert_link_mode_to_legacy_u32(&advertising,
+						cmd->link_modes.advertising);
 
 	if (cmd->base.autoneg) {
-		caps = (ethtool_linkset_to_mcdi_cap(cmd->link_modes.advertising) |
-			1 << MC_CMD_PHY_CAP_AN_LBN);
+		caps = (ethtool_to_mcdi_cap(advertising) |
+			 1 << MC_CMD_PHY_CAP_AN_LBN);
 	} else if (cmd->base.duplex) {
 		switch (cmd->base.speed) {
-		case 10:     caps = 1 << MC_CMD_PHY_CAP_10FDX_LBN;     break;
-		case 100:    caps = 1 << MC_CMD_PHY_CAP_100FDX_LBN;    break;
-		case 1000:   caps = 1 << MC_CMD_PHY_CAP_1000FDX_LBN;   break;
-		case 10000:  caps = 1 << MC_CMD_PHY_CAP_10000FDX_LBN;  break;
-		case 40000:  caps = 1 << MC_CMD_PHY_CAP_40000FDX_LBN;  break;
-		case 100000: caps = 1 << MC_CMD_PHY_CAP_100000FDX_LBN; break;
-		case 25000:  caps = 1 << MC_CMD_PHY_CAP_25000FDX_LBN;  break;
-		case 50000:  caps = 1 << MC_CMD_PHY_CAP_50000FDX_LBN;  break;
-		default:     return -EINVAL;
+		case 10:    caps = 1 << MC_CMD_PHY_CAP_10FDX_LBN;    break;
+		case 100:   caps = 1 << MC_CMD_PHY_CAP_100FDX_LBN;   break;
+		case 1000:  caps = 1 << MC_CMD_PHY_CAP_1000FDX_LBN;  break;
+		case 10000: caps = 1 << MC_CMD_PHY_CAP_10000FDX_LBN; break;
+		case 40000: caps = 1 << MC_CMD_PHY_CAP_40000FDX_LBN; break;
+		default:    return -EINVAL;
 		}
 	} else {
 		switch (cmd->base.speed) {
-		case 10:     caps = 1 << MC_CMD_PHY_CAP_10HDX_LBN;     break;
-		case 100:    caps = 1 << MC_CMD_PHY_CAP_100HDX_LBN;    break;
-		case 1000:   caps = 1 << MC_CMD_PHY_CAP_1000HDX_LBN;   break;
-		default:     return -EINVAL;
+		case 10:    caps = 1 << MC_CMD_PHY_CAP_10HDX_LBN;    break;
+		case 100:   caps = 1 << MC_CMD_PHY_CAP_100HDX_LBN;   break;
+		case 1000:  caps = 1 << MC_CMD_PHY_CAP_1000HDX_LBN;  break;
+		default:    return -EINVAL;
 		}
 	}
-
-	caps |= ethtool_fec_caps_to_mcdi(efx->fec_config);
 
 	rc = efx_mcdi_set_link(efx, caps, efx_get_mcdi_phy_flags(efx),
 			       efx->loopback_mode, 0);
@@ -657,91 +578,13 @@ efx_mcdi_phy_set_link_ksettings(struct efx_nic *efx,
 		return rc;
 
 	if (cmd->base.autoneg) {
-		efx_link_set_advertising(efx, cmd->link_modes.advertising);
+		efx_link_set_advertising(
+			efx, advertising | ADVERTISED_Autoneg);
 		phy_cfg->forced_cap = 0;
 	} else {
-		efx_link_clear_advertising(efx);
+		efx_link_set_advertising(efx, 0);
 		phy_cfg->forced_cap = caps;
 	}
-	return 0;
-}
-
-static int efx_mcdi_phy_get_fecparam(struct efx_nic *efx,
-				     struct ethtool_fecparam *fec)
-{
-	MCDI_DECLARE_BUF(outbuf, MC_CMD_GET_LINK_OUT_V2_LEN);
-	u32 caps, active, speed; /* MCDI format */
-	bool is_25g = false;
-	size_t outlen;
-	int rc;
-
-	BUILD_BUG_ON(MC_CMD_GET_LINK_IN_LEN != 0);
-	rc = efx_mcdi_rpc(efx, MC_CMD_GET_LINK, NULL, 0,
-			  outbuf, sizeof(outbuf), &outlen);
-	if (rc)
-		return rc;
-	if (outlen < MC_CMD_GET_LINK_OUT_V2_LEN)
-		return -EOPNOTSUPP;
-
-	/* behaviour for 25G/50G links depends on 25G BASER bit */
-	speed = MCDI_DWORD(outbuf, GET_LINK_OUT_V2_LINK_SPEED);
-	is_25g = speed == 25000 || speed == 50000;
-
-	caps = MCDI_DWORD(outbuf, GET_LINK_OUT_V2_CAP);
-	fec->fec = mcdi_fec_caps_to_ethtool(caps, is_25g);
-	/* BASER is never supported on 100G */
-	if (speed == 100000)
-		fec->fec &= ~ETHTOOL_FEC_BASER;
-
-	active = MCDI_DWORD(outbuf, GET_LINK_OUT_V2_FEC_TYPE);
-	switch (active) {
-	case MC_CMD_FEC_NONE:
-		fec->active_fec = ETHTOOL_FEC_OFF;
-		break;
-	case MC_CMD_FEC_BASER:
-		fec->active_fec = ETHTOOL_FEC_BASER;
-		break;
-	case MC_CMD_FEC_RS:
-		fec->active_fec = ETHTOOL_FEC_RS;
-		break;
-	default:
-		netif_warn(efx, hw, efx->net_dev,
-			   "Firmware reports unrecognised FEC_TYPE %u\n",
-			   active);
-		/* We don't know what firmware has picked.  AUTO is as good a
-		 * "can't happen" value as any other.
-		 */
-		fec->active_fec = ETHTOOL_FEC_AUTO;
-		break;
-	}
-
-	return 0;
-}
-
-static int efx_mcdi_phy_set_fecparam(struct efx_nic *efx,
-				     const struct ethtool_fecparam *fec)
-{
-	struct efx_mcdi_phy_data *phy_cfg = efx->phy_data;
-	u32 caps;
-	int rc;
-
-	/* Work out what efx_mcdi_phy_set_link_ksettings() would produce from
-	 * saved advertising bits
-	 */
-	if (test_bit(ETHTOOL_LINK_MODE_Autoneg_BIT, efx->link_advertising))
-		caps = (ethtool_linkset_to_mcdi_cap(efx->link_advertising) |
-			1 << MC_CMD_PHY_CAP_AN_LBN);
-	else
-		caps = phy_cfg->forced_cap;
-
-	caps |= ethtool_fec_caps_to_mcdi(fec->fec);
-	rc = efx_mcdi_set_link(efx, caps, efx_get_mcdi_phy_flags(efx),
-			       efx->loopback_mode, 0);
-	if (rc)
-		return rc;
-
-	/* Record the new FEC setting for subsequent set_link calls */
-	efx->fec_config = fec->fec;
 	return 0;
 }
 
@@ -1123,8 +966,6 @@ static const struct efx_phy_operations efx_mcdi_phy_ops = {
 	.remove		= efx_mcdi_phy_remove,
 	.get_link_ksettings = efx_mcdi_phy_get_link_ksettings,
 	.set_link_ksettings = efx_mcdi_phy_set_link_ksettings,
-	.get_fecparam	= efx_mcdi_phy_get_fecparam,
-	.set_fecparam	= efx_mcdi_phy_set_fecparam,
 	.test_alive	= efx_mcdi_phy_test_alive,
 	.run_tests	= efx_mcdi_phy_run_tests,
 	.test_name	= efx_mcdi_phy_test_name,
@@ -1144,9 +985,6 @@ static unsigned int efx_mcdi_event_link_speed[] = {
 	[MCDI_EVENT_LINKCHANGE_SPEED_1G] = 1000,
 	[MCDI_EVENT_LINKCHANGE_SPEED_10G] = 10000,
 	[MCDI_EVENT_LINKCHANGE_SPEED_40G] = 40000,
-	[MCDI_EVENT_LINKCHANGE_SPEED_25G] = 25000,
-	[MCDI_EVENT_LINKCHANGE_SPEED_50G] = 50000,
-	[MCDI_EVENT_LINKCHANGE_SPEED_100G] = 100000,
 };
 
 void efx_mcdi_process_link_change(struct efx_nic *efx, efx_qword_t *ev)
@@ -1249,7 +1087,7 @@ static int efx_mcdi_mac_stats(struct efx_nic *efx,
 	int period = action == EFX_STATS_ENABLE ? 1000 : 0;
 	dma_addr_t dma_addr = efx->stats_buffer.dma_addr;
 	u32 dma_len = action != EFX_STATS_DISABLE ?
-		efx->num_mac_stats * sizeof(u64) : 0;
+		MC_CMD_MAC_NSTATS * sizeof(u64) : 0;
 
 	BUILD_BUG_ON(MC_CMD_MAC_STATS_OUT_DMA_LEN != 0);
 
@@ -1283,7 +1121,7 @@ void efx_mcdi_mac_start_stats(struct efx_nic *efx)
 {
 	__le64 *dma_stats = efx->stats_buffer.addr;
 
-	dma_stats[efx->num_mac_stats - 1] = EFX_MC_STATS_GENERATION_INVALID;
+	dma_stats[MC_CMD_MAC_GENERATION_END] = EFX_MC_STATS_GENERATION_INVALID;
 
 	efx_mcdi_mac_stats(efx, EFX_STATS_ENABLE, 0);
 }
@@ -1301,10 +1139,10 @@ void efx_mcdi_mac_pull_stats(struct efx_nic *efx)
 	__le64 *dma_stats = efx->stats_buffer.addr;
 	int attempts = EFX_MAC_STATS_WAIT_ATTEMPTS;
 
-	dma_stats[efx->num_mac_stats - 1] = EFX_MC_STATS_GENERATION_INVALID;
+	dma_stats[MC_CMD_MAC_GENERATION_END] = EFX_MC_STATS_GENERATION_INVALID;
 	efx_mcdi_mac_stats(efx, EFX_STATS_PULL, 0);
 
-	while (dma_stats[efx->num_mac_stats - 1] ==
+	while (dma_stats[MC_CMD_MAC_GENERATION_END] ==
 				EFX_MC_STATS_GENERATION_INVALID &&
 			attempts-- != 0)
 		udelay(EFX_MAC_STATS_WAIT_US);
@@ -1329,7 +1167,7 @@ int efx_mcdi_port_probe(struct efx_nic *efx)
 
 	/* Allocate buffer for stats */
 	rc = efx_nic_alloc_buffer(efx, &efx->stats_buffer,
-				  efx->num_mac_stats * sizeof(u64), GFP_KERNEL);
+				  MC_CMD_MAC_NSTATS * sizeof(u64), GFP_KERNEL);
 	if (rc)
 		return rc;
 	netif_dbg(efx, probe, efx->net_dev,

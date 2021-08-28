@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * OpenRISC entry.S
  *
@@ -10,6 +9,11 @@
  * Copyright (C) 2003 Matjaz Breskvar <phoenix@bsemi.com>
  * Copyright (C) 2005 Gyorgy Jeney <nog@bsemi.com>
  * Copyright (C) 2010-2011 Jonas Bonn <jonas@southpole.se>
+ *
+ *      This program is free software; you can redistribute it and/or
+ *      modify it under the terms of the GNU General Public License
+ *      as published by the Free Software Foundation; either version
+ *      2 of the License, or (at your option) any later version.
  */
 
 #include <linux/linkage.h>
@@ -236,7 +240,7 @@ handler:							;\
  *	 occured. in fact they never do. if you need them use
  *	 values saved on stack (for SPR_EPC, SPR_ESR) or content
  *       of r4 (for SPR_EEAR). for details look at EXCEPTION_HANDLE()
- *       in 'arch/openrisc/kernel/head.S'
+ *       in 'arch/or32/kernel/head.S'
  */
 
 /* =====================================================[ exceptions] === */
@@ -273,6 +277,12 @@ EXCEPTION_ENTRY(_data_page_fault_handler)
 	l.addi  r3,r1,0                    // pt_regs
 	/* r4 set be EXCEPTION_HANDLE */   // effective address of fault
 
+	/*
+	 * __PHX__: TODO
+	 *
+	 * all this can be written much simpler. look at
+	 * DTLB miss handler in the CONFIG_GUARD_PROTECTED_CORE part
+	 */
 #ifdef CONFIG_OPENRISC_NO_SPR_SR_DSX
 	l.lwz   r6,PT_PC(r3)               // address of an offending insn
 	l.lwz   r6,0(r6)                   // instruction that caused pf
@@ -304,7 +314,7 @@ EXCEPTION_ENTRY(_data_page_fault_handler)
 
 #else
 
-	l.mfspr r6,r0,SPR_SR               // SR
+	l.lwz   r6,PT_SR(r3)               // SR
 	l.andi  r6,r6,SPR_SR_DSX           // check for delay slot exception
 	l.sfne  r6,r0                      // exception happened in delay slot
 	l.bnf   7f

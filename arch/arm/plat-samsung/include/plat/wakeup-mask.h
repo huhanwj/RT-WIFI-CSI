@@ -1,9 +1,14 @@
-/* SPDX-License-Identifier: GPL-2.0 */
-/*
+/* arch/arm/plat-samsung/include/plat/wakeup-mask.h
+ *
  * Copyright 2010 Ben Dooks <ben-linux@fluff.org>
  *
  * Support for wakeup mask interrupts on newer SoCs
- */
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+*/
 
 #ifndef __PLAT_WAKEUP_MASK_H
 #define __PLAT_WAKEUP_MASK_H __file__

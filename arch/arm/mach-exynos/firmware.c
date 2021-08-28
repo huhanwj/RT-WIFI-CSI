@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0
-//
-// Copyright (C) 2012 Samsung Electronics.
-// Kyungmin Park <kyungmin.park@samsung.com>
-// Tomasz Figa <t.figa@samsung.com>
+/*
+ * Copyright (C) 2012 Samsung Electronics.
+ * Kyungmin Park <kyungmin.park@samsung.com>
+ * Tomasz Figa <t.figa@samsung.com>
+ *
+ * This program is free software,you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ */
 
 #include <linux/kernel.h>
 #include <linux/io.h>
@@ -185,7 +189,7 @@ static void exynos_l2_configure(const struct l2x0_regs *regs)
 	exynos_smc(SMC_CMD_L2X0SETUP2, regs->pwr_ctrl, regs->aux_ctrl, 0);
 }
 
-bool __init exynos_secure_firmware_available(void)
+void __init exynos_firmware_init(void)
 {
 	struct device_node *nd;
 	const __be32 *addr;
@@ -193,22 +197,13 @@ bool __init exynos_secure_firmware_available(void)
 	nd = of_find_compatible_node(NULL, NULL,
 					"samsung,secure-firmware");
 	if (!nd)
-		return false;
+		return;
 
 	addr = of_get_address(nd, 0, NULL, NULL);
-	of_node_put(nd);
 	if (!addr) {
 		pr_err("%s: No address specified.\n", __func__);
-		return false;
-	}
-
-	return true;
-}
-
-void __init exynos_firmware_init(void)
-{
-	if (!exynos_secure_firmware_available())
 		return;
+	}
 
 	pr_info("Running under secure firmware.\n");
 

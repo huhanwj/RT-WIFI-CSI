@@ -3,7 +3,6 @@
 #define __ASM_GENERIC_QRWLOCK_TYPES_H
 
 #include <linux/types.h>
-#include <asm/byteorder.h>
 #include <asm/spinlock_types.h>
 
 /*

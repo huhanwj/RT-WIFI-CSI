@@ -1,9 +1,8 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __NVKM_FB_PRIV_H__
 #define __NVKM_FB_PRIV_H__
 #define nvkm_fb(p) container_of((p), struct nvkm_fb, subdev)
 #include <subdev/fb.h>
-#include <subdev/therm.h>
 struct nvkm_bios;
 
 struct nvkm_fb_func {
@@ -11,7 +10,6 @@ struct nvkm_fb_func {
 	u32 (*tags)(struct nvkm_fb *);
 	int (*oneinit)(struct nvkm_fb *);
 	void (*init)(struct nvkm_fb *);
-	void (*init_remapper)(struct nvkm_fb *);
 	int (*init_page)(struct nvkm_fb *);
 	void (*init_unkn)(struct nvkm_fb *);
 	void (*intr)(struct nvkm_fb *);
@@ -29,7 +27,6 @@ struct nvkm_fb_func {
 	int (*ram_new)(struct nvkm_fb *, struct nvkm_ram **);
 
 	u8 default_bigpage;
-	const struct nvkm_therm_clkgate_pack *clkgate_pack;
 };
 
 void nvkm_fb_ctor(const struct nvkm_fb_func *, struct nvkm_device *device,
@@ -69,7 +66,4 @@ int gf100_fb_oneinit(struct nvkm_fb *);
 int gf100_fb_init_page(struct nvkm_fb *);
 
 int gm200_fb_init_page(struct nvkm_fb *);
-
-void gp100_fb_init_remapper(struct nvkm_fb *);
-void gp100_fb_init_unkn(struct nvkm_fb *);
 #endif

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /* drivers/net/ifb.c:
 
 	The purpose of this driver is to provide a device that allows
@@ -18,6 +17,10 @@
 	You need the tc action  mirror or redirect to feed this device
        	packets.
 
+	This program is free software; you can redistribute it and/or
+	modify it under the terms of the GNU General Public License
+	as published by the Free Software Foundation; either version
+	2 of the License, or (at your option) any later version.
 
   	Authors:	Jamal Hadi Salim (2005)
 
@@ -99,7 +102,7 @@ static void ifb_ri_tasklet(unsigned long _txp)
 		if (!skb->tc_from_ingress) {
 			dev_queue_xmit(skb);
 		} else {
-			skb_pull_rcsum(skb, skb->mac_len);
+			skb_pull(skb, skb->mac_len);
 			netif_receive_skb(skb);
 		}
 	}
@@ -327,7 +330,6 @@ static int __init ifb_init_module(void)
 {
 	int i, err;
 
-	down_write(&pernet_ops_rwsem);
 	rtnl_lock();
 	err = __rtnl_link_register(&ifb_link_ops);
 	if (err < 0)
@@ -342,7 +344,6 @@ static int __init ifb_init_module(void)
 
 out:
 	rtnl_unlock();
-	up_write(&pernet_ops_rwsem);
 
 	return err;
 }

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * OMAP3xxx CM module functions
  *
@@ -6,6 +5,10 @@
  * Copyright (C) 2008-2010, 2012 Texas Instruments, Inc.
  * Paul Walmsley
  * Rajendra Nayak <rnayak@ti.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/kernel.h>
@@ -659,7 +662,7 @@ void omap3_cm_save_scratchpad_contents(u32 *ptr)
  *
  */
 
-static const struct cm_ll_data omap3xxx_cm_ll_data = {
+static struct cm_ll_data omap3xxx_cm_ll_data = {
 	.split_idlest_reg	= &omap3xxx_cm_split_idlest_reg,
 	.wait_module_ready	= &omap3xxx_cm_wait_module_ready,
 };

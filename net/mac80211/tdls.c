@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * mac80211 TDLS handling code
  *
@@ -6,7 +5,8 @@
  * Copyright 2014, Intel Corporation
  * Copyright 2014  Intel Mobile Communications GmbH
  * Copyright 2015 - 2016 Intel Deutschland GmbH
- * Copyright (C) 2019 Intel Corporation
+ *
+ * This file is GPLv2 as found in COPYING.
  */
 
 #include <linux/ieee80211.h>
@@ -16,7 +16,6 @@
 #include "ieee80211_i.h"
 #include "driver-ops.h"
 #include "rate.h"
-#include "wme.h"
 
 /* give usermode some time for retries in setting up the TDLS session */
 #define TDLS_PEER_SETUP_TIMEOUT	(15 * HZ)
@@ -48,8 +47,6 @@ static void ieee80211_tdls_add_ext_capab(struct ieee80211_sub_if_data *sdata,
 			   NL80211_FEATURE_TDLS_CHANNEL_SWITCH;
 	bool wider_band = ieee80211_hw_check(&local->hw, TDLS_WIDER_BW) &&
 			  !ifmgd->tdls_wider_bw_prohibited;
-	bool buffer_sta = ieee80211_hw_check(&local->hw,
-					     SUPPORTS_TDLS_BUFFER_STA);
 	struct ieee80211_supported_band *sband = ieee80211_get_sband(sdata);
 	bool vht = sband && sband->vht_cap.vht_supported;
 	u8 *pos = skb_put(skb, 10);
@@ -59,8 +56,7 @@ static void ieee80211_tdls_add_ext_capab(struct ieee80211_sub_if_data *sdata,
 	*pos++ = 0x0;
 	*pos++ = 0x0;
 	*pos++ = 0x0;
-	*pos++ = (chan_switch ? WLAN_EXT_CAPA4_TDLS_CHAN_SWITCH : 0) |
-		 (buffer_sta ? WLAN_EXT_CAPA4_TDLS_BUFFER_STA : 0);
+	*pos++ = chan_switch ? WLAN_EXT_CAPA4_TDLS_CHAN_SWITCH : 0;
 	*pos++ = WLAN_EXT_CAPA5_TDLS_ENABLED;
 	*pos++ = 0;
 	*pos++ = 0;
@@ -240,7 +236,6 @@ static enum ieee80211_ac_numbers ieee80211_ac_from_wmm(int ac)
 	switch (ac) {
 	default:
 		WARN_ON_ONCE(1);
-		/* fall through */
 	case 0:
 		return IEEE80211_AC_BE;
 	case 1:
@@ -1011,13 +1006,14 @@ ieee80211_tdls_prep_mgmt_packet(struct wiphy *wiphy, struct net_device *dev,
 	switch (action_code) {
 	case WLAN_TDLS_SETUP_REQUEST:
 	case WLAN_TDLS_SETUP_RESPONSE:
-		skb->priority = 256 + 2;
+		skb_set_queue_mapping(skb, IEEE80211_AC_BK);
+		skb->priority = 2;
 		break;
 	default:
-		skb->priority = 256 + 5;
+		skb_set_queue_mapping(skb, IEEE80211_AC_VI);
+		skb->priority = 5;
 		break;
 	}
-	skb_set_queue_mapping(skb, ieee80211_select_queue(sdata, skb));
 
 	/*
 	 * Set the WLAN_TDLS_TEARDOWN flag to indicate a teardown in progress.
@@ -1055,7 +1051,7 @@ ieee80211_tdls_prep_mgmt_packet(struct wiphy *wiphy, struct net_device *dev,
 
 	/* disable bottom halves when entering the Tx path */
 	local_bh_disable();
-	__ieee80211_subif_start_xmit(skb, dev, flags, 0);
+	__ieee80211_subif_start_xmit(skb, dev, flags);
 	local_bh_enable();
 
 	return ret;
@@ -1716,8 +1712,7 @@ ieee80211_process_tdls_channel_switch_resp(struct ieee80211_sub_if_data *sdata,
 	}
 
 	ieee802_11_parse_elems(tf->u.chan_switch_resp.variable,
-			       skb->len - baselen, false, &elems,
-			       NULL, NULL);
+			       skb->len - baselen, false, &elems);
 	if (elems.parse_error) {
 		tdls_dbg(sdata, "Invalid IEs in TDLS channel switch resp\n");
 		ret = -EINVAL;
@@ -1829,7 +1824,7 @@ ieee80211_process_tdls_channel_switch_req(struct ieee80211_sub_if_data *sdata,
 	}
 
 	ieee802_11_parse_elems(tf->u.chan_switch_req.variable,
-			       skb->len - baselen, false, &elems, NULL, NULL);
+			       skb->len - baselen, false, &elems);
 	if (elems.parse_error) {
 		tdls_dbg(sdata, "Invalid IEs in TDLS channel switch req\n");
 		return -EINVAL;
@@ -1992,27 +1987,4 @@ void ieee80211_tdls_chsw_work(struct work_struct *wk)
 		kfree_skb(skb);
 	}
 	rtnl_unlock();
-}
-
-void ieee80211_tdls_handle_disconnect(struct ieee80211_sub_if_data *sdata,
-				      const u8 *peer, u16 reason)
-{
-	struct ieee80211_sta *sta;
-
-	rcu_read_lock();
-	sta = ieee80211_find_sta(&sdata->vif, peer);
-	if (!sta || !sta->tdls) {
-		rcu_read_unlock();
-		return;
-	}
-	rcu_read_unlock();
-
-	tdls_dbg(sdata, "disconnected from TDLS peer %pM (Reason: %u=%s)\n",
-		 peer, reason,
-		 ieee80211_get_reason_code_string(reason));
-
-	ieee80211_tdls_oper_request(&sdata->vif, peer,
-				    NL80211_TDLS_TEARDOWN,
-				    WLAN_REASON_TDLS_TEARDOWN_UNREACHABLE,
-				    GFP_ATOMIC);
 }

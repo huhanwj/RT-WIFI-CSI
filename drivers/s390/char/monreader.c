@@ -429,15 +429,15 @@ out_copy:
 	return count;
 }
 
-static __poll_t mon_poll(struct file *filp, struct poll_table_struct *p)
+static unsigned int mon_poll(struct file *filp, struct poll_table_struct *p)
 {
 	struct mon_private *monpriv = filp->private_data;
 
 	poll_wait(filp, &mon_read_wait_queue, p);
 	if (unlikely(atomic_read(&monpriv->iucv_severed)))
-		return EPOLLERR;
+		return POLLERR;
 	if (atomic_read(&monpriv->read_ready))
-		return EPOLLIN | EPOLLRDNORM;
+		return POLLIN | POLLRDNORM;
 	return 0;
 }
 

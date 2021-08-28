@@ -469,9 +469,8 @@ void ath9k_tasklet(unsigned long data)
 	if (status & ATH9K_INT_GENTIMER)
 		ath_gen_timer_isr(sc->sc_ah);
 
-#ifndef CONFIG_RT_WIFI
 	ath9k_btcoex_handle_interrupt(sc, status);
-#endif
+
 	/* re-enable hardware interrupt */
 	ath9k_hw_resume_interrupts(ah);
 out:
@@ -481,7 +480,6 @@ out:
 
 irqreturn_t ath_isr(int irq, void *dev)
 {
-#ifndef CONFIG_RT_WIFI
 #define SCHED_INTR (				\
 		ATH9K_INT_FATAL |		\
 		ATH9K_INT_BB_WATCHDOG |		\
@@ -497,21 +495,7 @@ irqreturn_t ath_isr(int irq, void *dev)
 		ATH9K_INT_TSFOOR |		\
 		ATH9K_INT_GENTIMER |		\
 		ATH9K_INT_MCI)
-#else
-#define SCHED_INTR (				\
-		ATH9K_INT_FATAL |		\
-		ATH9K_INT_BB_WATCHDOG |		\
-		ATH9K_INT_RXORN |		\
-		ATH9K_INT_RXEOL |		\
-		ATH9K_INT_RX |			\
-		ATH9K_INT_RXLP |		\
-		ATH9K_INT_RXHP |		\
-		ATH9K_INT_TX |			\
-		ATH9K_INT_BMISS |		\
-		ATH9K_INT_CST |			\
-		ATH9K_INT_TSFOOR |		\
-		ATH9K_INT_MCI)
-#endif
+
 	struct ath_softc *sc = dev;
 	struct ath_hw *ah = sc->sc_ah;
 	struct ath_common *common = ath9k_hw_common(ah);
@@ -580,13 +564,7 @@ irqreturn_t ath_isr(int irq, void *dev)
 		ah->imask &= ~(ATH9K_INT_RXEOL | ATH9K_INT_RXORN);
 		ath9k_hw_set_interrupts(ah);
 	}
-#ifdef CONFIG_RT_WIFI
-	if (status & ATH9K_INT_GENTIMER) {
-		ath9k_hw_disable_interrupts(ah);
-		ath_rt_wifi_tasklet(sc);
-		ath9k_hw_enable_interrupts(ah);
-	}
-#endif
+
 	if (!(ah->caps.hw_caps & ATH9K_HW_CAP_AUTOSLEEP))
 		if (status & ATH9K_INT_TIM_TIMER) {
 			if (ATH_DBG_WARN_ON_ONCE(sc->ps_idle))
@@ -826,29 +804,12 @@ static void ath9k_tx(struct ieee80211_hw *hw,
 	memset(&txctl, 0, sizeof(struct ath_tx_control));
 	txctl.txq = sc->tx.txq_map[skb_get_queue_mapping(skb)];
 	txctl.sta = control->sta;
-#ifdef CONFIG_RT_WIFI
-	/* rt-wifi: Disable probe response. */
-	if (ieee80211_is_probe_resp(hdr->frame_control)) {
-		if(rt_wifi_authorized_sta(hdr->addr1) == false) {
-			// The above function checks whether the MAC address of the destination
-			// is same to AP's MAC address or not
-			RT_WIFI_DEBUG("Unauthorized destination address: %X:%X:%X:%X:%X:%X\n"
-				, hdr->addr1[0]
-				, hdr->addr1[1]
-				, hdr->addr1[2]
-				, hdr->addr1[3]
-				, hdr->addr1[4]
-				, hdr->addr1[5]);
-			
-			goto exit;
-		}
-	}
-#endif
+
 	ath_dbg(common, XMIT, "transmitting packet, skb: %p\n", skb);
 
 	if (ath_tx_start(hw, skb, &txctl) != 0) {
 		ath_dbg(common, XMIT, "TX failed\n");
-		TX_STAT_INC(sc, txctl.txq->axq_qnum, txfailed);
+		TX_STAT_INC(txctl.txq->axq_qnum, txfailed);
 		goto exit;
 	}
 
@@ -1291,6 +1252,7 @@ static int ath9k_add_interface(struct ieee80211_hw *hw,
 	struct ath_node *an = &avp->mcast_node;
 
 	mutex_lock(&sc->mutex);
+
 	if (IS_ENABLED(CONFIG_ATH9K_TX99)) {
 		if (sc->cur_chan->nvifs >= 1) {
 			mutex_unlock(&sc->mutex);
@@ -1454,13 +1416,9 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 		sc->ps_idle = !!(conf->flags & IEEE80211_CONF_IDLE);
 		if (sc->ps_idle) {
 			ath_cancel_work(sc);
-#ifndef CONFIG_RT_WIFI
 			ath9k_stop_btcoex(sc);
-#endif
 		} else {
-#ifndef CONFIG_RT_WIFI
 			ath9k_start_btcoex(sc);
-#endif			
 			/*
 			 * The chip needs a reset to properly wake up from
 			 * full sleep
@@ -1691,13 +1649,6 @@ static int ath9k_conf_tx(struct ieee80211_hw *hw,
 	qi.tqi_cwmin = params->cw_min;
 	qi.tqi_cwmax = params->cw_max;
 	qi.tqi_burstTime = params->txop * 32;
-#ifdef CONFIG_RT_WIFI
-	#if RT_WIFI_ENABLE_COEX == 1
-	qi.tqi_aifs = 1;
-	qi.tqi_cwmin = 0;
-	qi.tqi_cwmax = 0;
-	#endif
-#endif
 
 	ath_dbg(common, CONFIG,
 		"Configure tx [queue/halq] [%d/%d], aifs: %d, cw_min: %d, cw_max: %d, txop: %d\n",
@@ -1914,7 +1865,7 @@ static void ath9k_set_tsf(struct ieee80211_hw *hw,
 	mutex_lock(&sc->mutex);
 	ath9k_ps_wakeup(sc);
 	tsf -= le64_to_cpu(avp->tsf_adjust);
-	ktime_get_raw_ts64(&avp->chanctx->tsf_ts);
+	getrawmonotonic(&avp->chanctx->tsf_ts);
 	if (sc->cur_chan == avp->chanctx)
 		ath9k_hw_settsf64(sc->sc_ah, tsf);
 	avp->chanctx->tsf_val = tsf;
@@ -1930,7 +1881,7 @@ static void ath9k_reset_tsf(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
 	mutex_lock(&sc->mutex);
 
 	ath9k_ps_wakeup(sc);
-	ktime_get_raw_ts64(&avp->chanctx->tsf_ts);
+	getrawmonotonic(&avp->chanctx->tsf_ts);
 	if (sc->cur_chan == avp->chanctx)
 		ath9k_hw_reset_tsf(sc->sc_ah);
 	avp->chanctx->tsf_val = 0;
@@ -1977,7 +1928,6 @@ static int ath9k_ampdu_action(struct ieee80211_hw *hw,
 	case IEEE80211_AMPDU_TX_STOP_FLUSH:
 	case IEEE80211_AMPDU_TX_STOP_FLUSH_CONT:
 		flush = true;
-		/* fall through */
 	case IEEE80211_AMPDU_TX_STOP_CONT:
 		ath9k_ps_wakeup(sc);
 		ath_tx_aggr_stop(sc, sta, tid);
@@ -2442,8 +2392,7 @@ out:
 	return ret;
 }
 
-static int ath9k_cancel_remain_on_channel(struct ieee80211_hw *hw,
-					  struct ieee80211_vif *vif)
+static int ath9k_cancel_remain_on_channel(struct ieee80211_hw *hw)
 {
 	struct ath_softc *sc = hw->priv;
 	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
@@ -2595,8 +2544,7 @@ static void ath9k_unassign_vif_chanctx(struct ieee80211_hw *hw,
 }
 
 static void ath9k_mgd_prepare_tx(struct ieee80211_hw *hw,
-				 struct ieee80211_vif *vif,
-				 u16 duration)
+				 struct ieee80211_vif *vif)
 {
 	struct ath_softc *sc = hw->priv;
 	struct ath_common *common = ath9k_hw_common(sc->sc_ah);

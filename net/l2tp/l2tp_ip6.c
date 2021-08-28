@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * L2TPv3 IP encapsulation support for IPv6
  *
  * Copyright (c) 2012 Katalix Systems Ltd
+ *
+ *	This program is free software; you can redistribute it and/or
+ *	modify it under the terms of the GNU General Public License
+ *	as published by the Free Software Foundation; either version
+ *	2 of the License, or (at your option) any later version.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -153,7 +157,7 @@ static int l2tp_ip6_recv(struct sk_buff *skb)
 	}
 
 	/* Ok, this is a data packet. Lookup the session. */
-	session = l2tp_session_get(net, session_id);
+	session = l2tp_session_get(net, NULL, session_id);
 	if (!session)
 		goto discard;
 
@@ -174,10 +178,8 @@ static int l2tp_ip6_recv(struct sk_buff *skb)
 		print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, ptr, length);
 	}
 
-	if (l2tp_v3_ensure_opt_in_linear(session, skb, &ptr, &optr))
-		goto discard_sess;
-
-	l2tp_recv_common(session, skb, ptr, optr, 0, skb->len);
+	l2tp_recv_common(session, skb, ptr, optr, 0, skb->len,
+			 tunnel->recv_payload_hook);
 	l2tp_session_dec_refcount(session);
 
 	return 0;
@@ -206,7 +208,7 @@ pass_up:
 	if (!xfrm6_policy_check(sk, XFRM_POLICY_IN, skb))
 		goto discard_put;
 
-	nf_reset_ct(skb);
+	nf_reset(skb);
 
 	return sk_receive_skb(sk, skb, 1);
 
@@ -246,14 +248,16 @@ static void l2tp_ip6_close(struct sock *sk, long timeout)
 
 static void l2tp_ip6_destroy_sock(struct sock *sk)
 {
-	struct l2tp_tunnel *tunnel = sk->sk_user_data;
+	struct l2tp_tunnel *tunnel = l2tp_sock_to_tunnel(sk);
 
 	lock_sock(sk);
 	ip6_flush_pending_frames(sk);
 	release_sock(sk);
 
-	if (tunnel)
-		l2tp_tunnel_delete(tunnel);
+	if (tunnel) {
+		l2tp_tunnel_closeall(tunnel);
+		sock_put(sk);
+	}
 
 	inet6_destroy_sock(sk);
 }
@@ -417,7 +421,7 @@ static int l2tp_ip6_disconnect(struct sock *sk, int flags)
 }
 
 static int l2tp_ip6_getname(struct socket *sock, struct sockaddr *uaddr,
-			    int peer)
+			    int *uaddr_len, int peer)
 {
 	struct sockaddr_l2tpip6 *lsa = (struct sockaddr_l2tpip6 *)uaddr;
 	struct sock *sk = sock->sk;
@@ -445,7 +449,8 @@ static int l2tp_ip6_getname(struct socket *sock, struct sockaddr *uaddr,
 	}
 	if (ipv6_addr_type(&lsa->l2tp_addr) & IPV6_ADDR_LINKLOCAL)
 		lsa->l2tp_scope_id = sk->sk_bound_dev_if;
-	return sizeof(*lsa);
+	*uaddr_len = sizeof(*lsa);
+	return 0;
 }
 
 static int l2tp_ip6_backlog_recv(struct sock *sk, struct sk_buff *skb)
@@ -498,6 +503,7 @@ static int l2tp_ip6_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 	struct ip6_flowlabel *flowlabel = NULL;
 	struct dst_entry *dst = NULL;
 	struct flowi6 fl6;
+	struct sockcm_cookie sockc_unused = {0};
 	struct ipcm6_cookie ipc6;
 	int addr_len = msg->msg_namelen;
 	int transhdrlen = 4; /* zero session-id */
@@ -522,7 +528,9 @@ static int l2tp_ip6_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 	fl6.flowi6_mark = sk->sk_mark;
 	fl6.flowi6_uid = sk->sk_uid;
 
-	ipcm6_init(&ipc6);
+	ipc6.hlimit = -1;
+	ipc6.tclass = -1;
+	ipc6.dontfrag = -1;
 
 	if (lsa) {
 		if (addr_len < SIN6_LEN_RFC2133)
@@ -536,7 +544,7 @@ static int l2tp_ip6_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 			fl6.flowlabel = lsa->l2tp_flowinfo & IPV6_FLOWINFO_MASK;
 			if (fl6.flowlabel&IPV6_FLOWLABEL_MASK) {
 				flowlabel = fl6_sock_lookup(sk, fl6.flowlabel);
-				if (IS_ERR(flowlabel))
+				if (flowlabel == NULL)
 					return -EINVAL;
 			}
 		}
@@ -570,14 +578,15 @@ static int l2tp_ip6_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 		opt->tot_len = sizeof(struct ipv6_txoptions);
 		ipc6.opt = opt;
 
-		err = ip6_datagram_send_ctl(sock_net(sk), sk, msg, &fl6, &ipc6);
+		err = ip6_datagram_send_ctl(sock_net(sk), sk, msg, &fl6, &ipc6,
+					    &sockc_unused);
 		if (err < 0) {
 			fl6_sock_release(flowlabel);
 			return err;
 		}
 		if ((fl6.flowlabel & IPV6_FLOWLABEL_MASK) && !flowlabel) {
 			flowlabel = fl6_sock_lookup(sk, fl6.flowlabel);
-			if (IS_ERR(flowlabel))
+			if (flowlabel == NULL)
 				return -EINVAL;
 		}
 		if (!(opt->opt_nflen|opt->opt_flen))
@@ -635,7 +644,7 @@ back_from_confirm:
 	err = ip6_append_data(sk, ip_generic_getfrag, msg,
 			      ulen, transhdrlen, &ipc6,
 			      &fl6, (struct rt6_info *)dst,
-			      msg->msg_flags);
+			      msg->msg_flags, &sockc_unused);
 	if (err)
 		ip6_flush_pending_frames(sk);
 	else if (!(msg->msg_flags & MSG_MORE))
@@ -670,6 +679,9 @@ static int l2tp_ip6_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
 	if (flags & MSG_OOB)
 		goto out;
 
+	if (addr_len)
+		*addr_len = sizeof(*lsa);
+
 	if (flags & MSG_ERRQUEUE)
 		return ipv6_recv_error(sk, msg, len, addr_len);
 
@@ -699,7 +711,6 @@ static int l2tp_ip6_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
 		lsa->l2tp_conn_id = 0;
 		if (ipv6_addr_type(&lsa->l2tp_addr) & IPV6_ADDR_LINKLOCAL)
 			lsa->l2tp_scope_id = inet6_iif(skb);
-		*addr_len = sizeof(*lsa);
 	}
 
 	if (np->rxopt.all)
@@ -748,7 +759,6 @@ static const struct proto_ops l2tp_ip6_ops = {
 	.getname	   = l2tp_ip6_getname,
 	.poll		   = datagram_poll,
 	.ioctl		   = inet6_ioctl,
-	.gettstamp	   = sock_gettstamp,
 	.listen		   = sock_no_listen,
 	.shutdown	   = inet_shutdown,
 	.setsockopt	   = sock_common_setsockopt,

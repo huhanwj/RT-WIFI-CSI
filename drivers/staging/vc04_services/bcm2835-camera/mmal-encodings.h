@@ -1,14 +1,16 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Broadcom BM2835 V4L2 driver
  *
  * Copyright © 2013 Raspberry Pi (Trading) Ltd.
  *
- * Authors: Vincent Sanders @ Collabora
- *          Dave Stevenson @ Broadcom
- *		(now dave.stevenson@raspberrypi.org)
- *          Simon Mellor @ Broadcom
- *          Luke Diamand @ Broadcom
+ * This file is subject to the terms and conditions of the GNU General Public
+ * License.  See the file COPYING in the main directory of this archive
+ * for more details.
+ *
+ * Authors: Vincent Sanders <vincent.sanders@collabora.co.uk>
+ *          Dave Stevenson <dsteve@broadcom.com>
+ *          Simon Mellor <simellor@broadcom.com>
+ *          Luke Diamand <luked@broadcom.com>
  */
 #ifndef MMAL_ENCODINGS_H
 #define MMAL_ENCODINGS_H

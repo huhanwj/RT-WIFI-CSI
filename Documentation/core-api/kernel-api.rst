@@ -33,32 +33,22 @@ String Conversions
 .. kernel-doc:: lib/kstrtox.c
    :export:
 
-.. kernel-doc:: lib/string_helpers.c
-   :export:
-
 String Manipulation
 -------------------
 
 .. kernel-doc:: lib/string.c
    :export:
 
-.. kernel-doc:: include/linux/string.h
-   :internal:
+Bit Operations
+--------------
 
-.. kernel-doc:: mm/util.c
-   :functions: kstrdup kstrdup_const kstrndup kmemdup kmemdup_nul memdup_user
-               vmemdup_user strndup_user memdup_user_nul
+.. kernel-doc:: arch/x86/include/asm/bitops.h
+   :internal:
 
 Basic Kernel Library Functions
 ==============================
 
 The Linux kernel provides more basic utility functions.
-
-Bit Operations
---------------
-
-.. kernel-doc:: include/asm-generic/bitops-instrumented.h
-   :internal:
 
 Bitmap Operations
 -----------------
@@ -90,31 +80,6 @@ Command-line Parsing
 .. kernel-doc:: lib/cmdline.c
    :export:
 
-Sorting
--------
-
-.. kernel-doc:: lib/sort.c
-   :export:
-
-.. kernel-doc:: lib/list_sort.c
-   :export:
-
-Text Searching
---------------
-
-.. kernel-doc:: lib/textsearch.c
-   :doc: ts_intro
-
-.. kernel-doc:: lib/textsearch.c
-   :export:
-
-.. kernel-doc:: include/linux/textsearch.h
-   :functions: textsearch_find textsearch_next \
-               textsearch_get_pattern textsearch_get_pattern_len
-
-CRC and Math Functions in Linux
-===============================
-
 CRC Functions
 -------------
 
@@ -138,20 +103,26 @@ CRC Functions
 .. kernel-doc:: lib/crc-itu-t.c
    :export:
 
+idr/ida Functions
+-----------------
+
+.. kernel-doc:: include/linux/idr.h
+   :doc: idr sync
+
+.. kernel-doc:: lib/idr.c
+   :doc: IDA description
+
+.. kernel-doc:: lib/idr.c
+   :export:
+
+Math Functions in Linux
+=======================
+
 Base 2 log and power Functions
 ------------------------------
 
 .. kernel-doc:: include/linux/log2.h
    :internal:
-
-Integer power Functions
------------------------
-
-.. kernel-doc:: lib/math/int_pow.c
-   :export:
-
-.. kernel-doc:: lib/math/int_sqrt.c
-   :export:
 
 Division Functions
 ------------------
@@ -162,16 +133,64 @@ Division Functions
 .. kernel-doc:: include/linux/math64.h
    :internal:
 
-.. kernel-doc:: lib/math/div64.c
+.. kernel-doc:: lib/div64.c
    :functions: div_s64_rem div64_u64_rem div64_u64 div64_s64
 
-.. kernel-doc:: lib/math/gcd.c
+.. kernel-doc:: lib/gcd.c
    :export:
 
-UUID/GUID
----------
+Memory Management in Linux
+==========================
 
-.. kernel-doc:: lib/uuid.c
+The Slab Cache
+--------------
+
+.. kernel-doc:: include/linux/slab.h
+   :internal:
+
+.. kernel-doc:: mm/slab.c
+   :export:
+
+.. kernel-doc:: mm/util.c
+   :export:
+
+User Space Memory Access
+------------------------
+
+.. kernel-doc:: arch/x86/include/asm/uaccess.h
+   :internal:
+
+.. kernel-doc:: arch/x86/lib/usercopy_32.c
+   :export:
+
+More Memory Management Functions
+--------------------------------
+
+.. kernel-doc:: mm/readahead.c
+   :export:
+
+.. kernel-doc:: mm/filemap.c
+   :export:
+
+.. kernel-doc:: mm/memory.c
+   :export:
+
+.. kernel-doc:: mm/vmalloc.c
+   :export:
+
+.. kernel-doc:: mm/page_alloc.c
+   :internal:
+
+.. kernel-doc:: mm/mempool.c
+   :export:
+
+.. kernel-doc:: mm/dmapool.c
+   :export:
+
+.. kernel-doc:: mm/page-writeback.c
+   :export:
+
+.. kernel-doc:: mm/truncate.c
    :export:
 
 Kernel IPC facilities
@@ -249,7 +268,7 @@ Resources Management
 MTRR Handling
 -------------
 
-.. kernel-doc:: arch/x86/kernel/cpu/mtrr/mtrr.c
+.. kernel-doc:: arch/x86/kernel/cpu/mtrr/main.c
    :export:
 
 Security Framework
@@ -305,6 +324,12 @@ Block Devices
 
 .. kernel-doc:: block/blk-lib.c
    :export:
+
+.. kernel-doc:: block/blk-tag.c
+   :export:
+
+.. kernel-doc:: block/blk-tag.c
+   :internal:
 
 .. kernel-doc:: block/blk-integrity.c
    :export:
@@ -371,7 +396,13 @@ Read-Copy Update (RCU)
 
 .. kernel-doc:: include/linux/rcupdate.h
 
+.. kernel-doc:: include/linux/rcupdate_wait.h
+
+.. kernel-doc:: include/linux/rcutree.h
+
 .. kernel-doc:: kernel/rcu/tree.c
+
+.. kernel-doc:: kernel/rcu/tree_plugin.h
 
 .. kernel-doc:: kernel/rcu/tree_exp.h
 
@@ -390,3 +421,4 @@ Read-Copy Update (RCU)
 .. kernel-doc:: include/linux/rcu_sync.h
 
 .. kernel-doc:: kernel/rcu/sync.c
+

@@ -2,11 +2,12 @@
 #ifndef _VIDEOBUF2_DVB_H_
 #define	_VIDEOBUF2_DVB_H_
 
-#include <media/dvbdev.h>
-#include <media/dmxdev.h>
-#include <media/dvb_demux.h>
-#include <media/dvb_net.h>
-#include <media/dvb_frontend.h>
+#include <dvbdev.h>
+#include <dmxdev.h>
+#include <dvb_demux.h>
+#include <dvb_net.h>
+#include <dvb_frontend.h>
+
 #include <media/videobuf2-v4l2.h>
 
 /* We don't actually need to include media-device.h here */

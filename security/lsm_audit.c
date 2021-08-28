@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * common LSM auditing functions
  *
@@ -6,6 +5,10 @@
  *			Stephen Smalley, <sds@tycho.nsa.gov>
  * 			James Morris <jmorris@redhat.com>
  * Author : Etienne Basset, <etienne.basset@ensta.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2,
+ * as published by the Free Software Foundation.
  */
 
 #include <linux/types.h>
@@ -318,7 +321,6 @@ static void dump_common_audit_data(struct audit_buffer *ab,
 		if (a->u.net->sk) {
 			struct sock *sk = a->u.net->sk;
 			struct unix_sock *u;
-			struct unix_address *addr;
 			int len = 0;
 			char *p = NULL;
 
@@ -349,15 +351,14 @@ static void dump_common_audit_data(struct audit_buffer *ab,
 #endif
 			case AF_UNIX:
 				u = unix_sk(sk);
-				addr = smp_load_acquire(&u->addr);
-				if (!addr)
-					break;
 				if (u->path.dentry) {
 					audit_log_d_path(ab, " path=", &u->path);
 					break;
 				}
-				len = addr->len-sizeof(short);
-				p = &addr->name->sun_path[0];
+				if (!u->addr)
+					break;
+				len = u->addr->len-sizeof(short);
+				p = &u->addr->name->sun_path[0];
 				audit_log_format(ab, " path=");
 				if (*p)
 					audit_log_untrustedstring(ab, p);
@@ -446,7 +447,7 @@ void common_lsm_audit(struct common_audit_data *a,
 	if (a == NULL)
 		return;
 	/* we use GFP_ATOMIC so we won't sleep */
-	ab = audit_log_start(audit_context(), GFP_ATOMIC | __GFP_NOWARN,
+	ab = audit_log_start(current->audit_context, GFP_ATOMIC | __GFP_NOWARN,
 			     AUDIT_AVC);
 
 	if (ab == NULL)

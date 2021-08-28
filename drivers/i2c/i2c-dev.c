@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
     i2c-dev.c - i2c-bus driver, char device interface
 
@@ -6,6 +5,15 @@
     Copyright (C) 1998-99 Frodo Looijaard <frodol@dds.nl>
     Copyright (C) 2003 Greg Kroah-Hartman <greg@kroah.com>
 
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
 */
 
 /* Note that this is a complete rewrite of Simon Vogl's i2c-dev module.
@@ -44,7 +52,7 @@ struct i2c_dev {
 	struct cdev cdev;
 };
 
-#define I2C_MINORS	(MINORMASK + 1)
+#define I2C_MINORS	MINORMASK
 static LIST_HEAD(i2c_dev_list);
 static DEFINE_SPINLOCK(i2c_dev_list_lock);
 
@@ -236,7 +244,7 @@ static noinline int i2cdev_ioctl_rdwr(struct i2c_client *client,
 	u8 __user **data_ptrs;
 	int i, res;
 
-	data_ptrs = kmalloc_array(nmsgs, sizeof(u8 __user *), GFP_KERNEL);
+	data_ptrs = kmalloc(nmsgs * sizeof(u8 __user *), GFP_KERNEL);
 	if (data_ptrs == NULL) {
 		kfree(msgs);
 		return -ENOMEM;
@@ -256,8 +264,6 @@ static noinline int i2cdev_ioctl_rdwr(struct i2c_client *client,
 			res = PTR_ERR(msgs[i].buf);
 			break;
 		}
-		/* memdup_user allocates with GFP_KERNEL, so DMA is ok */
-		msgs[i].flags |= I2C_M_DMA_SAFE;
 
 		/*
 		 * If the message length is received from the slave (similar
@@ -272,10 +278,9 @@ static noinline int i2cdev_ioctl_rdwr(struct i2c_client *client,
 		 */
 		if (msgs[i].flags & I2C_M_RECV_LEN) {
 			if (!(msgs[i].flags & I2C_M_RD) ||
-			    msgs[i].len < 1 || msgs[i].buf[0] < 1 ||
+			    msgs[i].buf[0] < 1 ||
 			    msgs[i].len < msgs[i].buf[0] +
 					     I2C_SMBUS_BLOCK_MAX) {
-				i++;
 				res = -EINVAL;
 				break;
 			}
@@ -463,15 +468,9 @@ static long i2cdev_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 					  data_arg.data);
 	}
 	case I2C_RETRIES:
-		if (arg > INT_MAX)
-			return -EINVAL;
-
 		client->adapter->retries = arg;
 		break;
 	case I2C_TIMEOUT:
-		if (arg > INT_MAX)
-			return -EINVAL;
-
 		/* For historical reasons, user-space sets the timeout
 		 * value in units of 10 ms.
 		 */

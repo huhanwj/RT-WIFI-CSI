@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * FB driver for the PCD8544 LCD Controller
  *
@@ -6,12 +5,22 @@
  * Any pixel value except 0 turns the pixel on.
  *
  * Copyright (C) 2013 Noralf Tronnes
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
-#include <linux/gpio/consumer.h>
+#include <linux/gpio.h>
 #include <linux/spi/spi.h>
 #include <linux/delay.h>
 
@@ -119,7 +128,7 @@ static int write_vmem(struct fbtft_par *par, size_t offset, size_t len)
 	}
 
 	/* Write data */
-	gpiod_set_value(par->gpio.dc, 1);
+	gpio_set_value(par->gpio.dc, 1);
 	ret = par->fbtftops.write(par, par->txbuf.buf, 6 * 84);
 	if (ret < 0)
 		dev_err(par->info->device, "write failed and returned: %d\n",
@@ -157,10 +166,10 @@ static struct fbtft_display display = {
 	.backlight = 1,
 };
 
-FBTFT_REGISTER_DRIVER(DRVNAME, "philips,pcd8544", &display);
+FBTFT_REGISTER_DRIVER(DRVNAME, "philips,pdc8544", &display);
 
 MODULE_ALIAS("spi:" DRVNAME);
-MODULE_ALIAS("spi:pcd8544");
+MODULE_ALIAS("spi:pdc8544");
 
 MODULE_DESCRIPTION("FB driver for the PCD8544 LCD Controller");
 MODULE_AUTHOR("Noralf Tronnes");

@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Based on sound/arm/pxa2xx-ac97.c and sound/soc/pxa/pxa2xx-ac97.c
  * which contain:
@@ -6,6 +5,10 @@
  * Author:	Nicolas Pitre
  * Created:	Dec 02, 2004
  * Copyright:	MontaVista Software Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include <linux/kernel.h>
@@ -16,7 +19,6 @@
 #include <linux/module.h>
 #include <linux/io.h>
 #include <linux/gpio.h>
-#include <linux/of_gpio.h>
 
 #include <sound/pxa2xx-lib.h>
 
@@ -335,17 +337,6 @@ int pxa2xx_ac97_hw_probe(struct platform_device *dev)
 			dev_err(&dev->dev, "Invalid reset GPIO %d\n",
 				pdata->reset_gpio);
 		}
-	} else if (!pdata && dev->dev.of_node) {
-		pdata = devm_kzalloc(&dev->dev, sizeof(*pdata), GFP_KERNEL);
-		if (!pdata)
-			return -ENOMEM;
-		pdata->reset_gpio = of_get_named_gpio(dev->dev.of_node,
-						      "reset-gpios", 0);
-		if (pdata->reset_gpio == -ENOENT)
-			pdata->reset_gpio = -1;
-		else if (pdata->reset_gpio < 0)
-			return pdata->reset_gpio;
-		reset_gpio = pdata->reset_gpio;
 	} else {
 		if (cpu_is_pxa27x())
 			reset_gpio = 113;

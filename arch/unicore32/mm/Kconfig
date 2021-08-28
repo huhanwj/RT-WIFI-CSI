@@ -39,3 +39,13 @@ config CPU_TLB_SINGLE_ENTRY_DISABLE
 	default y
 	help
 	  Say Y here to disable the TLB single entry operations.
+
+config SWIOTLB
+	def_bool y
+
+config IOMMU_HELPER
+	def_bool SWIOTLB
+
+config NEED_SG_DMA_LENGTH
+	def_bool SWIOTLB
+

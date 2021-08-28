@@ -196,16 +196,18 @@ static void cxacru_poll_status(struct work_struct *work);
 
 /* Card info exported through sysfs */
 #define CXACRU__ATTR_INIT(_name) \
-static DEVICE_ATTR_RO(_name)
+static DEVICE_ATTR(_name, S_IRUGO, cxacru_sysfs_show_##_name, NULL)
 
 #define CXACRU_CMD_INIT(_name) \
-static DEVICE_ATTR_RW(_name)
+static DEVICE_ATTR(_name, S_IWUSR | S_IRUGO, \
+	cxacru_sysfs_show_##_name, cxacru_sysfs_store_##_name)
 
 #define CXACRU_SET_INIT(_name) \
-static DEVICE_ATTR_WO(_name)
+static DEVICE_ATTR(_name, S_IWUSR, \
+	NULL, cxacru_sysfs_store_##_name)
 
 #define CXACRU_ATTR_INIT(_value, _type, _name) \
-static ssize_t _name##_show(struct device *dev, \
+static ssize_t cxacru_sysfs_show_##_name(struct device *dev, \
 	struct device_attribute *attr, char *buf) \
 { \
 	struct cxacru_data *instance = to_usbatm_driver_data(\
@@ -300,7 +302,7 @@ static ssize_t cxacru_sysfs_showattr_MODU(u32 value, char *buf)
  * MAC_ADDRESS_LOW  = 0x33221100
  * Where 00-55 are bytes 0-5 of the MAC.
  */
-static ssize_t mac_address_show(struct device *dev,
+static ssize_t cxacru_sysfs_show_mac_address(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct cxacru_data *instance = to_usbatm_driver_data(
@@ -313,7 +315,7 @@ static ssize_t mac_address_show(struct device *dev,
 		instance->usbatm->atm_dev->esi);
 }
 
-static ssize_t adsl_state_show(struct device *dev,
+static ssize_t cxacru_sysfs_show_adsl_state(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	static char *str[] = { "running", "stopped" };
@@ -330,7 +332,7 @@ static ssize_t adsl_state_show(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "%s\n", str[value]);
 }
 
-static ssize_t adsl_state_store(struct device *dev,
+static ssize_t cxacru_sysfs_store_adsl_state(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct cxacru_data *instance = to_usbatm_driver_data(
@@ -433,7 +435,7 @@ static ssize_t adsl_state_store(struct device *dev,
 
 /* CM_REQUEST_CARD_DATA_GET times out, so no show attribute */
 
-static ssize_t adsl_config_store(struct device *dev,
+static ssize_t cxacru_sysfs_store_adsl_config(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct cxacru_data *instance = to_usbatm_driver_data(
@@ -538,37 +540,6 @@ CXACRU_CMD_##_action(                                        adsl_state); \
 CXACRU_SET_##_action(                                        adsl_config);
 
 CXACRU_ALL_FILES(INIT);
-
-static struct attribute *cxacru_attrs[] = {
-	&dev_attr_adsl_config.attr,
-	&dev_attr_adsl_state.attr,
-	&dev_attr_adsl_controller_version.attr,
-	&dev_attr_adsl_headend_environment.attr,
-	&dev_attr_adsl_headend.attr,
-	&dev_attr_modulation.attr,
-	&dev_attr_line_startable.attr,
-	&dev_attr_downstream_hec_errors.attr,
-	&dev_attr_upstream_hec_errors.attr,
-	&dev_attr_downstream_fec_errors.attr,
-	&dev_attr_upstream_fec_errors.attr,
-	&dev_attr_downstream_crc_errors.attr,
-	&dev_attr_upstream_crc_errors.attr,
-	&dev_attr_startup_attempts.attr,
-	&dev_attr_downstream_bits_per_frame.attr,
-	&dev_attr_upstream_bits_per_frame.attr,
-	&dev_attr_transmitter_power.attr,
-	&dev_attr_downstream_attenuation.attr,
-	&dev_attr_upstream_attenuation.attr,
-	&dev_attr_downstream_snr_margin.attr,
-	&dev_attr_upstream_snr_margin.attr,
-	&dev_attr_mac_address.attr,
-	&dev_attr_line_status.attr,
-	&dev_attr_link_status.attr,
-	&dev_attr_upstream_rate.attr,
-	&dev_attr_downstream_rate.attr,
-	NULL,
-};
-ATTRIBUTE_GROUPS(cxacru);
 
 /* the following three functions are stolen from drivers/usb/core/message.c */
 static void cxacru_blocking_completion(struct urb *urb)
@@ -767,6 +738,17 @@ static int cxacru_card_status(struct cxacru_data *instance)
 	return 0;
 }
 
+static void cxacru_remove_device_files(struct usbatm_data *usbatm_instance,
+		struct atm_dev *atm_dev)
+{
+	struct usb_interface *intf = usbatm_instance->usb_intf;
+
+	#define CXACRU_DEVICE_REMOVE_FILE(_name) \
+		device_remove_file(&intf->dev, &dev_attr_##_name);
+	CXACRU_ALL_FILES(REMOVE);
+	#undef CXACRU_DEVICE_REMOVE_FILE
+}
+
 static int cxacru_atm_start(struct usbatm_data *usbatm_instance,
 		struct atm_dev *atm_dev)
 {
@@ -784,6 +766,13 @@ static int cxacru_atm_start(struct usbatm_data *usbatm_instance,
 		atm_err(usbatm_instance, "cxacru_atm_start: CARD_GET_MAC_ADDRESS returned %d\n", ret);
 		return ret;
 	}
+
+	#define CXACRU_DEVICE_CREATE_FILE(_name) \
+		ret = device_create_file(&intf->dev, &dev_attr_##_name); \
+		if (unlikely(ret)) \
+			goto fail_sysfs;
+	CXACRU_ALL_FILES(CREATE);
+	#undef CXACRU_DEVICE_CREATE_FILE
 
 	/* start ADSL */
 	mutex_lock(&instance->adsl_state_serialize);
@@ -817,6 +806,11 @@ static int cxacru_atm_start(struct usbatm_data *usbatm_instance,
 	if (start_polling)
 		cxacru_poll_status(&instance->poll_work.work);
 	return 0;
+
+fail_sysfs:
+	usb_err(usbatm_instance, "cxacru_atm_start: device_create_file failed (%d)\n", ret);
+	cxacru_remove_device_files(usbatm_instance, atm_dev);
+	return ret;
 }
 
 static void cxacru_poll_status(struct work_struct *work)
@@ -1340,6 +1334,7 @@ static struct usbatm_driver cxacru_driver = {
 	.heavy_init	= cxacru_heavy_init,
 	.unbind		= cxacru_unbind,
 	.atm_start	= cxacru_atm_start,
+	.atm_stop	= cxacru_remove_device_files,
 	.bulk_in	= CXACRU_EP_DATA,
 	.bulk_out	= CXACRU_EP_DATA,
 	.rx_padding	= 3,
@@ -1371,8 +1366,7 @@ static struct usb_driver cxacru_usb_driver = {
 	.name		= cxacru_driver_name,
 	.probe		= cxacru_usb_probe,
 	.disconnect	= usbatm_usb_disconnect,
-	.id_table	= cxacru_usb_ids,
-	.dev_groups	= cxacru_groups,
+	.id_table	= cxacru_usb_ids
 };
 
 module_usb_driver(cxacru_usb_driver);

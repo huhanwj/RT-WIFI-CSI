@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * stv0900_sw.c
  *
@@ -7,6 +6,17 @@
  * Copyright (C) ST Microelectronics.
  * Copyright (C) 2009 NetUP Inc.
  * Copyright (C) 2009 Igor M. Liplianin <liplianin@netup.ru>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *
+ * GNU General Public License for more details.
  */
 
 #include "stv0900.h"
@@ -1245,14 +1255,14 @@ fe_stv0900_signal_type stv0900_get_signal_params(struct dvb_frontend *fe)
 		else
 			intp->freq[d] = stv0900_get_tuner_freq(fe);
 
-		if (abs(offsetFreq) <= ((intp->srch_range[d] / 2000) + 500))
+		if (ABS(offsetFreq) <= ((intp->srch_range[d] / 2000) + 500))
 			range = STV0900_RANGEOK;
-		else if (abs(offsetFreq) <=
+		else if (ABS(offsetFreq) <=
 				(stv0900_carrier_width(result->symbol_rate,
 						result->rolloff) / 2000))
 			range = STV0900_RANGEOK;
 
-	} else if (abs(offsetFreq) <= ((intp->srch_range[d] / 2000) + 500))
+	} else if (ABS(offsetFreq) <= ((intp->srch_range[d] / 2000) + 500))
 		range = STV0900_RANGEOK;
 
 	dprintk("%s: range %d\n", __func__, range);

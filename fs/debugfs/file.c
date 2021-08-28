@@ -18,8 +18,7 @@
 #include <linux/slab.h>
 #include <linux/atomic.h>
 #include <linux/device.h>
-#include <linux/poll.h>
-#include <linux/security.h>
+#include <asm/poll.h>
 
 #include "internal.h"
 
@@ -137,25 +136,6 @@ void debugfs_file_put(struct dentry *dentry)
 }
 EXPORT_SYMBOL_GPL(debugfs_file_put);
 
-/*
- * Only permit access to world-readable files when the kernel is locked down.
- * We also need to exclude any file that has ways to write or alter it as root
- * can bypass the permissions check.
- */
-static bool debugfs_is_locked_down(struct inode *inode,
-				   struct file *filp,
-				   const struct file_operations *real_fops)
-{
-	if ((inode->i_mode & 07777) == 0444 &&
-	    !(filp->f_mode & FMODE_WRITE) &&
-	    !real_fops->unlocked_ioctl &&
-	    !real_fops->compat_ioctl &&
-	    !real_fops->mmap)
-		return false;
-
-	return security_locked_down(LOCKDOWN_DEBUGFS);
-}
-
 static int open_proxy_open(struct inode *inode, struct file *filp)
 {
 	struct dentry *dentry = F_DENTRY(filp);
@@ -167,11 +147,6 @@ static int open_proxy_open(struct inode *inode, struct file *filp)
 		return r == -EIO ? -ENOENT : r;
 
 	real_fops = debugfs_real_fops(filp);
-
-	r = debugfs_is_locked_down(inode, filp, real_fops);
-	if (r)
-		goto out;
-
 	real_fops = fops_get(real_fops);
 	if (!real_fops) {
 		/* Huh? Module did not clean up after itself at exit? */
@@ -231,15 +206,15 @@ FULL_PROXY_FUNC(unlocked_ioctl, long, filp,
 		PROTO(struct file *filp, unsigned int cmd, unsigned long arg),
 		ARGS(filp, cmd, arg));
 
-static __poll_t full_proxy_poll(struct file *filp,
+static unsigned int full_proxy_poll(struct file *filp,
 				struct poll_table_struct *wait)
 {
 	struct dentry *dentry = F_DENTRY(filp);
-	__poll_t r = 0;
+	unsigned int r = 0;
 	const struct file_operations *real_fops;
 
 	if (debugfs_file_get(dentry))
-		return EPOLLHUP;
+		return POLLHUP;
 
 	real_fops = debugfs_real_fops(filp);
 	r = real_fops->poll(filp, wait);
@@ -297,11 +272,6 @@ static int full_proxy_open(struct inode *inode, struct file *filp)
 		return r == -EIO ? -ENOENT : r;
 
 	real_fops = debugfs_real_fops(filp);
-
-	r = debugfs_is_locked_down(inode, filp, real_fops);
-	if (r)
-		goto out;
-
 	real_fops = fops_get(real_fops);
 	if (!real_fops) {
 		/* Huh? Module did not cleanup after itself at exit? */
@@ -424,11 +394,12 @@ DEFINE_DEBUGFS_ATTRIBUTE(fops_u8_wo, NULL, debugfs_u8_set, "%llu\n");
  * This function will return a pointer to a dentry if it succeeds.  This
  * pointer must be passed to the debugfs_remove() function when the file is
  * to be removed (no automatic cleanup happens if your module is unloaded,
- * you are responsible here.)  If an error occurs, %ERR_PTR(-ERROR) will be
- * returned.
+ * you are responsible here.)  If an error occurs, %NULL will be returned.
  *
- * If debugfs is not enabled in the kernel, the value %ERR_PTR(-ENODEV) will
- * be returned.
+ * If debugfs is not enabled in the kernel, the value -%ENODEV will be
+ * returned.  It is not wise to check for this value, but rather, check for
+ * %NULL or !%NULL instead as to eliminate the need for #ifdef in the calling
+ * code.
  */
 struct dentry *debugfs_create_u8(const char *name, umode_t mode,
 				 struct dentry *parent, u8 *value)
@@ -469,11 +440,12 @@ DEFINE_DEBUGFS_ATTRIBUTE(fops_u16_wo, NULL, debugfs_u16_set, "%llu\n");
  * This function will return a pointer to a dentry if it succeeds.  This
  * pointer must be passed to the debugfs_remove() function when the file is
  * to be removed (no automatic cleanup happens if your module is unloaded,
- * you are responsible here.)  If an error occurs, %ERR_PTR(-ERROR) will be
- * returned.
+ * you are responsible here.)  If an error occurs, %NULL will be returned.
  *
- * If debugfs is not enabled in the kernel, the value %ERR_PTR(-ENODEV) will
- * be returned.
+ * If debugfs is not enabled in the kernel, the value -%ENODEV will be
+ * returned.  It is not wise to check for this value, but rather, check for
+ * %NULL or !%NULL instead as to eliminate the need for #ifdef in the calling
+ * code.
  */
 struct dentry *debugfs_create_u16(const char *name, umode_t mode,
 				  struct dentry *parent, u16 *value)
@@ -514,11 +486,12 @@ DEFINE_DEBUGFS_ATTRIBUTE(fops_u32_wo, NULL, debugfs_u32_set, "%llu\n");
  * This function will return a pointer to a dentry if it succeeds.  This
  * pointer must be passed to the debugfs_remove() function when the file is
  * to be removed (no automatic cleanup happens if your module is unloaded,
- * you are responsible here.)  If an error occurs, %ERR_PTR(-ERROR) will be
- * returned.
+ * you are responsible here.)  If an error occurs, %NULL will be returned.
  *
- * If debugfs is not enabled in the kernel, the value %ERR_PTR(-ENODEV) will
- * be returned.
+ * If debugfs is not enabled in the kernel, the value -%ENODEV will be
+ * returned.  It is not wise to check for this value, but rather, check for
+ * %NULL or !%NULL instead as to eliminate the need for #ifdef in the calling
+ * code.
  */
 struct dentry *debugfs_create_u32(const char *name, umode_t mode,
 				 struct dentry *parent, u32 *value)
@@ -560,11 +533,12 @@ DEFINE_DEBUGFS_ATTRIBUTE(fops_u64_wo, NULL, debugfs_u64_set, "%llu\n");
  * This function will return a pointer to a dentry if it succeeds.  This
  * pointer must be passed to the debugfs_remove() function when the file is
  * to be removed (no automatic cleanup happens if your module is unloaded,
- * you are responsible here.)  If an error occurs, %ERR_PTR(-ERROR) will be
- * returned.
+ * you are responsible here.)  If an error occurs, %NULL will be returned.
  *
- * If debugfs is not enabled in the kernel, the value %ERR_PTR(-ENODEV) will
- * be returned.
+ * If debugfs is not enabled in the kernel, the value -%ENODEV will be
+ * returned.  It is not wise to check for this value, but rather, check for
+ * %NULL or !%NULL instead as to eliminate the need for #ifdef in the calling
+ * code.
  */
 struct dentry *debugfs_create_u64(const char *name, umode_t mode,
 				 struct dentry *parent, u64 *value)
@@ -608,11 +582,12 @@ DEFINE_DEBUGFS_ATTRIBUTE(fops_ulong_wo, NULL, debugfs_ulong_set, "%llu\n");
  * This function will return a pointer to a dentry if it succeeds.  This
  * pointer must be passed to the debugfs_remove() function when the file is
  * to be removed (no automatic cleanup happens if your module is unloaded,
- * you are responsible here.)  If an error occurs, %ERR_PTR(-ERROR) will be
- * returned.
+ * you are responsible here.)  If an error occurs, %NULL will be returned.
  *
- * If debugfs is not enabled in the kernel, the value %ERR_PTR(-ENODEV) will
- * be returned.
+ * If debugfs is not enabled in the kernel, the value -%ENODEV will be
+ * returned.  It is not wise to check for this value, but rather, check for
+ * %NULL or !%NULL instead as to eliminate the need for #ifdef in the calling
+ * code.
  */
 struct dentry *debugfs_create_ulong(const char *name, umode_t mode,
 				    struct dentry *parent, unsigned long *value)
@@ -821,13 +796,19 @@ EXPORT_SYMBOL_GPL(debugfs_read_file_bool);
 ssize_t debugfs_write_file_bool(struct file *file, const char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
+	char buf[32];
+	size_t buf_size;
 	bool bv;
 	int r;
 	bool *val = file->private_data;
 	struct dentry *dentry = F_DENTRY(file);
 
-	r = kstrtobool_from_user(user_buf, count, &bv);
-	if (!r) {
+	buf_size = min(count, (sizeof(buf)-1));
+	if (copy_from_user(buf, user_buf, buf_size))
+		return -EFAULT;
+
+	buf[buf_size] = '\0';
+	if (strtobool(buf, &bv) == 0) {
 		r = debugfs_file_get(dentry);
 		if (unlikely(r))
 			return r;
@@ -875,11 +856,12 @@ static const struct file_operations fops_bool_wo = {
  * This function will return a pointer to a dentry if it succeeds.  This
  * pointer must be passed to the debugfs_remove() function when the file is
  * to be removed (no automatic cleanup happens if your module is unloaded,
- * you are responsible here.)  If an error occurs, %ERR_PTR(-ERROR) will be
- * returned.
+ * you are responsible here.)  If an error occurs, %NULL will be returned.
  *
- * If debugfs is not enabled in the kernel, the value %ERR_PTR(-ENODEV) will
- * be returned.
+ * If debugfs is not enabled in the kernel, the value -%ENODEV will be
+ * returned.  It is not wise to check for this value, but rather, check for
+ * %NULL or !%NULL instead as to eliminate the need for #ifdef in the calling
+ * code.
  */
 struct dentry *debugfs_create_bool(const char *name, umode_t mode,
 				   struct dentry *parent, bool *value)
@@ -928,11 +910,12 @@ static const struct file_operations fops_blob = {
  * This function will return a pointer to a dentry if it succeeds.  This
  * pointer must be passed to the debugfs_remove() function when the file is
  * to be removed (no automatic cleanup happens if your module is unloaded,
- * you are responsible here.)  If an error occurs, %ERR_PTR(-ERROR) will be
- * returned.
+ * you are responsible here.)  If an error occurs, %NULL will be returned.
  *
- * If debugfs is not enabled in the kernel, the value %ERR_PTR(-ENODEV) will
- * be returned.
+ * If debugfs is not enabled in the kernel, the value -%ENODEV will be
+ * returned.  It is not wise to check for this value, but rather, check for
+ * %NULL or !%NULL instead as to eliminate the need for #ifdef in the calling
+ * code.
  */
 struct dentry *debugfs_create_blob(const char *name, umode_t mode,
 				   struct dentry *parent,
@@ -1027,19 +1010,24 @@ static const struct file_operations u32_array_fops = {
  * @array as data. If the @mode variable is so set it can be read from.
  * Writing is not supported. Seek within the file is also not supported.
  * Once array is created its size can not be changed.
+ *
+ * The function returns a pointer to dentry on success. If debugfs is not
+ * enabled in the kernel, the value -%ENODEV will be returned.
  */
-void debugfs_create_u32_array(const char *name, umode_t mode,
-			      struct dentry *parent, u32 *array, u32 elements)
+struct dentry *debugfs_create_u32_array(const char *name, umode_t mode,
+					    struct dentry *parent,
+					    u32 *array, u32 elements)
 {
 	struct array_data *data = kmalloc(sizeof(*data), GFP_KERNEL);
 
 	if (data == NULL)
-		return;
+		return NULL;
 
 	data->array = array;
 	data->elements = elements;
 
-	debugfs_create_file_unsafe(name, mode, parent, data, &u32_array_fops);
+	return debugfs_create_file_unsafe(name, mode, parent, data,
+					&u32_array_fops);
 }
 EXPORT_SYMBOL_GPL(debugfs_create_u32_array);
 
@@ -1120,11 +1108,12 @@ static const struct file_operations fops_regset32 = {
  * This function will return a pointer to a dentry if it succeeds.  This
  * pointer must be passed to the debugfs_remove() function when the file is
  * to be removed (no automatic cleanup happens if your module is unloaded,
- * you are responsible here.)  If an error occurs, %ERR_PTR(-ERROR) will be
- * returned.
+ * you are responsible here.)  If an error occurs, %NULL will be returned.
  *
- * If debugfs is not enabled in the kernel, the value %ERR_PTR(-ENODEV) will
- * be returned.
+ * If debugfs is not enabled in the kernel, the value -%ENODEV will be
+ * returned.  It is not wise to check for this value, but rather, check for
+ * %NULL or !%NULL instead as to eliminate the need for #ifdef in the calling
+ * code.
  */
 struct dentry *debugfs_create_regset32(const char *name, umode_t mode,
 				       struct dentry *parent,

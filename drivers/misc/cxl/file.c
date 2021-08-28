@@ -1,6 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright 2014 IBM Corp.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
  */
 
 #include <linux/spinlock.h>
@@ -169,7 +173,7 @@ static long afu_ioctl_start_work(struct cxl_context *ctx,
 	 * flags are set it's invalid
 	 */
 	if (work.reserved1 || work.reserved2 || work.reserved3 ||
-	    work.reserved4 || work.reserved5 ||
+	    work.reserved4 || work.reserved5 || work.reserved6 ||
 	    (work.flags & ~CXL_START_WORK_ALL)) {
 		rc = -EINVAL;
 		goto out;
@@ -182,15 +186,11 @@ static long afu_ioctl_start_work(struct cxl_context *ctx,
 		rc =  -EINVAL;
 		goto out;
 	}
-
 	if ((rc = afu_register_irqs(ctx, work.num_interrupts)))
 		goto out;
 
 	if (work.flags & CXL_START_WORK_AMR)
 		amr = work.amr & mfspr(SPRN_UAMOR);
-
-	if (work.flags & CXL_START_WORK_TID)
-		ctx->assign_tidr = true;
 
 	ctx->mmio_err_ff = !!(work.flags & CXL_START_WORK_ERR_FF);
 
@@ -263,15 +263,8 @@ static long afu_ioctl_start_work(struct cxl_context *ctx,
 		goto out;
 	}
 
-	rc = 0;
-	if (work.flags & CXL_START_WORK_TID) {
-		work.tid = ctx->tidr;
-		if (copy_to_user(uwork, &work, sizeof(work)))
-			rc = -EFAULT;
-	}
-
 	ctx->status = STARTED;
-
+	rc = 0;
 out:
 	mutex_unlock(&ctx->status_mutex);
 	return rc;
@@ -361,10 +354,10 @@ static inline bool ctx_event_pending(struct cxl_context *ctx)
 	return false;
 }
 
-__poll_t afu_poll(struct file *file, struct poll_table_struct *poll)
+unsigned int afu_poll(struct file *file, struct poll_table_struct *poll)
 {
 	struct cxl_context *ctx = file->private_data;
-	__poll_t mask = 0;
+	int mask = 0;
 	unsigned long flags;
 
 
@@ -374,11 +367,11 @@ __poll_t afu_poll(struct file *file, struct poll_table_struct *poll)
 
 	spin_lock_irqsave(&ctx->lock, flags);
 	if (ctx_event_pending(ctx))
-		mask |= EPOLLIN | EPOLLRDNORM;
+		mask |= POLLIN | POLLRDNORM;
 	else if (ctx->status == CLOSED)
 		/* Only error on closed when there are no futher events pending
 		 */
-		mask |= EPOLLERR;
+		mask |= POLLERR;
 	spin_unlock_irqrestore(&ctx->lock, flags);
 
 	pr_devel("afu_poll pe: %i returning %#x\n", ctx->pe, mask);

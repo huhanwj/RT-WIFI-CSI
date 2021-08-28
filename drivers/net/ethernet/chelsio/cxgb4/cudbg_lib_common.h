@@ -1,6 +1,18 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  *  Copyright (C) 2017 Chelsio Communications.  All rights reserved.
+ *
+ *  This program is free software; you can redistribute it and/or modify it
+ *  under the terms and conditions of the GNU General Public License,
+ *  version 2, as published by the Free Software Foundation.
+ *
+ *  This program is distributed in the hope it will be useful, but WITHOUT
+ *  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ *  FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ *  more details.
+ *
+ *  The full GNU General Public License is included in this distribution in
+ *  the file called "COPYING".
+ *
  */
 
 #ifndef __CUDBG_LIB_COMMON_H__
@@ -14,7 +26,6 @@ enum cudbg_dump_type {
 
 enum cudbg_compression_type {
 	CUDBG_COMPRESSION_NONE = 1,
-	CUDBG_COMPRESSION_ZLIB,
 };
 
 struct cudbg_hdr {
@@ -67,11 +78,10 @@ struct cudbg_error {
 #define CDUMP_MAX_COMP_BUF_SIZE ((64 * 1024) - 1)
 #define CUDBG_CHUNK_SIZE ((CDUMP_MAX_COMP_BUF_SIZE / 1024) * 1024)
 
-int cudbg_get_buff(struct cudbg_init *pdbg_init,
-		   struct cudbg_buffer *pdbg_buff, u32 size,
+int cudbg_get_buff(struct cudbg_buffer *pdbg_buff, u32 size,
 		   struct cudbg_buffer *pin_buff);
-void cudbg_put_buff(struct cudbg_init *pdbg_init,
-		    struct cudbg_buffer *pin_buff);
+void cudbg_put_buff(struct cudbg_buffer *pin_buff,
+		    struct cudbg_buffer *pdbg_buff);
 void cudbg_update_buff(struct cudbg_buffer *pin_buff,
 		       struct cudbg_buffer *pout_buff);
 #endif /* __CUDBG_LIB_COMMON_H__ */

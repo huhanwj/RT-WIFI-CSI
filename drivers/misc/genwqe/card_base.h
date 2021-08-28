@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 #ifndef __CARD_BASE_H__
 #define __CARD_BASE_H__
 
@@ -11,6 +10,15 @@
  * Author: Joerg-Stephan Vogt <jsvogt@de.ibm.com>
  * Author: Michael Jung <mijung@gmx.net>
  * Author: Michael Ruettger <michael@ibmra.de>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License (version 2 only)
+ * as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  */
 
 /*
@@ -39,13 +47,13 @@
 #define GENWQE_CARD_NO_MAX		(16 * GENWQE_MAX_FUNCS)
 
 /* Compile parameters, some of them appear in debugfs for later adjustment */
-#define GENWQE_DDCB_MAX			32 /* DDCBs on the work-queue */
-#define GENWQE_POLLING_ENABLED		0  /* in case of irqs not working */
-#define GENWQE_DDCB_SOFTWARE_TIMEOUT	10 /* timeout per DDCB in seconds */
-#define GENWQE_KILL_TIMEOUT		8  /* time until process gets killed */
-#define GENWQE_VF_JOBTIMEOUT_MSEC	250  /* 250 msec */
-#define GENWQE_PF_JOBTIMEOUT_MSEC	8000 /* 8 sec should be ok */
-#define GENWQE_HEALTH_CHECK_INTERVAL	4 /* <= 0: disabled */
+#define genwqe_ddcb_max			32 /* DDCBs on the work-queue */
+#define genwqe_polling_enabled		0  /* in case of irqs not working */
+#define genwqe_ddcb_software_timeout	10 /* timeout per DDCB in seconds */
+#define genwqe_kill_timeout		8  /* time until process gets killed */
+#define genwqe_vf_jobtimeout_msec	250  /* 250 msec */
+#define genwqe_pf_jobtimeout_msec	8000 /* 8 sec should be ok */
+#define genwqe_health_check_interval	4 /* <= 0: disabled */
 
 /* Sysfs attribute groups used when we create the genwqe device */
 extern const struct attribute_group *genwqe_attribute_groups[];
@@ -400,7 +408,7 @@ struct genwqe_file {
 	struct file *filp;
 
 	struct fasync_struct *async_queue;
-	struct pid *opener;
+	struct task_struct *owner;
 	struct list_head list;		/* entry in list of open files */
 
 	spinlock_t map_lock;		/* lock for dma_mappings */
@@ -437,7 +445,7 @@ int  genwqe_device_create(struct genwqe_dev *cd);
 int  genwqe_device_remove(struct genwqe_dev *cd);
 
 /* debugfs */
-void genwqe_init_debugfs(struct genwqe_dev *cd);
+int  genwqe_init_debugfs(struct genwqe_dev *cd);
 void genqwe_exit_debugfs(struct genwqe_dev *cd);
 
 int  genwqe_read_softreset(struct genwqe_dev *cd);
@@ -482,14 +490,16 @@ int  genwqe_read_app_id(struct genwqe_dev *cd, char *app_name, int len);
 
 /* Memory allocation/deallocation; dma address handling */
 int  genwqe_user_vmap(struct genwqe_dev *cd, struct dma_mapping *m,
-		      void *uaddr, unsigned long size);
+		      void *uaddr, unsigned long size,
+		      struct ddcb_requ *req);
 
-int  genwqe_user_vunmap(struct genwqe_dev *cd, struct dma_mapping *m);
+int  genwqe_user_vunmap(struct genwqe_dev *cd, struct dma_mapping *m,
+			struct ddcb_requ *req);
 
 static inline bool dma_mapping_used(struct dma_mapping *m)
 {
 	if (!m)
-		return false;
+		return 0;
 	return m->size != 0;
 }
 

@@ -45,9 +45,6 @@
 #define PF_BASE(idx) (PF0_BASE + (idx) * PF_STRIDE)
 #define PF_REG(idx, reg) (PF_BASE(idx) + (reg))
 
-#define NUM_CIM_CTL_TSCH_CHANNEL_INSTANCES 4
-#define NUM_CIM_CTL_TSCH_CHANNEL_TSCH_CLASS_INSTANCES 16
-
 #define MYPORT_BASE 0x1c000
 #define MYPORT_REG(reg_addr) (MYPORT_BASE + (reg_addr))
 
@@ -964,10 +961,6 @@
 
 #define MA_EXT_MEMORY1_BAR_A 0x7808
 
-#define HMA_MUX_S    5
-#define HMA_MUX_V(x) ((x) << HMA_MUX_S)
-#define HMA_MUX_F    HMA_MUX_V(1U)
-
 #define EXT_MEM1_BASE_S    16
 #define EXT_MEM1_BASE_M    0xfffU
 #define EXT_MEM1_BASE_G(x) (((x) >> EXT_MEM1_BASE_S) & EXT_MEM1_BASE_M)
@@ -1334,10 +1327,6 @@
 #define TP_OUT_CONFIG_A		0x7d04
 #define TP_GLOBAL_CONFIG_A	0x7d08
 
-#define ACTIVEFILTERCOUNTS_S    22
-#define ACTIVEFILTERCOUNTS_V(x) ((x) << ACTIVEFILTERCOUNTS_S)
-#define ACTIVEFILTERCOUNTS_F    ACTIVEFILTERCOUNTS_V(1U)
-
 #define TP_CMM_TCB_BASE_A 0x7d10
 #define TP_CMM_MM_BASE_A 0x7d14
 #define TP_CMM_TIMER_BASE_A 0x7d18
@@ -1506,25 +1495,6 @@
 #define TP_MIB_DATA_A	0x7e54
 #define TP_INT_CAUSE_A	0x7e74
 
-#define TP_FLM_FREE_PS_CNT_A 0x7e80
-#define TP_FLM_FREE_RX_CNT_A 0x7e84
-
-#define FREEPSTRUCTCOUNT_S    0
-#define FREEPSTRUCTCOUNT_M    0x1fffffU
-#define FREEPSTRUCTCOUNT_G(x) (((x) >> FREEPSTRUCTCOUNT_S) & FREEPSTRUCTCOUNT_M)
-
-#define FREERXPAGECOUNT_S    0
-#define FREERXPAGECOUNT_M    0x1fffffU
-#define FREERXPAGECOUNT_V(x) ((x) << FREERXPAGECOUNT_S)
-#define FREERXPAGECOUNT_G(x) (((x) >> FREERXPAGECOUNT_S) & FREERXPAGECOUNT_M)
-
-#define TP_FLM_FREE_TX_CNT_A 0x7e88
-
-#define FREETXPAGECOUNT_S    0
-#define FREETXPAGECOUNT_M    0x1fffffU
-#define FREETXPAGECOUNT_V(x) ((x) << FREETXPAGECOUNT_S)
-#define FREETXPAGECOUNT_G(x) (((x) >> FREETXPAGECOUNT_S) & FREETXPAGECOUNT_M)
-
 #define FLMTXFLSTEMPTY_S    30
 #define FLMTXFLSTEMPTY_V(x) ((x) << FLMTXFLSTEMPTY_S)
 #define FLMTXFLSTEMPTY_F    FLMTXFLSTEMPTY_V(1U)
@@ -1621,10 +1591,6 @@
 #define VNIC_V(x) ((x) << VNIC_S)
 #define VNIC_F    VNIC_V(1U)
 
-#define USE_ENC_IDX_S		13
-#define USE_ENC_IDX_V(x)	((x) << USE_ENC_IDX_S)
-#define USE_ENC_IDX_F		USE_ENC_IDX_V(1U)
-
 #define CSUM_HAS_PSEUDO_HDR_S    10
 #define CSUM_HAS_PSEUDO_HDR_V(x) ((x) << CSUM_HAS_PSEUDO_HDR_S)
 #define CSUM_HAS_PSEUDO_HDR_F    CSUM_HAS_PSEUDO_HDR_V(1U)
@@ -1706,16 +1672,6 @@
 #define ULP_TX_LA_RDPTR_0_A 0x8ec0
 #define ULP_TX_LA_RDDATA_0_A 0x8ec4
 #define ULP_TX_LA_WRPTR_0_A 0x8ec8
-#define ULP_TX_ASIC_DEBUG_CTRL_A 0x8f70
-
-#define ULP_TX_ASIC_DEBUG_0_A 0x8f74
-#define ULP_TX_ASIC_DEBUG_1_A 0x8f78
-#define ULP_TX_ASIC_DEBUG_2_A 0x8f7c
-#define ULP_TX_ASIC_DEBUG_3_A 0x8f80
-#define ULP_TX_ASIC_DEBUG_4_A 0x8f84
-
-/* registers for module PM_RX */
-#define PM_RX_BASE_ADDR 0x8fc0
 
 #define PMRX_E_PCMD_PAR_ERROR_S    0
 #define PMRX_E_PCMD_PAR_ERROR_V(x) ((x) << PMRX_E_PCMD_PAR_ERROR_S)
@@ -2548,28 +2504,6 @@
 #define MPS_RX_MAC_BG_PG_CNT0_A 0x11208
 #define MPS_RX_LPBK_BG_PG_CNT0_A 0x11218
 
-#define MPS_RX_VXLAN_TYPE_A 0x11234
-
-#define VXLAN_EN_S    16
-#define VXLAN_EN_V(x) ((x) << VXLAN_EN_S)
-#define VXLAN_EN_F    VXLAN_EN_V(1U)
-
-#define VXLAN_S    0
-#define VXLAN_M    0xffffU
-#define VXLAN_V(x) ((x) << VXLAN_S)
-#define VXLAN_G(x) (((x) >> VXLAN_S) & VXLAN_M)
-
-#define MPS_RX_GENEVE_TYPE_A 0x11238
-
-#define GENEVE_EN_S    16
-#define GENEVE_EN_V(x) ((x) << GENEVE_EN_S)
-#define GENEVE_EN_F    GENEVE_EN_V(1U)
-
-#define GENEVE_S    0
-#define GENEVE_M    0xffffU
-#define GENEVE_V(x) ((x) << GENEVE_S)
-#define GENEVE_G(x) (((x) >> GENEVE_S) & GENEVE_M)
-
 #define MPS_CLS_TCAM_Y_L_A 0xf000
 #define MPS_CLS_TCAM_DATA0_A 0xf000
 #define MPS_CLS_TCAM_DATA1_A 0xf004
@@ -2596,13 +2530,7 @@
 
 #define DATAPORTNUM_S    12
 #define DATAPORTNUM_M    0xfU
-#define DATAPORTNUM_V(x) ((x) << DATAPORTNUM_S)
 #define DATAPORTNUM_G(x) (((x) >> DATAPORTNUM_S) & DATAPORTNUM_M)
-
-#define DATALKPTYPE_S    10
-#define DATALKPTYPE_M    0x3U
-#define DATALKPTYPE_V(x) ((x) << DATALKPTYPE_S)
-#define DATALKPTYPE_G(x) (((x) >> DATALKPTYPE_S) & DATALKPTYPE_M)
 
 #define DATADIPHIT_S    8
 #define DATADIPHIT_V(x) ((x) << DATADIPHIT_S)
@@ -2812,8 +2740,6 @@
 #define ULP_RX_LA_RDPTR_A 0x19240
 #define ULP_RX_LA_RDDATA_A 0x19244
 #define ULP_RX_LA_WRPTR_A 0x19248
-#define ULP_RX_TLS_KEY_LLIMIT_A 0x192ac
-#define ULP_RX_TLS_KEY_ULIMIT_A 0x192b0
 
 #define HPZ3_S    24
 #define HPZ3_V(x) ((x) << HPZ3_S)
@@ -3032,7 +2958,6 @@
 #define LE_DB_HASH_TID_BASE_A 0x19c30
 #define LE_DB_HASH_TBL_BASE_ADDR_A 0x19c30
 #define LE_DB_INT_CAUSE_A 0x19c3c
-#define LE_DB_CLCAM_TID_BASE_A 0x19df4
 #define LE_DB_TID_HASHBASE_A 0x19df8
 #define T6_LE_DB_HASH_TID_BASE_A 0x19df8
 

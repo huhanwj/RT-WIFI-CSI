@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Elan Microelectronics touch panels with I2C interface
  *
@@ -11,6 +10,7 @@
  *  Copyright (c) 2010-2012 Benjamin Tissoires <benjamin.tissoires@gmail.com>
  *  Copyright (c) 2010-2012 Ecole Nationale de l'Aviation Civile, France
  *
+ *
  * This code is partly based on i2c-hid.c:
  *
  * Copyright (c) 2012 Benjamin Tissoires <benjamin.tissoires@gmail.com>
@@ -18,6 +18,11 @@
  * Copyright (c) 2012 Red Hat, Inc
  */
 
+/*
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ */
 
 #include <linux/module.h>
 #include <linux/input.h>
@@ -40,6 +45,7 @@
 
 /* Device, Driver information */
 #define DEVICE_NAME	"elants_i2c"
+#define DRV_VERSION	"1.0.9"
 
 /* Convert from rows or columns into resolution */
 #define ELAN_TS_RESOLUTION(n, m)   (((n) - 1) * (m))
@@ -142,11 +148,10 @@ struct elants_data {
 	u8 cmd_resp[HEADER_SIZE];
 	struct completion cmd_done;
 
+	u8 buf[MAX_PACKET_SIZE];
+
 	bool wake_irq_enabled;
 	bool keep_power_in_suspend;
-
-	/* Must be last to be used for DMA operations */
-	u8 buf[MAX_PACKET_SIZE] ____cacheline_aligned;
 };
 
 static int elants_i2c_send(struct i2c_client *client,
@@ -859,7 +864,7 @@ static irqreturn_t elants_i2c_irq(int irq, void *_dev)
 	int i;
 	int len;
 
-	len = i2c_master_recv_dmasafe(client, ts->buf, sizeof(ts->buf));
+	len = i2c_master_recv(client, ts->buf, sizeof(ts->buf));
 	if (len < 0) {
 		dev_err(&client->dev, "%s: failed to read data: %d\n",
 			__func__, len);
@@ -995,7 +1000,7 @@ static ssize_t show_iap_mode(struct device *dev,
 				"Normal" : "Recovery");
 }
 
-static DEVICE_ATTR_WO(calibrate);
+static DEVICE_ATTR(calibrate, S_IWUSR, NULL, calibrate_store);
 static DEVICE_ATTR(iap_mode, S_IRUGO, show_iap_mode, NULL);
 static DEVICE_ATTR(update_fw, S_IWUSR, NULL, write_update_fw);
 
@@ -1401,4 +1406,5 @@ module_i2c_driver(elants_i2c_driver);
 
 MODULE_AUTHOR("Scott Liu <scott.liu@emc.com.tw>");
 MODULE_DESCRIPTION("Elan I2c Touchscreen driver");
+MODULE_VERSION(DRV_VERSION);
 MODULE_LICENSE("GPL");

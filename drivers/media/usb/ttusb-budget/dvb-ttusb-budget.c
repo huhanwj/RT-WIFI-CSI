@@ -1,9 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * TTUSB DVB driver
  *
  * Copyright (c) 2002 Holger Waechtler <holger@convergence.de>
  * Copyright (c) 2003 Felix Domke <tmbinc@elitedvb.net>
+ *
+ *	This program is free software; you can redistribute it and/or
+ *	modify it under the terms of the GNU General Public License as
+ *	published by the Free Software Foundation; either version 2 of
+ *	the License, or (at your option) any later version.
  */
 #include <linux/init.h>
 #include <linux/slab.h>
@@ -18,10 +22,10 @@
 #include <linux/mutex.h>
 #include <linux/firmware.h>
 
-#include <media/dvb_frontend.h>
-#include <media/dmxdev.h>
-#include <media/dvb_demux.h>
-#include <media/dvb_net.h>
+#include "dvb_frontend.h"
+#include "dmxdev.h"
+#include "dvb_demux.h"
+#include "dvb_net.h"
 #include "ves1820.h"
 #include "cx22700.h"
 #include "tda1004x.h"
@@ -98,6 +102,7 @@ struct ttusb {
 	unsigned int isoc_in_pipe;
 
 	void *iso_buffer;
+	dma_addr_t iso_dma_handle;
 
 	struct urb *iso_urb[ISO_BUF_COUNT];
 
@@ -302,7 +307,7 @@ static int ttusb_boot_dsp(struct ttusb *ttusb)
 	b[3] = 28;
 
 	/* upload dsp code in 32 byte steps (36 didn't work for me ...) */
-	/* 32 is max packet size, no messages should be split. */
+	/* 32 is max packet size, no messages should be splitted. */
 	for (i = 0; i < fw->size; i += 28) {
 		memcpy(&b[4], &fw->data[i], 28);
 
@@ -787,17 +792,26 @@ static void ttusb_free_iso_urbs(struct ttusb *ttusb)
 
 	for (i = 0; i < ISO_BUF_COUNT; i++)
 		usb_free_urb(ttusb->iso_urb[i]);
-	kfree(ttusb->iso_buffer);
+
+	pci_free_consistent(NULL,
+			    ISO_FRAME_SIZE * FRAMES_PER_ISO_BUF *
+			    ISO_BUF_COUNT, ttusb->iso_buffer,
+			    ttusb->iso_dma_handle);
 }
 
 static int ttusb_alloc_iso_urbs(struct ttusb *ttusb)
 {
 	int i;
 
-	ttusb->iso_buffer = kcalloc(FRAMES_PER_ISO_BUF * ISO_BUF_COUNT,
-			ISO_FRAME_SIZE, GFP_KERNEL);
-	if (!ttusb->iso_buffer)
+	ttusb->iso_buffer = pci_zalloc_consistent(NULL,
+						  ISO_FRAME_SIZE * FRAMES_PER_ISO_BUF * ISO_BUF_COUNT,
+						  &ttusb->iso_dma_handle);
+
+	if (!ttusb->iso_buffer) {
+		dprintk("%s: pci_alloc_consistent - not enough memory\n",
+			__func__);
 		return -ENOMEM;
+	}
 
 	for (i = 0; i < ISO_BUF_COUNT; i++) {
 		struct urb *urb;
@@ -1682,7 +1696,7 @@ static int ttusb_probe(struct usb_interface *intf, const struct usb_device_id *i
 
 	/* i2c */
 	memset(&ttusb->i2c_adap, 0, sizeof(struct i2c_adapter));
-	strscpy(ttusb->i2c_adap.name, "TTUSB DEC", sizeof(ttusb->i2c_adap.name));
+	strcpy(ttusb->i2c_adap.name, "TTUSB DEC");
 
 	i2c_set_adapdata(&ttusb->i2c_adap, ttusb);
 

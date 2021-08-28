@@ -1,10 +1,23 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Driver for Digigram VXpocket soundcards
  *
  * lowlevel routines for VXpocket soundcards
  *
  * Copyright (c) 2002 by Takashi Iwai <tiwai@suse.de>
+ *
+ *   This program is free software; you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation; either version 2 of the License, or
+ *   (at your option) any later version.
+ *
+ *   This program is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with this program; if not, write to the Free Software
+ *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
 #include <linux/delay.h>
@@ -362,7 +375,7 @@ static void vxp_dma_write(struct vx_core *chip, struct snd_pcm_runtime *runtime,
 		length >>= 1; /* in 16bit words */
 		/* Transfer using pseudo-dma. */
 		for (; length > 0; length--) {
-			outw(*addr, port);
+			outw(cpu_to_le16(*addr), port);
 			addr++;
 		}
 		addr = (unsigned short *)runtime->dma_area;
@@ -372,7 +385,7 @@ static void vxp_dma_write(struct vx_core *chip, struct snd_pcm_runtime *runtime,
 	count >>= 1; /* in 16bit words */
 	/* Transfer using pseudo-dma. */
 	for (; count > 0; count--) {
-		outw(*addr, port);
+		outw(cpu_to_le16(*addr), port);
 		addr++;
 	}
 	vx_release_pseudo_dma(chip);
@@ -404,7 +417,7 @@ static void vxp_dma_read(struct vx_core *chip, struct snd_pcm_runtime *runtime,
 		length >>= 1; /* in 16bit words */
 		/* Transfer using pseudo-dma. */
 		for (; length > 0; length--)
-			*addr++ = inw(port);
+			*addr++ = le16_to_cpu(inw(port));
 		addr = (unsigned short *)runtime->dma_area;
 		pipe->hw_ptr = 0;
 	}
@@ -412,12 +425,12 @@ static void vxp_dma_read(struct vx_core *chip, struct snd_pcm_runtime *runtime,
 	count >>= 1; /* in 16bit words */
 	/* Transfer using pseudo-dma. */
 	for (; count > 1; count--)
-		*addr++ = inw(port);
+		*addr++ = le16_to_cpu(inw(port));
 	/* Disable DMA */
 	pchip->regDIALOG &= ~VXP_DLG_DMAREAD_SEL_MASK;
 	vx_outb(chip, DIALOG, pchip->regDIALOG);
 	/* Read the last word (16 bits) */
-	*addr = inw(port);
+	*addr = le16_to_cpu(inw(port));
 	/* Disable 16-bit accesses */
 	pchip->regDIALOG &= ~VXP_DLG_DMA16_SEL_MASK;
 	vx_outb(chip, DIALOG, pchip->regDIALOG);

@@ -53,7 +53,6 @@
 #include <linux/delay.h>
 #include <linux/gpio.h>
 #include <linux/ieee802154.h>
-#include <linux/io.h>
 #include <linux/kfifo.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
@@ -635,9 +634,10 @@ static int ca8210_test_int_driver_write(
 	for (i = 0; i < len; i++)
 		dev_dbg(&priv->spi->dev, "%#03x\n", buf[i]);
 
-	fifo_buffer = kmemdup(buf, len, GFP_KERNEL);
+	fifo_buffer = kmalloc(len, GFP_KERNEL);
 	if (!fifo_buffer)
 		return -ENOMEM;
+	memcpy(fifo_buffer, buf, len);
 	kfifo_in(&test->up_fifo, &fifo_buffer, 4);
 	wake_up_interruptible(&priv->test.readq);
 
@@ -722,7 +722,7 @@ static void ca8210_mlme_reset_worker(struct work_struct *work)
 static void ca8210_rx_done(struct cas_control *cas_ctl)
 {
 	u8 *buf;
-	unsigned int len;
+	u8 len;
 	struct work_priv_container *mlme_reset_wpc;
 	struct ca8210_priv *priv = cas_ctl->priv;
 
@@ -731,7 +731,7 @@ static void ca8210_rx_done(struct cas_control *cas_ctl)
 	if (len > CA8210_SPI_BUF_SIZE) {
 		dev_crit(
 			&priv->spi->dev,
-			"Received packet len (%u) erroneously long\n",
+			"Received packet len (%d) erroneously long\n",
 			len
 		);
 		goto finish;
@@ -2493,14 +2493,13 @@ static ssize_t ca8210_test_int_user_write(
 	struct ca8210_priv *priv = filp->private_data;
 	u8 command[CA8210_SPI_BUF_SIZE];
 
-	memset(command, SPI_IDLE, 6);
-	if (len > CA8210_SPI_BUF_SIZE || len < 2) {
+	if (len > CA8210_SPI_BUF_SIZE) {
 		dev_warn(
 			&priv->spi->dev,
-			"userspace requested erroneous write length (%zu)\n",
+			"userspace requested erroneously long write (%zu)\n",
 			len
 		);
-		return -EBADE;
+		return -EMSGSIZE;
 	}
 
 	ret = copy_from_user(command, in_buf, len);
@@ -2511,13 +2510,6 @@ static ssize_t ca8210_test_int_user_write(
 			ret
 		);
 		return -EIO;
-	}
-	if (len != command[1] + 2) {
-		dev_err(
-			&priv->spi->dev,
-			"write len does not match packet length field\n"
-		);
-		return -EBADE;
 	}
 
 	ret = ca8210_test_check_upstream(command, priv->spi);
@@ -2646,21 +2638,21 @@ static long ca8210_test_int_ioctl(
  *
  * Return: set of poll return flags
  */
-static __poll_t ca8210_test_int_poll(
+static unsigned int ca8210_test_int_poll(
 	struct file *filp,
 	struct poll_table_struct *ptable
 )
 {
-	__poll_t return_flags = 0;
+	unsigned int return_flags = 0;
 	struct ca8210_priv *priv = filp->private_data;
 
 	poll_wait(filp, &priv->test.readq, ptable);
 	if (!kfifo_is_empty(&priv->test.up_fifo))
-		return_flags |= (EPOLLIN | EPOLLRDNORM);
+		return_flags |= (POLLIN | POLLRDNORM);
 	if (wait_event_interruptible(
 		priv->test.readq,
 		!kfifo_is_empty(&priv->test.up_fifo))) {
-		return EPOLLERR;
+		return POLLERR;
 	}
 	return return_flags;
 }
@@ -3019,7 +3011,14 @@ static int ca8210_test_interface_init(struct ca8210_priv *priv)
 		priv,
 		&test_int_fops
 	);
-
+	if (IS_ERR(test->ca8210_dfs_spi_int)) {
+		dev_err(
+			&priv->spi->dev,
+			"Error %ld when creating debugfs node\n",
+			PTR_ERR(test->ca8210_dfs_spi_int)
+		);
+		return PTR_ERR(test->ca8210_dfs_spi_int);
+	}
 	debugfs_create_symlink("ca8210", NULL, node_name);
 	init_waitqueue_head(&test->readq);
 	return kfifo_alloc(
@@ -3037,7 +3036,8 @@ static void ca8210_test_interface_clear(struct ca8210_priv *priv)
 {
 	struct ca8210_test *test = &priv->test;
 
-	debugfs_remove(test->ca8210_dfs_spi_int);
+	if (!IS_ERR(test->ca8210_dfs_spi_int))
+		debugfs_remove(test->ca8210_dfs_spi_int);
 	kfifo_free(&test->up_fifo);
 	dev_info(&priv->spi->dev, "Test interface removed\n");
 }
@@ -3145,12 +3145,12 @@ static int ca8210_probe(struct spi_device *spi_device)
 		goto error;
 	}
 
-	priv->spi->dev.platform_data = pdata;
 	ret = ca8210_get_platform_data(priv->spi, pdata);
 	if (ret) {
 		dev_crit(&spi_device->dev, "ca8210_get_platform_data failed\n");
 		goto error;
 	}
+	priv->spi->dev.platform_data = pdata;
 
 	ret = ca8210_dev_com_init(priv);
 	if (ret) {

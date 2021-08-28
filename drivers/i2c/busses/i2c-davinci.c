@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * TI DAVINCI I2C adapter driver.
  *
@@ -9,7 +8,17 @@
  *
  * ----------------------------------------------------------------------------
  *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  * ----------------------------------------------------------------------------
+ *
  */
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -24,7 +33,7 @@
 #include <linux/io.h>
 #include <linux/slab.h>
 #include <linux/cpufreq.h>
-#include <linux/gpio/consumer.h>
+#include <linux/gpio.h>
 #include <linux/of_device.h>
 #include <linux/platform_data/i2c-davinci.h>
 #include <linux/pm_runtime.h>
@@ -130,6 +139,7 @@ struct davinci_i2c_dev {
 	u8			terminate;
 	struct i2c_adapter	adapter;
 #ifdef CONFIG_CPU_FREQ
+	struct completion	xfr_complete;
 	struct notifier_block	freq_transition;
 #endif
 	struct davinci_i2c_platform_data *pdata;
@@ -228,16 +238,12 @@ static void i2c_davinci_calc_clk_dividers(struct davinci_i2c_dev *dev)
 	/*
 	 * It's not always possible to have 1 to 2 ratio when d=7, so fall back
 	 * to minimal possible clkh in this case.
-	 *
-	 * Note:
-	 * CLKH is not allowed to be 0, in this case I2C clock is not generated
-	 * at all
 	 */
-	if (clk > clkl + d) {
+	if (clk >= clkl + d) {
 		clkh = clk - clkl - d;
 		clkl -= d;
 	} else {
-		clkh = 1;
+		clkh = 0;
 		clkl = clk - (d << 1);
 	}
 
@@ -288,7 +294,7 @@ static int i2c_davinci_init(struct davinci_i2c_dev *dev)
 }
 
 /*
- * This routine does i2c bus recovery by using i2c_generic_scl_recovery
+ * This routine does i2c bus recovery by using i2c_generic_gpio_recovery
  * which is provided by I2C Bus recovery infrastructure.
  */
 static void davinci_i2c_prepare_recovery(struct i2c_adapter *adap)
@@ -310,7 +316,7 @@ static void davinci_i2c_unprepare_recovery(struct i2c_adapter *adap)
 }
 
 static struct i2c_bus_recovery_info davinci_i2c_gpio_recovery_info = {
-	.recover_bus = i2c_generic_scl_recovery,
+	.recover_bus = i2c_generic_gpio_recovery,
 	.prepare_recovery = davinci_i2c_prepare_recovery,
 	.unprepare_recovery = davinci_i2c_unprepare_recovery,
 };
@@ -561,6 +567,9 @@ i2c_davinci_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 	}
 
 	ret = num;
+#ifdef CONFIG_CPU_FREQ
+	complete(&dev->xfr_complete);
+#endif
 
 out:
 	pm_runtime_mark_last_busy(dev->dev);
@@ -708,15 +717,13 @@ static int i2c_davinci_cpufreq_transition(struct notifier_block *nb,
 	struct davinci_i2c_dev *dev;
 
 	dev = container_of(nb, struct davinci_i2c_dev, freq_transition);
-
-	i2c_lock_bus(&dev->adapter, I2C_LOCK_ROOT_ADAPTER);
 	if (val == CPUFREQ_PRECHANGE) {
+		wait_for_completion(&dev->xfr_complete);
 		davinci_i2c_reset_ctrl(dev, 0);
 	} else if (val == CPUFREQ_POSTCHANGE) {
 		i2c_davinci_calc_clk_dividers(dev);
 		davinci_i2c_reset_ctrl(dev, 1);
 	}
-	i2c_unlock_bus(&dev->adapter, I2C_LOCK_ROOT_ADAPTER);
 
 	return 0;
 }
@@ -762,7 +769,6 @@ static int davinci_i2c_probe(struct platform_device *pdev)
 	struct davinci_i2c_dev *dev;
 	struct i2c_adapter *adap;
 	struct resource *mem;
-	struct i2c_bus_recovery_info *rinfo;
 	int r, irq;
 
 	irq = platform_get_irq(pdev, 0);
@@ -783,7 +789,9 @@ static int davinci_i2c_probe(struct platform_device *pdev)
 	}
 
 	init_completion(&dev->cmd_complete);
-
+#ifdef CONFIG_CPU_FREQ
+	init_completion(&dev->xfr_complete);
+#endif
 	dev->dev = &pdev->dev;
 	dev->irq = irq;
 	dev->pdata = dev_get_platdata(&pdev->dev);
@@ -860,20 +868,10 @@ static int davinci_i2c_probe(struct platform_device *pdev)
 
 	if (dev->pdata->has_pfunc)
 		adap->bus_recovery_info = &davinci_i2c_scl_recovery_info;
-	else if (dev->pdata->gpio_recovery) {
-		rinfo =  &davinci_i2c_gpio_recovery_info;
-		adap->bus_recovery_info = rinfo;
-		rinfo->scl_gpiod = devm_gpiod_get(&pdev->dev, "scl",
-						  GPIOD_OUT_HIGH_OPEN_DRAIN);
-		if (IS_ERR(rinfo->scl_gpiod)) {
-			r = PTR_ERR(rinfo->scl_gpiod);
-			goto err_unuse_clocks;
-		}
-		rinfo->sda_gpiod = devm_gpiod_get(&pdev->dev, "sda", GPIOD_IN);
-		if (IS_ERR(rinfo->sda_gpiod)) {
-			r = PTR_ERR(rinfo->sda_gpiod);
-			goto err_unuse_clocks;
-		}
+	else if (dev->pdata->scl_pin) {
+		adap->bus_recovery_info = &davinci_i2c_gpio_recovery_info;
+		adap->bus_recovery_info->scl_gpio = dev->pdata->scl_pin;
+		adap->bus_recovery_info->sda_gpio = dev->pdata->sda_pin;
 	}
 
 	adap->nr = pdev->id;

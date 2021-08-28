@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Qualcomm PM8xxx PMIC XOADC driver
  *
@@ -424,14 +423,18 @@ static irqreturn_t pm8xxx_eoc_irq(int irq, void *d)
 static struct pm8xxx_chan_info *
 pm8xxx_get_channel(struct pm8xxx_xoadc *adc, u8 chan)
 {
+	struct pm8xxx_chan_info *ch;
 	int i;
 
 	for (i = 0; i < adc->nchans; i++) {
-		struct pm8xxx_chan_info *ch = &adc->chans[i];
+		ch = &adc->chans[i];
 		if (ch->hwchan->amux_channel == chan)
-			return ch;
+			break;
 	}
-	return NULL;
+	if (i == adc->nchans)
+		return NULL;
+
+	return ch;
 }
 
 static int pm8xxx_read_channel_rsv(struct pm8xxx_xoadc *adc,
@@ -705,8 +708,8 @@ static int pm8xxx_of_xlate(struct iio_dev *indio_dev,
 	 * mux.
 	 */
 	if (iiospec->args_count != 2) {
-		dev_err(&indio_dev->dev, "wrong number of arguments for %pOFn need 2 got %d\n",
-			iiospec->np,
+		dev_err(&indio_dev->dev, "wrong number of arguments for %s need 2 got %d\n",
+			iiospec->np->name,
 			iiospec->args_count);
 		return -EINVAL;
 	}

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef __NOUVEAU_BO_H__
 #define __NOUVEAU_BO_H__
 
@@ -26,6 +26,8 @@ struct nouveau_bo {
 
 	struct list_head vma_list;
 
+	struct nouveau_cli *cli;
+
 	unsigned contig:1;
 	unsigned page:5;
 	unsigned kind:8;
@@ -34,6 +36,11 @@ struct nouveau_bo {
 	unsigned mode;
 
 	struct nouveau_drm_tile *tile;
+
+	/* Only valid if allocated via nouveau_gem_new() and iff you hold a
+	 * gem reference to it! For debugging, use gem.filp != NULL to test
+	 * whether it is valid. */
+	struct drm_gem_object gem;
 
 	/* protect by the ttm reservation lock */
 	int pin_refcnt;
@@ -56,14 +63,12 @@ nouveau_bo_ref(struct nouveau_bo *ref, struct nouveau_bo **pnvbo)
 		return -EINVAL;
 	prev = *pnvbo;
 
-	if (ref) {
-		ttm_bo_get(&ref->bo);
-		*pnvbo = nouveau_bo(&ref->bo);
-	} else {
-		*pnvbo = NULL;
+	*pnvbo = ref ? nouveau_bo(ttm_bo_reference(&ref->bo)) : NULL;
+	if (prev) {
+		struct ttm_buffer_object *bo = &prev->bo;
+
+		ttm_bo_unref(&bo);
 	}
-	if (prev)
-		ttm_bo_put(&prev->bo);
 
 	return 0;
 }
@@ -71,13 +76,9 @@ nouveau_bo_ref(struct nouveau_bo *ref, struct nouveau_bo **pnvbo)
 extern struct ttm_bo_driver nouveau_bo_driver;
 
 void nouveau_bo_move_init(struct nouveau_drm *);
-struct nouveau_bo *nouveau_bo_alloc(struct nouveau_cli *, u64 *size, int *align,
-				    u32 flags, u32 tile_mode, u32 tile_flags);
-int  nouveau_bo_init(struct nouveau_bo *, u64 size, int align, u32 flags,
-		     struct sg_table *sg, struct dma_resv *robj);
 int  nouveau_bo_new(struct nouveau_cli *, u64 size, int align, u32 flags,
 		    u32 tile_mode, u32 tile_flags, struct sg_table *sg,
-		    struct dma_resv *robj,
+		    struct reservation_object *robj,
 		    struct nouveau_bo **);
 int  nouveau_bo_pin(struct nouveau_bo *, u32 flags, bool contig);
 int  nouveau_bo_unpin(struct nouveau_bo *);
@@ -104,32 +105,4 @@ nvbo_kmap_obj_iovirtual(struct nouveau_bo *nvbo)
 	return ioptr;
 }
 
-static inline void
-nouveau_bo_unmap_unpin_unref(struct nouveau_bo **pnvbo)
-{
-	if (*pnvbo) {
-		nouveau_bo_unmap(*pnvbo);
-		nouveau_bo_unpin(*pnvbo);
-		nouveau_bo_ref(NULL, pnvbo);
-	}
-}
-
-static inline int
-nouveau_bo_new_pin_map(struct nouveau_cli *cli, u64 size, int align, u32 flags,
-		       struct nouveau_bo **pnvbo)
-{
-	int ret = nouveau_bo_new(cli, size, align, flags,
-				 0, 0, NULL, NULL, pnvbo);
-	if (ret == 0) {
-		ret = nouveau_bo_pin(*pnvbo, flags, true);
-		if (ret == 0) {
-			ret = nouveau_bo_map(*pnvbo);
-			if (ret == 0)
-				return ret;
-			nouveau_bo_unpin(*pnvbo);
-		}
-		nouveau_bo_ref(NULL, pnvbo);
-	}
-	return ret;
-}
 #endif

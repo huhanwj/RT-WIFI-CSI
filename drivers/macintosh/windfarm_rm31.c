@@ -1,9 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Windfarm PowerMac thermal control.
  * Control loops for RackMack3,1 (Xserve G5)
  *
  * Copyright (C) 2012 Benjamin Herrenschmidt, IBM Corp.
+ *
+ * Use and redistribute under the terms of the GNU GPL v2.
  */
 #include <linux/types.h>
 #include <linux/errno.h>
@@ -513,7 +514,7 @@ static void rm31_tick(void)
 	int i, last_failure;
 
 	if (!started) {
-		started = true;
+		started = 1;
 		printk(KERN_INFO "windfarm: CPUs control loops started.\n");
 		for (i = 0; i < nr_chips; ++i) {
 			if (cpu_setup_pid(i) < 0) {

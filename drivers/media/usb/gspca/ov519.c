@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * OV519 driver
  *
@@ -21,6 +20,17 @@
  *
  * Copyright (c) 2004-2007 Romain Beauxis <toots@rastageeks.org>
  * Support for OV7670 sensors was contributed by Sam Skipsey <aoanla@yahoo.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -1935,7 +1945,7 @@ static const struct ov_i2c_regvals norm_8610[] = {
 	{ 0x62, 0x5f }, /* was 0xd7, new from windrv 090403 */
 	{ 0x63, 0xff },
 	{ 0x64, 0x53 }, /* new windrv 090403 says 0x57,
-			 * maybe that's wrong */
+			 * maybe thats wrong */
 	{ 0x65, 0x00 },
 	{ 0x66, 0x55 },
 	{ 0x67, 0xb0 },
@@ -2006,8 +2016,8 @@ static void reg_w(struct sd *sd, u16 index, u16 value)
 		req = 0x0a;
 		/* fall through */
 	case BRIDGE_W9968CF:
-		gspca_dbg(gspca_dev, D_USBO, "SET %02x %04x %04x\n",
-			  req, value, index);
+		PDEBUG(D_USBO, "SET %02x %04x %04x",
+				req, value, index);
 		ret = usb_control_msg(sd->gspca_dev.dev,
 			usb_sndctrlpipe(sd->gspca_dev.dev, 0),
 			req,
@@ -2018,8 +2028,8 @@ static void reg_w(struct sd *sd, u16 index, u16 value)
 		req = 1;
 	}
 
-	gspca_dbg(gspca_dev, D_USBO, "SET %02x 0000 %04x %02x\n",
-		  req, index, value);
+	PDEBUG(D_USBO, "SET %02x 0000 %04x %02x",
+			req, index, value);
 	sd->gspca_dev.usb_buf[0] = value;
 	ret = usb_control_msg(sd->gspca_dev.dev,
 			usb_sndctrlpipe(sd->gspca_dev.dev, 0),
@@ -2029,7 +2039,7 @@ static void reg_w(struct sd *sd, u16 index, u16 value)
 			sd->gspca_dev.usb_buf, 1, 500);
 leave:
 	if (ret < 0) {
-		gspca_err(gspca_dev, "reg_w %02x failed %d\n", index, ret);
+		PERR("reg_w %02x failed %d\n", index, ret);
 		sd->gspca_dev.usb_err = ret;
 		return;
 	}
@@ -2068,16 +2078,11 @@ static int reg_r(struct sd *sd, u16 index)
 
 	if (ret >= 0) {
 		ret = sd->gspca_dev.usb_buf[0];
-		gspca_dbg(gspca_dev, D_USBI, "GET %02x 0000 %04x %02x\n",
-			  req, index, ret);
+		PDEBUG(D_USBI, "GET %02x 0000 %04x %02x",
+			req, index, ret);
 	} else {
-		gspca_err(gspca_dev, "reg_r %02x failed %d\n", index, ret);
+		PERR("reg_r %02x failed %d\n", index, ret);
 		sd->gspca_dev.usb_err = ret;
-		/*
-		 * Make sure the result is zeroed to avoid uninitialized
-		 * values.
-		 */
-		gspca_dev->usb_buf[0] = 0;
 	}
 
 	return ret;
@@ -2104,13 +2109,8 @@ static int reg_r8(struct sd *sd,
 	if (ret >= 0) {
 		ret = sd->gspca_dev.usb_buf[0];
 	} else {
-		gspca_err(gspca_dev, "reg_r8 %02x failed %d\n", index, ret);
+		PERR("reg_r8 %02x failed %d\n", index, ret);
 		sd->gspca_dev.usb_err = ret;
-		/*
-		 * Make sure the buffer is zeroed to avoid uninitialized
-		 * values.
-		 */
-		memset(gspca_dev->usb_buf, 0, 8);
 	}
 
 	return ret;
@@ -2165,7 +2165,7 @@ static void ov518_reg_w32(struct sd *sd, u16 index, u32 value, int n)
 			0, index,
 			sd->gspca_dev.usb_buf, n, 500);
 	if (ret < 0) {
-		gspca_err(gspca_dev, "reg_w32 %02x failed %d\n", index, ret);
+		PERR("reg_w32 %02x failed %d\n", index, ret);
 		sd->gspca_dev.usb_err = ret;
 	}
 }
@@ -2175,7 +2175,7 @@ static void ov511_i2c_w(struct sd *sd, u8 reg, u8 value)
 	struct gspca_dev *gspca_dev = (struct gspca_dev *)sd;
 	int rc, retries;
 
-	gspca_dbg(gspca_dev, D_USBO, "ov511_i2c_w %02x %02x\n", reg, value);
+	PDEBUG(D_USBO, "ov511_i2c_w %02x %02x", reg, value);
 
 	/* Three byte write cycle */
 	for (retries = 6; ; ) {
@@ -2198,7 +2198,7 @@ static void ov511_i2c_w(struct sd *sd, u8 reg, u8 value)
 		if ((rc & 2) == 0) /* Ack? */
 			break;
 		if (--retries < 0) {
-			gspca_dbg(gspca_dev, D_USBO, "i2c write retries exhausted\n");
+			PDEBUG(D_USBO, "i2c write retries exhausted");
 			return;
 		}
 	}
@@ -2231,7 +2231,7 @@ static int ov511_i2c_r(struct sd *sd, u8 reg)
 		reg_w(sd, R511_I2C_CTL, 0x10);
 
 		if (--retries < 0) {
-			gspca_dbg(gspca_dev, D_USBI, "i2c write retries exhausted\n");
+			PDEBUG(D_USBI, "i2c write retries exhausted");
 			return -1;
 		}
 	}
@@ -2255,14 +2255,14 @@ static int ov511_i2c_r(struct sd *sd, u8 reg)
 		reg_w(sd, R511_I2C_CTL, 0x10);
 
 		if (--retries < 0) {
-			gspca_dbg(gspca_dev, D_USBI, "i2c read retries exhausted\n");
+			PDEBUG(D_USBI, "i2c read retries exhausted");
 			return -1;
 		}
 	}
 
 	value = reg_r(sd, R51x_I2C_DATA);
 
-	gspca_dbg(gspca_dev, D_USBI, "ov511_i2c_r %02x %02x\n", reg, value);
+	PDEBUG(D_USBI, "ov511_i2c_r %02x %02x", reg, value);
 
 	/* This is needed to make i2c_w() work */
 	reg_w(sd, R511_I2C_CTL, 0x05);
@@ -2281,7 +2281,7 @@ static void ov518_i2c_w(struct sd *sd,
 {
 	struct gspca_dev *gspca_dev = (struct gspca_dev *)sd;
 
-	gspca_dbg(gspca_dev, D_USBO, "ov518_i2c_w %02x %02x\n", reg, value);
+	PDEBUG(D_USBO, "ov518_i2c_w %02x %02x", reg, value);
 
 	/* Select camera register */
 	reg_w(sd, R51x_I2C_SADDR_3, reg);
@@ -2321,7 +2321,7 @@ static int ov518_i2c_r(struct sd *sd, u8 reg)
 	reg_r8(sd, R518_I2C_CTL);
 
 	value = reg_r(sd, R51x_I2C_DATA);
-	gspca_dbg(gspca_dev, D_USBI, "ov518_i2c_r %02x %02x\n", reg, value);
+	PDEBUG(D_USBI, "ov518_i2c_r %02x %02x", reg, value);
 	return value;
 }
 
@@ -2340,11 +2340,11 @@ static void ovfx2_i2c_w(struct sd *sd, u8 reg, u8 value)
 			(u16) value, (u16) reg, NULL, 0, 500);
 
 	if (ret < 0) {
-		gspca_err(gspca_dev, "ovfx2_i2c_w %02x failed %d\n", reg, ret);
+		PERR("ovfx2_i2c_w %02x failed %d\n", reg, ret);
 		sd->gspca_dev.usb_err = ret;
 	}
 
-	gspca_dbg(gspca_dev, D_USBO, "ovfx2_i2c_w %02x %02x\n", reg, value);
+	PDEBUG(D_USBO, "ovfx2_i2c_w %02x %02x", reg, value);
 }
 
 static int ovfx2_i2c_r(struct sd *sd, u8 reg)
@@ -2363,10 +2363,9 @@ static int ovfx2_i2c_r(struct sd *sd, u8 reg)
 
 	if (ret >= 0) {
 		ret = sd->gspca_dev.usb_buf[0];
-		gspca_dbg(gspca_dev, D_USBI, "ovfx2_i2c_r %02x %02x\n",
-			  reg, ret);
+		PDEBUG(D_USBI, "ovfx2_i2c_r %02x %02x", reg, ret);
 	} else {
-		gspca_err(gspca_dev, "ovfx2_i2c_r %02x failed %d\n", reg, ret);
+		PERR("ovfx2_i2c_r %02x failed %d\n", reg, ret);
 		sd->gspca_dev.usb_err = ret;
 	}
 
@@ -2465,7 +2464,7 @@ static inline void ov51x_stop(struct sd *sd)
 {
 	struct gspca_dev *gspca_dev = (struct gspca_dev *)sd;
 
-	gspca_dbg(gspca_dev, D_STREAM, "stopping\n");
+	PDEBUG(D_STREAM, "stopping");
 	sd->stopped = 1;
 	switch (sd->bridge) {
 	case BRIDGE_OV511:
@@ -2496,7 +2495,7 @@ static inline void ov51x_restart(struct sd *sd)
 {
 	struct gspca_dev *gspca_dev = (struct gspca_dev *)sd;
 
-	gspca_dbg(gspca_dev, D_STREAM, "restarting\n");
+	PDEBUG(D_STREAM, "restarting");
 	if (!sd->stopped)
 		return;
 	sd->stopped = 0;
@@ -2547,8 +2546,7 @@ static int init_ov_sensor(struct sd *sd, u8 slave)
 	for (i = 0; i < i2c_detect_tries; i++) {
 		if (i2c_r(sd, OV7610_REG_ID_HIGH) == 0x7f &&
 		    i2c_r(sd, OV7610_REG_ID_LOW) == 0xa2) {
-			gspca_dbg(gspca_dev, D_PROBE, "I2C synced in %d attempt(s)\n",
-				  i);
+			PDEBUG(D_PROBE, "I2C synced in %d attempt(s)", i);
 			return 0;
 		}
 
@@ -2619,11 +2617,11 @@ static void ov_hires_configure(struct sd *sd)
 	int high, low;
 
 	if (sd->bridge != BRIDGE_OVFX2) {
-		gspca_err(gspca_dev, "error hires sensors only supported with ovfx2\n");
+		PERR("error hires sensors only supported with ovfx2\n");
 		return;
 	}
 
-	gspca_dbg(gspca_dev, D_PROBE, "starting ov hires configuration\n");
+	PDEBUG(D_PROBE, "starting ov hires configuration");
 
 	/* Detect sensor (sub)type */
 	high = i2c_r(sd, 0x0a);
@@ -2633,29 +2631,28 @@ static void ov_hires_configure(struct sd *sd)
 	case 0x96:
 		switch (low) {
 		case 0x40:
-			gspca_dbg(gspca_dev, D_PROBE, "Sensor is a OV2610\n");
+			PDEBUG(D_PROBE, "Sensor is a OV2610");
 			sd->sensor = SEN_OV2610;
 			return;
 		case 0x41:
-			gspca_dbg(gspca_dev, D_PROBE, "Sensor is a OV2610AE\n");
+			PDEBUG(D_PROBE, "Sensor is a OV2610AE");
 			sd->sensor = SEN_OV2610AE;
 			return;
 		case 0xb1:
-			gspca_dbg(gspca_dev, D_PROBE, "Sensor is a OV9600\n");
+			PDEBUG(D_PROBE, "Sensor is a OV9600");
 			sd->sensor = SEN_OV9600;
 			return;
 		}
 		break;
 	case 0x36:
 		if ((low & 0x0f) == 0x00) {
-			gspca_dbg(gspca_dev, D_PROBE, "Sensor is a OV3610\n");
+			PDEBUG(D_PROBE, "Sensor is a OV3610");
 			sd->sensor = SEN_OV3610;
 			return;
 		}
 		break;
 	}
-	gspca_err(gspca_dev, "Error unknown sensor type: %02x%02x\n",
-		  high, low);
+	PERR("Error unknown sensor type: %02x%02x\n", high, low);
 }
 
 /* This initializes the OV8110, OV8610 sensor. The OV8110 uses
@@ -2666,19 +2663,18 @@ static void ov8xx0_configure(struct sd *sd)
 	struct gspca_dev *gspca_dev = (struct gspca_dev *)sd;
 	int rc;
 
-	gspca_dbg(gspca_dev, D_PROBE, "starting ov8xx0 configuration\n");
+	PDEBUG(D_PROBE, "starting ov8xx0 configuration");
 
 	/* Detect sensor (sub)type */
 	rc = i2c_r(sd, OV7610_REG_COM_I);
 	if (rc < 0) {
-		gspca_err(gspca_dev, "Error detecting sensor type\n");
+		PERR("Error detecting sensor type");
 		return;
 	}
 	if ((rc & 3) == 1)
 		sd->sensor = SEN_OV8610;
 	else
-		gspca_err(gspca_dev, "Unknown image sensor version: %d\n",
-			  rc & 3);
+		PERR("Unknown image sensor version: %d\n", rc & 3);
 }
 
 /* This initializes the OV7610, OV7620, or OV76BE sensor. The OV76BE uses
@@ -2689,7 +2685,7 @@ static void ov7xx0_configure(struct sd *sd)
 	struct gspca_dev *gspca_dev = (struct gspca_dev *)sd;
 	int rc, high, low;
 
-	gspca_dbg(gspca_dev, D_PROBE, "starting OV7xx0 configuration\n");
+	PDEBUG(D_PROBE, "starting OV7xx0 configuration");
 
 	/* Detect sensor (sub)type */
 	rc = i2c_r(sd, OV7610_REG_COM_I);
@@ -2697,7 +2693,7 @@ static void ov7xx0_configure(struct sd *sd)
 	/* add OV7670 here
 	 * it appears to be wrongly detected as a 7610 by default */
 	if (rc < 0) {
-		gspca_err(gspca_dev, "Error detecting sensor type\n");
+		PERR("Error detecting sensor type\n");
 		return;
 	}
 	if ((rc & 3) == 3) {
@@ -2706,68 +2702,65 @@ static void ov7xx0_configure(struct sd *sd)
 		low = i2c_r(sd, 0x0b);
 		/* info("%x, %x", high, low); */
 		if (high == 0x76 && (low & 0xf0) == 0x70) {
-			gspca_dbg(gspca_dev, D_PROBE, "Sensor is an OV76%02x\n",
-				  low);
+			PDEBUG(D_PROBE, "Sensor is an OV76%02x", low);
 			sd->sensor = SEN_OV7670;
 		} else {
-			gspca_dbg(gspca_dev, D_PROBE, "Sensor is an OV7610\n");
+			PDEBUG(D_PROBE, "Sensor is an OV7610");
 			sd->sensor = SEN_OV7610;
 		}
 	} else if ((rc & 3) == 1) {
 		/* I don't know what's different about the 76BE yet. */
 		if (i2c_r(sd, 0x15) & 1) {
-			gspca_dbg(gspca_dev, D_PROBE, "Sensor is an OV7620AE\n");
+			PDEBUG(D_PROBE, "Sensor is an OV7620AE");
 			sd->sensor = SEN_OV7620AE;
 		} else {
-			gspca_dbg(gspca_dev, D_PROBE, "Sensor is an OV76BE\n");
+			PDEBUG(D_PROBE, "Sensor is an OV76BE");
 			sd->sensor = SEN_OV76BE;
 		}
 	} else if ((rc & 3) == 0) {
 		/* try to read product id registers */
 		high = i2c_r(sd, 0x0a);
 		if (high < 0) {
-			gspca_err(gspca_dev, "Error detecting camera chip PID\n");
+			PERR("Error detecting camera chip PID\n");
 			return;
 		}
 		low = i2c_r(sd, 0x0b);
 		if (low < 0) {
-			gspca_err(gspca_dev, "Error detecting camera chip VER\n");
+			PERR("Error detecting camera chip VER\n");
 			return;
 		}
 		if (high == 0x76) {
 			switch (low) {
 			case 0x30:
-				gspca_err(gspca_dev, "Sensor is an OV7630/OV7635\n");
-				gspca_err(gspca_dev, "7630 is not supported by this driver\n");
+				PERR("Sensor is an OV7630/OV7635\n");
+				PERR("7630 is not supported by this driver\n");
 				return;
 			case 0x40:
-				gspca_dbg(gspca_dev, D_PROBE, "Sensor is an OV7645\n");
+				PDEBUG(D_PROBE, "Sensor is an OV7645");
 				sd->sensor = SEN_OV7640; /* FIXME */
 				break;
 			case 0x45:
-				gspca_dbg(gspca_dev, D_PROBE, "Sensor is an OV7645B\n");
+				PDEBUG(D_PROBE, "Sensor is an OV7645B");
 				sd->sensor = SEN_OV7640; /* FIXME */
 				break;
 			case 0x48:
-				gspca_dbg(gspca_dev, D_PROBE, "Sensor is an OV7648\n");
+				PDEBUG(D_PROBE, "Sensor is an OV7648");
 				sd->sensor = SEN_OV7648;
 				break;
 			case 0x60:
-				gspca_dbg(gspca_dev, D_PROBE, "Sensor is a OV7660\n");
+				PDEBUG(D_PROBE, "Sensor is a OV7660");
 				sd->sensor = SEN_OV7660;
 				break;
 			default:
-				gspca_err(gspca_dev, "Unknown sensor: 0x76%02x\n",
-					  low);
+				PERR("Unknown sensor: 0x76%02x\n", low);
 				return;
 			}
 		} else {
-			gspca_dbg(gspca_dev, D_PROBE, "Sensor is an OV7620\n");
+			PDEBUG(D_PROBE, "Sensor is an OV7620");
 			sd->sensor = SEN_OV7620;
 		}
 	} else {
-		gspca_err(gspca_dev, "Unknown image sensor version: %d\n",
-			  rc & 3);
+		PERR("Unknown image sensor version: %d\n", rc & 3);
 	}
 }
 
@@ -2777,12 +2770,12 @@ static void ov6xx0_configure(struct sd *sd)
 	struct gspca_dev *gspca_dev = (struct gspca_dev *)sd;
 	int rc;
 
-	gspca_dbg(gspca_dev, D_PROBE, "starting OV6xx0 configuration\n");
+	PDEBUG(D_PROBE, "starting OV6xx0 configuration");
 
 	/* Detect sensor (sub)type */
 	rc = i2c_r(sd, OV7610_REG_COM_I);
 	if (rc < 0) {
-		gspca_err(gspca_dev, "Error detecting sensor type\n");
+		PERR("Error detecting sensor type\n");
 		return;
 	}
 
@@ -2796,23 +2789,22 @@ static void ov6xx0_configure(struct sd *sd)
 		break;
 	case 0x01:
 		sd->sensor = SEN_OV6620;
-		gspca_dbg(gspca_dev, D_PROBE, "Sensor is an OV6620\n");
+		PDEBUG(D_PROBE, "Sensor is an OV6620");
 		break;
 	case 0x02:
 		sd->sensor = SEN_OV6630;
-		gspca_dbg(gspca_dev, D_PROBE, "Sensor is an OV66308AE\n");
+		PDEBUG(D_PROBE, "Sensor is an OV66308AE");
 		break;
 	case 0x03:
 		sd->sensor = SEN_OV66308AF;
-		gspca_dbg(gspca_dev, D_PROBE, "Sensor is an OV66308AF\n");
+		PDEBUG(D_PROBE, "Sensor is an OV66308AF");
 		break;
 	case 0x90:
 		sd->sensor = SEN_OV6630;
 		pr_warn("WARNING: Sensor is an OV66307. Your camera may have been misdetected in previous driver versions.\n");
 		break;
 	default:
-		gspca_err(gspca_dev, "FATAL: Unknown sensor version: 0x%02x\n",
-			  rc);
+		PERR("FATAL: Unknown sensor version: 0x%02x\n", rc);
 		return;
 	}
 
@@ -2914,7 +2906,7 @@ static void ov51x_upload_quan_tables(struct sd *sd)
 	unsigned char val0, val1;
 	int i, size, reg = R51x_COMP_LUT_BEGIN;
 
-	gspca_dbg(gspca_dev, D_PROBE, "Uploading quantization tables\n");
+	PDEBUG(D_PROBE, "Uploading quantization tables");
 
 	if (sd->bridge == BRIDGE_OV511 || sd->bridge == BRIDGE_OV511PLUS) {
 		pYTable = yQuanTable511;
@@ -2992,8 +2984,7 @@ static void ov511_configure(struct gspca_dev *gspca_dev)
 		{ 0x77, 0x04 },
 	};
 
-	gspca_dbg(gspca_dev, D_PROBE, "Device custom id %x\n",
-		  reg_r(sd, R51x_SYS_CUST_ID));
+	PDEBUG(D_PROBE, "Device custom id %x", reg_r(sd, R51x_SYS_CUST_ID));
 
 	write_regvals(sd, init_511, ARRAY_SIZE(init_511));
 
@@ -3063,7 +3054,7 @@ static void ov518_configure(struct gspca_dev *gspca_dev)
 
 	/* First 5 bits of custom ID reg are a revision ID on OV518 */
 	sd->revision = reg_r(sd, R51x_SYS_CUST_ID) & 0x1f;
-	gspca_dbg(gspca_dev, D_PROBE, "Device revision %d\n", sd->revision);
+	PDEBUG(D_PROBE, "Device revision %d", sd->revision);
 
 	write_regvals(sd, init_518, ARRAY_SIZE(init_518));
 
@@ -3304,7 +3295,7 @@ static int sd_init(struct gspca_dev *gspca_dev)
 	} else if (init_ov_sensor(sd, OV_HIRES_SID) >= 0) {
 		ov_hires_configure(sd);
 	} else {
-		gspca_err(gspca_dev, "Can't determine sensor slave IDs\n");
+		PERR("Can't determine sensor slave IDs\n");
 		goto error;
 	}
 
@@ -3437,7 +3428,7 @@ static int sd_init(struct gspca_dev *gspca_dev)
 	}
 	return gspca_dev->usb_err;
 error:
-	gspca_err(gspca_dev, "OV519 Config failed\n");
+	PERR("OV519 Config failed");
 	return -EINVAL;
 }
 
@@ -3472,7 +3463,7 @@ static void ov511_mode_init_regs(struct sd *sd)
 	intf = usb_ifnum_to_if(sd->gspca_dev.dev, sd->gspca_dev.iface);
 	alt = usb_altnum_to_altsetting(intf, sd->gspca_dev.alt);
 	if (!alt) {
-		gspca_err(gspca_dev, "Couldn't get altsetting\n");
+		PERR("Couldn't get altsetting\n");
 		sd->gspca_dev.usb_err = -EIO;
 		return;
 	}
@@ -3598,7 +3589,7 @@ static void ov518_mode_init_regs(struct sd *sd)
 	intf = usb_ifnum_to_if(sd->gspca_dev.dev, sd->gspca_dev.iface);
 	alt = usb_altnum_to_altsetting(intf, sd->gspca_dev.alt);
 	if (!alt) {
-		gspca_err(gspca_dev, "Couldn't get altsetting\n");
+		PERR("Couldn't get altsetting\n");
 		sd->gspca_dev.usb_err = -EIO;
 		return;
 	}
@@ -3658,7 +3649,7 @@ static void ov518_mode_init_regs(struct sd *sd)
 		case SEN_OV7620AE:
 			/*
 			 * HdG: 640x480 needs special handling on device
-			 * revision 2, we check for device revision > 0 to
+			 * revision 2, we check for device revison > 0 to
 			 * avoid regressions, as we don't know the correct
 			 * thing todo for revision 1.
 			 *
@@ -3870,8 +3861,8 @@ static void ov519_mode_init_regs(struct sd *sd)
 		}
 		break;
 	case SEN_OV7670:		/* guesses, based on 7640 */
-		gspca_dbg(gspca_dev, D_STREAM, "Setting framerate to %d fps\n",
-			  (sd->frame_rate == 0) ? 15 : sd->frame_rate);
+		PDEBUG(D_STREAM, "Setting framerate to %d fps",
+				 (sd->frame_rate == 0) ? 15 : sd->frame_rate);
 		reg_w(sd, 0xa4, 0x10);
 		switch (sd->frame_rate) {
 		case 30:
@@ -4332,10 +4323,10 @@ static void ov511_pkt_scan(struct gspca_dev *gspca_dev,
 			/* Frame end */
 			if ((in[9] + 1) * 8 != gspca_dev->pixfmt.width ||
 			    (in[10] + 1) * 8 != gspca_dev->pixfmt.height) {
-				gspca_err(gspca_dev, "Invalid frame size, got: %dx%d, requested: %dx%d\n",
-					  (in[9] + 1) * 8, (in[10] + 1) * 8,
-					  gspca_dev->pixfmt.width,
-					  gspca_dev->pixfmt.height);
+				PERR("Invalid frame size, got: %dx%d, requested: %dx%d\n",
+					(in[9] + 1) * 8, (in[10] + 1) * 8,
+					gspca_dev->pixfmt.width,
+					gspca_dev->pixfmt.height);
 				gspca_dev->last_packet_type = DISCARD_PACKET;
 				return;
 			}
@@ -4383,8 +4374,8 @@ static void ov518_pkt_scan(struct gspca_dev *gspca_dev,
 		   except that they may contain part of the footer), are
 		   numbered 0 */
 		else if (sd->packet_nr == 0 || data[len]) {
-			gspca_err(gspca_dev, "Invalid packet nr: %d (expect: %d)\n",
-				  (int)data[len], (int)sd->packet_nr);
+			PERR("Invalid packet nr: %d (expect: %d)",
+				(int)data[len], (int)sd->packet_nr);
 			gspca_dev->last_packet_type = DISCARD_PACKET;
 			return;
 		}
@@ -4927,7 +4918,7 @@ static int sd_init_controls(struct gspca_dev *gspca_dev)
 			QUALITY_MIN, QUALITY_MAX, 1, QUALITY_DEF);
 
 	if (hdl->error) {
-		gspca_err(gspca_dev, "Could not initialize controls\n");
+		PERR("Could not initialize controls\n");
 		return hdl->error;
 	}
 	if (gspca_dev->autogain)

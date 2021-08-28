@@ -90,7 +90,7 @@ unlock:
 }
 static BIN_ATTR_RO(dev_desc, sizeof(struct usb_device_descriptor));
 
-static ssize_t usbip_sockfd_store(struct device *dev, struct device_attribute *attr,
+static ssize_t store_sockfd(struct device *dev, struct device_attribute *attr,
 		     const char *in, size_t count)
 {
 	struct vudc *udc = (struct vudc *) dev_get_drvdata(dev);
@@ -105,14 +105,10 @@ static ssize_t usbip_sockfd_store(struct device *dev, struct device_attribute *a
 	if (rv != 0)
 		return -EINVAL;
 
-	if (!udc) {
-		dev_err(dev, "no device");
-		return -ENODEV;
-	}
 	spin_lock_irqsave(&udc->lock, flags);
 	/* Don't export what we don't have */
-	if (!udc->driver || !udc->pullup) {
-		dev_err(dev, "gadget not bound");
+	if (!udc || !udc->driver || !udc->pullup) {
+		dev_err(dev, "no device or gadget not bound");
 		ret = -ENODEV;
 		goto unlock;
 	}
@@ -184,7 +180,7 @@ unlock:
 
 	return ret;
 }
-static DEVICE_ATTR_WO(usbip_sockfd);
+static DEVICE_ATTR(usbip_sockfd, S_IWUSR, NULL, store_sockfd);
 
 static ssize_t usbip_status_show(struct device *dev,
 			       struct device_attribute *attr, char *out)
@@ -215,12 +211,7 @@ static struct bin_attribute *dev_bin_attrs[] = {
 	NULL,
 };
 
-static const struct attribute_group vudc_attr_group = {
+const struct attribute_group vudc_attr_group = {
 	.attrs = dev_attrs,
 	.bin_attrs = dev_bin_attrs,
-};
-
-const struct attribute_group *vudc_groups[] = {
-	&vudc_attr_group,
-	NULL,
 };

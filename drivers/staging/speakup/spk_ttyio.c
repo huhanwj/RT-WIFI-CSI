@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/types.h>
 #include <linux/tty.h>
 #include <linux/tty_flip.h>
@@ -10,7 +9,7 @@
 
 struct spk_ldisc_data {
 	char buf;
-	struct completion completion;
+	struct semaphore sem;
 	bool buf_free;
 };
 
@@ -47,7 +46,7 @@ static int spk_ttyio_ldisc_open(struct tty_struct *tty)
 {
 	struct spk_ldisc_data *ldisc_data;
 
-	if (!tty->ops->write)
+	if (tty->ops->write == NULL)
 		return -EOPNOTSUPP;
 	speakup_tty = tty;
 
@@ -55,7 +54,7 @@ static int spk_ttyio_ldisc_open(struct tty_struct *tty)
 	if (!ldisc_data)
 		return -ENOMEM;
 
-	init_completion(&ldisc_data->completion);
+	sema_init(&ldisc_data->sem, 0);
 	ldisc_data->buf_free = true;
 	speakup_tty->disc_data = ldisc_data;
 
@@ -71,7 +70,7 @@ static void spk_ttyio_ldisc_close(struct tty_struct *tty)
 }
 
 static int spk_ttyio_receive_buf2(struct tty_struct *tty,
-				  const unsigned char *cp, char *fp, int count)
+		const unsigned char *cp, char *fp, int count)
 {
 	struct spk_ldisc_data *ldisc_data = tty->disc_data;
 
@@ -95,7 +94,7 @@ static int spk_ttyio_receive_buf2(struct tty_struct *tty,
 
 	ldisc_data->buf = cp[0];
 	ldisc_data->buf_free = false;
-	complete(&ldisc_data->completion);
+	up(&ldisc_data->sem);
 
 	return 1;
 }
@@ -110,7 +109,6 @@ static struct tty_ldisc_ops spk_ttyio_ldisc_ops = {
 };
 
 static int spk_ttyio_out(struct spk_synth *in_synth, const char ch);
-static int spk_ttyio_out_unicode(struct spk_synth *in_synth, u16 ch);
 static void spk_ttyio_send_xchar(char ch);
 static void spk_ttyio_tiocmset(unsigned int set, unsigned int clear);
 static unsigned char spk_ttyio_in(void);
@@ -119,7 +117,6 @@ static void spk_ttyio_flush_buffer(void);
 
 struct spk_io_ops spk_ttyio_ops = {
 	.synth_out = spk_ttyio_out,
-	.synth_out_unicode = spk_ttyio_out_unicode,
 	.send_xchar = spk_ttyio_send_xchar,
 	.tiocmset = spk_ttyio_tiocmset,
 	.synth_in = spk_ttyio_in,
@@ -128,8 +125,7 @@ struct spk_io_ops spk_ttyio_ops = {
 };
 EXPORT_SYMBOL_GPL(spk_ttyio_ops);
 
-static inline void get_termios(struct tty_struct *tty,
-			       struct ktermios *out_termios)
+static inline void get_termios(struct tty_struct *tty, struct ktermios *out_termios)
 {
 	down_read(&tty->termios_rwsem);
 	*out_termios = tty->termios;
@@ -168,9 +164,8 @@ static int spk_ttyio_initialise_ldisc(struct spk_synth *synth)
 		tmp_termios.c_cflag |= CRTSCTS;
 		tty_set_termios(tty, &tmp_termios);
 		/*
-		 * check c_cflag to see if it's updated as tty_set_termios
-		 * may not return error even when no tty bits are
-		 * changed by the request.
+		 * check c_cflag to see if it's updated as tty_set_termios may not return
+		 * error even when no tty bits are changed by the request.
 		 */
 		get_termios(tty, &tmp_termios);
 		if (!(tmp_termios.c_cflag & CRTSCTS))
@@ -209,11 +204,10 @@ static int spk_ttyio_out(struct spk_synth *in_synth, const char ch)
 			/* No room */
 			return 0;
 		if (ret < 0) {
-			pr_warn("%s: I/O error, deactivating speakup\n",
-				in_synth->long_name);
-			/* No synth any more, so nobody will restart TTYs,
-			 * and we thus need to do it ourselves.  Now that there
-			 * is no synth we can let application flood anyway
+			pr_warn("%s: I/O error, deactivating speakup\n", in_synth->long_name);
+			/* No synth any more, so nobody will restart TTYs, and we thus
+			 * need to do it ourselves.  Now that there is no synth we can
+			 * let application flood anyway
 			 */
 			in_synth->alive = 0;
 			speakup_start_ttys();
@@ -224,23 +218,6 @@ static int spk_ttyio_out(struct spk_synth *in_synth, const char ch)
 
 	mutex_unlock(&speakup_tty_mutex);
 	return 0;
-}
-
-static int spk_ttyio_out_unicode(struct spk_synth *in_synth, u16 ch)
-{
-	int ret;
-
-	if (ch < 0x80) {
-		ret = spk_ttyio_out(in_synth, ch);
-	} else if (ch < 0x800) {
-		ret  = spk_ttyio_out(in_synth, 0xc0 | (ch >> 6));
-		ret &= spk_ttyio_out(in_synth, 0x80 | (ch & 0x3f));
-	} else {
-		ret  = spk_ttyio_out(in_synth, 0xe0 | (ch >> 12));
-		ret &= spk_ttyio_out(in_synth, 0x80 | ((ch >> 6) & 0x3f));
-		ret &= spk_ttyio_out(in_synth, 0x80 | (ch & 0x3f));
-	}
-	return ret;
 }
 
 static int check_tty(struct tty_struct *tty)
@@ -268,8 +245,7 @@ static void spk_ttyio_send_xchar(char ch)
 		return;
 	}
 
-	if (speakup_tty->ops->send_xchar)
-		speakup_tty->ops->send_xchar(speakup_tty, ch);
+	speakup_tty->ops->send_xchar(speakup_tty, ch);
 	mutex_unlock(&speakup_tty_mutex);
 }
 
@@ -281,8 +257,7 @@ static void spk_ttyio_tiocmset(unsigned int set, unsigned int clear)
 		return;
 	}
 
-	if (speakup_tty->ops->tiocmset)
-		speakup_tty->ops->tiocmset(speakup_tty, set, clear);
+	speakup_tty->ops->tiocmset(speakup_tty, set, clear);
 	mutex_unlock(&speakup_tty_mutex);
 }
 
@@ -291,8 +266,7 @@ static unsigned char ttyio_in(int timeout)
 	struct spk_ldisc_data *ldisc_data = speakup_tty->disc_data;
 	char rv;
 
-	if (wait_for_completion_timeout(&ldisc_data->completion,
-					usecs_to_jiffies(timeout)) == 0) {
+	if (down_timeout(&ldisc_data->sem, usecs_to_jiffies(timeout)) == -ETIME) {
 		if (timeout)
 			pr_warn("spk_ttyio: timeout (%d)  while waiting for input\n",
 				timeout);
@@ -374,8 +348,7 @@ const char *spk_ttyio_synth_immediate(struct spk_synth *synth, const char *buff)
 	while ((ch = *buff)) {
 		if (ch == '\n')
 			ch = synth->procspeech;
-		if (tty_write_room(speakup_tty) < 1 ||
-		    !synth->io_ops->synth_out(synth, ch))
+		if (tty_write_room(speakup_tty) < 1 || !synth->io_ops->synth_out(synth, ch))
 			return buff;
 		buff++;
 	}

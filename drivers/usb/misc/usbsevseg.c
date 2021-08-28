@@ -165,7 +165,7 @@ static void update_display_visual(struct usb_sevsegdev *mydev, gfp_t mf)
 }
 
 #define MYDEV_ATTR_SIMPLE_UNSIGNED(name, update_fcn)		\
-static ssize_t name##_show(struct device *dev,			\
+static ssize_t show_attr_##name(struct device *dev, 		\
 	struct device_attribute *attr, char *buf) 		\
 {								\
 	struct usb_interface *intf = to_usb_interface(dev);	\
@@ -174,7 +174,7 @@ static ssize_t name##_show(struct device *dev,			\
 	return sprintf(buf, "%u\n", mydev->name);		\
 }								\
 								\
-static ssize_t name##_store(struct device *dev,			\
+static ssize_t set_attr_##name(struct device *dev, 		\
 	struct device_attribute *attr, const char *buf, size_t count) \
 {								\
 	struct usb_interface *intf = to_usb_interface(dev);	\
@@ -185,9 +185,9 @@ static ssize_t name##_store(struct device *dev,			\
 								\
 	return count;						\
 }								\
-static DEVICE_ATTR_RW(name);
+static DEVICE_ATTR(name, S_IRUGO | S_IWUSR, show_attr_##name, set_attr_##name);
 
-static ssize_t text_show(struct device *dev,
+static ssize_t show_attr_text(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct usb_interface *intf = to_usb_interface(dev);
@@ -196,7 +196,7 @@ static ssize_t text_show(struct device *dev,
 	return snprintf(buf, mydev->textlength, "%s\n", mydev->text);
 }
 
-static ssize_t text_store(struct device *dev,
+static ssize_t set_attr_text(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct usb_interface *intf = to_usb_interface(dev);
@@ -216,9 +216,9 @@ static ssize_t text_store(struct device *dev,
 	return count;
 }
 
-static DEVICE_ATTR_RW(text);
+static DEVICE_ATTR(text, S_IRUGO | S_IWUSR, show_attr_text, set_attr_text);
 
-static ssize_t decimals_show(struct device *dev,
+static ssize_t show_attr_decimals(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct usb_interface *intf = to_usb_interface(dev);
@@ -240,7 +240,7 @@ static ssize_t decimals_show(struct device *dev,
 	return sizeof(mydev->decimals) + 1;
 }
 
-static ssize_t decimals_store(struct device *dev,
+static ssize_t set_attr_decimals(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct usb_interface *intf = to_usb_interface(dev);
@@ -265,9 +265,9 @@ static ssize_t decimals_store(struct device *dev,
 	return count;
 }
 
-static DEVICE_ATTR_RW(decimals);
+static DEVICE_ATTR(decimals, S_IRUGO | S_IWUSR, show_attr_decimals, set_attr_decimals);
 
-static ssize_t textmode_show(struct device *dev,
+static ssize_t show_attr_textmode(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
 	struct usb_interface *intf = to_usb_interface(dev);
@@ -293,7 +293,7 @@ static ssize_t textmode_show(struct device *dev,
 	return strlen(buf);
 }
 
-static ssize_t textmode_store(struct device *dev,
+static ssize_t set_attr_textmode(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct usb_interface *intf = to_usb_interface(dev);
@@ -309,14 +309,14 @@ static ssize_t textmode_store(struct device *dev,
 	return count;
 }
 
-static DEVICE_ATTR_RW(textmode);
+static DEVICE_ATTR(textmode, S_IRUGO | S_IWUSR, show_attr_textmode, set_attr_textmode);
 
 
 MYDEV_ATTR_SIMPLE_UNSIGNED(powered, update_display_powered);
 MYDEV_ATTR_SIMPLE_UNSIGNED(mode_msb, update_display_mode);
 MYDEV_ATTR_SIMPLE_UNSIGNED(mode_lsb, update_display_mode);
 
-static struct attribute *sevseg_attrs[] = {
+static struct attribute *dev_attrs[] = {
 	&dev_attr_powered.attr,
 	&dev_attr_text.attr,
 	&dev_attr_textmode.attr,
@@ -325,7 +325,10 @@ static struct attribute *sevseg_attrs[] = {
 	&dev_attr_mode_lsb.attr,
 	NULL
 };
-ATTRIBUTE_GROUPS(sevseg);
+
+static const struct attribute_group dev_attr_grp = {
+	.attrs = dev_attrs,
+};
 
 static int sevseg_probe(struct usb_interface *interface,
 	const struct usb_device_id *id)
@@ -351,9 +354,17 @@ static int sevseg_probe(struct usb_interface *interface,
 	mydev->mode_msb = 0x06; /* 6 characters */
 	mydev->mode_lsb = 0x3f; /* scanmode for 6 chars */
 
+	rc = sysfs_create_group(&interface->dev.kobj, &dev_attr_grp);
+	if (rc)
+		goto error;
+
 	dev_info(&interface->dev, "USB 7 Segment device now attached\n");
 	return 0;
 
+error:
+	usb_set_intfdata(interface, NULL);
+	usb_put_dev(mydev->udev);
+	kfree(mydev);
 error_mem:
 	return rc;
 }
@@ -363,6 +374,7 @@ static void sevseg_disconnect(struct usb_interface *interface)
 	struct usb_sevsegdev *mydev;
 
 	mydev = usb_get_intfdata(interface);
+	sysfs_remove_group(&interface->dev.kobj, &dev_attr_grp);
 	usb_set_intfdata(interface, NULL);
 	usb_put_dev(mydev->udev);
 	kfree(mydev);
@@ -411,7 +423,6 @@ static struct usb_driver sevseg_driver = {
 	.resume =	sevseg_resume,
 	.reset_resume =	sevseg_reset_resume,
 	.id_table =	id_table,
-	.dev_groups =	sevseg_groups,
 	.supports_autosuspend = 1,
 };
 

@@ -1,7 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright 2010-2011 Picochip Ltd., Jamie Iles
  * http://www.picochip.com
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
  *
  * This file implements a driver for the Synopsys DesignWare watchdog device
  * in the many subsystems. The watchdog has 16 different timeout periods
@@ -11,6 +15,8 @@
  * do not implement a stop function. The watchdog core will continue to send
  * heartbeat requests after the watchdog device has been closed.
  */
+
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/bitops.h>
 #include <linux/clk.h>
@@ -28,7 +34,6 @@
 
 #define WDOG_CONTROL_REG_OFFSET		    0x00
 #define WDOG_CONTROL_REG_WDT_EN_MASK	    0x01
-#define WDOG_CONTROL_REG_RESP_MODE_MASK	    0x02
 #define WDOG_TIMEOUT_RANGE_REG_OFFSET	    0x04
 #define WDOG_TIMEOUT_RANGE_TOPINIT_SHIFT    4
 #define WDOG_CURRENT_COUNT_REG_OFFSET	    0x08
@@ -51,9 +56,6 @@ struct dw_wdt {
 	unsigned long		rate;
 	struct watchdog_device	wdd;
 	struct reset_control	*rst;
-	/* Save/restore */
-	u32			control;
-	u32			timeout;
 };
 
 #define to_dw_wdt(wdd)	container_of(wdd, struct dw_wdt, wdd)
@@ -119,38 +121,16 @@ static int dw_wdt_set_timeout(struct watchdog_device *wdd, unsigned int top_s)
 	return 0;
 }
 
-static void dw_wdt_arm_system_reset(struct dw_wdt *dw_wdt)
-{
-	u32 val = readl(dw_wdt->regs + WDOG_CONTROL_REG_OFFSET);
-
-	/* Disable interrupt mode; always perform system reset. */
-	val &= ~WDOG_CONTROL_REG_RESP_MODE_MASK;
-	/* Enable watchdog. */
-	val |= WDOG_CONTROL_REG_WDT_EN_MASK;
-	writel(val, dw_wdt->regs + WDOG_CONTROL_REG_OFFSET);
-}
-
 static int dw_wdt_start(struct watchdog_device *wdd)
 {
 	struct dw_wdt *dw_wdt = to_dw_wdt(wdd);
 
 	dw_wdt_set_timeout(wdd, wdd->timeout);
-	dw_wdt_arm_system_reset(dw_wdt);
 
-	return 0;
-}
+	set_bit(WDOG_HW_RUNNING, &wdd->status);
 
-static int dw_wdt_stop(struct watchdog_device *wdd)
-{
-	struct dw_wdt *dw_wdt = to_dw_wdt(wdd);
-
-	if (!dw_wdt->rst) {
-		set_bit(WDOG_HW_RUNNING, &wdd->status);
-		return 0;
-	}
-
-	reset_control_assert(dw_wdt->rst);
-	reset_control_deassert(dw_wdt->rst);
+	writel(WDOG_CONTROL_REG_WDT_EN_MASK,
+	       dw_wdt->regs + WDOG_CONTROL_REG_OFFSET);
 
 	return 0;
 }
@@ -159,13 +139,16 @@ static int dw_wdt_restart(struct watchdog_device *wdd,
 			  unsigned long action, void *data)
 {
 	struct dw_wdt *dw_wdt = to_dw_wdt(wdd);
+	u32 val;
 
 	writel(0, dw_wdt->regs + WDOG_TIMEOUT_RANGE_REG_OFFSET);
-	if (dw_wdt_is_enabled(dw_wdt))
+	val = readl(dw_wdt->regs + WDOG_CONTROL_REG_OFFSET);
+	if (val & WDOG_CONTROL_REG_WDT_EN_MASK)
 		writel(WDOG_COUNTER_RESTART_KICK_VALUE,
 		       dw_wdt->regs + WDOG_COUNTER_RESTART_REG_OFFSET);
 	else
-		dw_wdt_arm_system_reset(dw_wdt);
+		writel(WDOG_CONTROL_REG_WDT_EN_MASK,
+		       dw_wdt->regs + WDOG_CONTROL_REG_OFFSET);
 
 	/* wait for reset to assert... */
 	mdelay(500);
@@ -190,7 +173,6 @@ static const struct watchdog_info dw_wdt_ident = {
 static const struct watchdog_ops dw_wdt_ops = {
 	.owner		= THIS_MODULE,
 	.start		= dw_wdt_start,
-	.stop		= dw_wdt_stop,
 	.ping		= dw_wdt_ping,
 	.set_timeout	= dw_wdt_set_timeout,
 	.get_timeleft	= dw_wdt_get_timeleft,
@@ -201,9 +183,6 @@ static const struct watchdog_ops dw_wdt_ops = {
 static int dw_wdt_suspend(struct device *dev)
 {
 	struct dw_wdt *dw_wdt = dev_get_drvdata(dev);
-
-	dw_wdt->control = readl(dw_wdt->regs + WDOG_CONTROL_REG_OFFSET);
-	dw_wdt->timeout = readl(dw_wdt->regs + WDOG_TIMEOUT_RANGE_REG_OFFSET);
 
 	clk_disable_unprepare(dw_wdt->clk);
 
@@ -218,9 +197,6 @@ static int dw_wdt_resume(struct device *dev)
 	if (err)
 		return err;
 
-	writel(dw_wdt->timeout, dw_wdt->regs + WDOG_TIMEOUT_RANGE_REG_OFFSET);
-	writel(dw_wdt->control, dw_wdt->regs + WDOG_CONTROL_REG_OFFSET);
-
 	dw_wdt_ping(&dw_wdt->wdd);
 
 	return 0;
@@ -234,13 +210,15 @@ static int dw_wdt_drv_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct watchdog_device *wdd;
 	struct dw_wdt *dw_wdt;
+	struct resource *mem;
 	int ret;
 
 	dw_wdt = devm_kzalloc(dev, sizeof(*dw_wdt), GFP_KERNEL);
 	if (!dw_wdt)
 		return -ENOMEM;
 
-	dw_wdt->regs = devm_platform_ioremap_resource(pdev, 0);
+	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	dw_wdt->regs = devm_ioremap_resource(dev, mem);
 	if (IS_ERR(dw_wdt->regs))
 		return PTR_ERR(dw_wdt->regs);
 

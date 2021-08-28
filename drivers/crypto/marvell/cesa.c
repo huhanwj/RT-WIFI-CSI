@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Support for Marvell's Cryptographic Engine and Security Accelerator (CESA)
  * that can be found on the following platform: Orion, Kirkwood, Armada. This
@@ -9,10 +8,13 @@
  *
  * This work is based on an initial version written by
  * Sebastian Andrzej Siewior < sebastian at breakpoint dot cc >
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published
+ * by the Free Software Foundation.
  */
 
 #include <linux/delay.h>
-#include <linux/dma-mapping.h>
 #include <linux/genalloc.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
@@ -407,11 +409,8 @@ static int mv_cesa_get_sram(struct platform_device *pdev, int idx)
 	if (IS_ERR(engine->sram))
 		return PTR_ERR(engine->sram);
 
-	engine->sram_dma = dma_map_resource(cesa->dev, res->start,
-					    cesa->sram_size,
-					    DMA_BIDIRECTIONAL, 0);
-	if (dma_mapping_error(cesa->dev, engine->sram_dma))
-		return -ENOMEM;
+	engine->sram_dma = phys_to_dma(cesa->dev,
+				       (phys_addr_t)res->start);
 
 	return 0;
 }
@@ -421,12 +420,11 @@ static void mv_cesa_put_sram(struct platform_device *pdev, int idx)
 	struct mv_cesa_dev *cesa = platform_get_drvdata(pdev);
 	struct mv_cesa_engine *engine = &cesa->engines[idx];
 
-	if (engine->pool)
-		gen_pool_free(engine->pool, (unsigned long)engine->sram,
-			      cesa->sram_size);
-	else
-		dma_unmap_resource(cesa->dev, engine->sram_dma,
-				   cesa->sram_size, DMA_BIDIRECTIONAL, 0);
+	if (!engine->pool)
+		return;
+
+	gen_pool_free(engine->pool, (unsigned long)engine->sram,
+		      cesa->sram_size);
 }
 
 static int mv_cesa_probe(struct platform_device *pdev)
@@ -468,7 +466,7 @@ static int mv_cesa_probe(struct platform_device *pdev)
 		sram_size = CESA_SA_MIN_SRAM_SIZE;
 
 	cesa->sram_size = sram_size;
-	cesa->engines = devm_kcalloc(dev, caps->nengines, sizeof(*engines),
+	cesa->engines = devm_kzalloc(dev, caps->nengines * sizeof(*engines),
 				     GFP_KERNEL);
 	if (!cesa->engines)
 		return -ENOMEM;

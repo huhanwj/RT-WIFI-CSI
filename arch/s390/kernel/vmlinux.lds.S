@@ -16,11 +16,10 @@
 #define RO_AFTER_INIT_DATA
 
 #include <asm-generic/vmlinux.lds.h>
-#include <asm/vmlinux.lds.h>
 
 OUTPUT_FORMAT("elf64-s390", "elf64-s390", "elf64-s390")
 OUTPUT_ARCH(s390:64-bit)
-ENTRY(startup_continue)
+ENTRY(startup)
 jiffies = jiffies_64;
 
 PHDRS {
@@ -31,11 +30,16 @@ PHDRS {
 
 SECTIONS
 {
-	. = 0x100000;
+	. = 0x00000000;
 	.text : {
-		_stext = .;		/* Start of text section */
-		_text = .;		/* Text and read-only data */
+		/* Text and read-only data */
 		HEAD_TEXT
+		/*
+		 * E.g. perf doesn't like symbols starting at address zero,
+		 * therefore skip the initial PSW and channel program located
+		 * at address zero and let _text start at 0x200.
+		 */
+	_text = 0x200;
 		TEXT_TEXT
 		SCHED_TEXT
 		CPUIDLE_TEXT
@@ -43,12 +47,12 @@ SECTIONS
 		KPROBES_TEXT
 		IRQENTRY_TEXT
 		SOFTIRQENTRY_TEXT
-		*(.text.*_indirect_*)
 		*(.fixup)
 		*(.gnu.warning)
-		. = ALIGN(PAGE_SIZE);
-		_etext = .;		/* End of text section */
 	} :text = 0x0700
+
+	. = ALIGN(PAGE_SIZE);
+	_etext = .;		/* End of text section */
 
 	NOTES :text :note
 
@@ -63,14 +67,12 @@ SECTIONS
 	__start_ro_after_init = .;
 	.data..ro_after_init : {
 		 *(.data..ro_after_init)
-		JUMP_TABLE_DATA
 	}
 	EXCEPTION_TABLE(16)
 	. = ALIGN(PAGE_SIZE);
 	__end_ro_after_init = .;
 
 	RW_DATA_SECTION(0x100, PAGE_SIZE, THREAD_SIZE)
-	BOOT_DATA_PRESERVED
 
 	_edata = .;		/* End of data section */
 
@@ -80,10 +82,10 @@ SECTIONS
 
 	. = ALIGN(PAGE_SIZE);
 	.init.text : AT(ADDR(.init.text) - LOAD_OFFSET) {
-		_sinittext = .;
+		VMLINUX_SYMBOL(_sinittext) = . ;
 		INIT_TEXT
 		. = ALIGN(PAGE_SIZE);
-		_einittext = .;
+		VMLINUX_SYMBOL(_einittext) = . ;
 	}
 
 	/*
@@ -121,39 +123,11 @@ SECTIONS
 		*(.altinstr_replacement)
 	}
 
-	/*
-	 * Table with the patch locations to undo expolines
-	*/
-	.nospec_call_table : {
-		__nospec_call_start = . ;
-		*(.s390_indirect*)
-		__nospec_call_end = . ;
-	}
-	.nospec_return_table : {
-		__nospec_return_start = . ;
-		*(.s390_return*)
-		__nospec_return_end = . ;
-	}
-
-	BOOT_DATA
-
 	/* early.c uses stsi, which requires page aligned data. */
 	. = ALIGN(PAGE_SIZE);
 	INIT_DATA_SECTION(0x100)
 
 	PERCPU_SECTION(0x100)
-
-	.dynsym ALIGN(8) : {
-		__dynsym_start = .;
-		*(.dynsym)
-		__dynsym_end = .;
-	}
-	.rela.dyn ALIGN(8) : {
-		__rela_dyn_start = .;
-		*(.rela*)
-		__rela_dyn_end = .;
-	}
-
 	. = ALIGN(PAGE_SIZE);
 	__init_end = .;		/* freed after init ends here */
 
@@ -161,32 +135,10 @@ SECTIONS
 
 	_end = . ;
 
-	/*
-	 * uncompressed image info used by the decompressor
-	 * it should match struct vmlinux_info
-	 */
-	.vmlinux.info 0 (INFO) : {
-		QUAD(_stext)					/* default_lma */
-		QUAD(startup_continue)				/* entry */
-		QUAD(__bss_start - _stext)			/* image_size */
-		QUAD(__bss_stop - __bss_start)			/* bss_size */
-		QUAD(__boot_data_start)				/* bootdata_off */
-		QUAD(__boot_data_end - __boot_data_start)	/* bootdata_size */
-		QUAD(__boot_data_preserved_start)		/* bootdata_preserved_off */
-		QUAD(__boot_data_preserved_end -
-		     __boot_data_preserved_start)		/* bootdata_preserved_size */
-		QUAD(__dynsym_start)				/* dynsym_start */
-		QUAD(__rela_dyn_start)				/* rela_dyn_start */
-		QUAD(__rela_dyn_end)				/* rela_dyn_end */
-	} :NONE
-
 	/* Debugging sections.	*/
 	STABS_DEBUG
 	DWARF_DEBUG
 
 	/* Sections to be discarded */
 	DISCARDS
-	/DISCARD/ : {
-		*(.eh_frame)
-	}
 }

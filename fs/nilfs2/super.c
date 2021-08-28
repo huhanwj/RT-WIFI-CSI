@@ -1,8 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * super.c - NILFS module and super block management.
  *
  * Copyright (C) 2005-2008 Nippon Telegraph and Telephone Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
  * Written by Ryusuke Konishi.
  */
@@ -155,12 +164,19 @@ struct inode *nilfs_alloc_inode(struct super_block *sb)
 	return &ii->vfs_inode;
 }
 
-static void nilfs_free_inode(struct inode *inode)
+static void nilfs_i_callback(struct rcu_head *head)
 {
+	struct inode *inode = container_of(head, struct inode, i_rcu);
+
 	if (nilfs_is_metadata_file_inode(inode))
 		nilfs_mdt_destroy(inode);
 
 	kmem_cache_free(nilfs_inode_cachep, NILFS_I(inode));
+}
+
+void nilfs_destroy_inode(struct inode *inode)
+{
+	call_rcu(&inode->i_rcu, nilfs_i_callback);
 }
 
 static int nilfs_sync_super(struct super_block *sb, int flag)
@@ -267,10 +283,10 @@ int nilfs_commit_super(struct super_block *sb, int flag)
 {
 	struct the_nilfs *nilfs = sb->s_fs_info;
 	struct nilfs_super_block **sbp = nilfs->ns_sbp;
-	time64_t t;
+	time_t t;
 
 	/* nilfs->ns_sem must be locked by the caller. */
-	t = ktime_get_real_seconds();
+	t = get_seconds();
 	nilfs->ns_sbwtime = t;
 	sbp[0]->s_wtime = cpu_to_le64(t);
 	sbp[0]->s_sum = 0;
@@ -679,7 +695,7 @@ static int nilfs_show_options(struct seq_file *seq, struct dentry *dentry)
 
 static const struct super_operations nilfs_sops = {
 	.alloc_inode    = nilfs_alloc_inode,
-	.free_inode     = nilfs_free_inode,
+	.destroy_inode  = nilfs_destroy_inode,
 	.dirty_inode    = nilfs_dirty_inode,
 	.evict_inode    = nilfs_evict_inode,
 	.put_super      = nilfs_put_super,
@@ -818,7 +834,7 @@ static int nilfs_setup_super(struct super_block *sb, int is_mount)
 		sbp[0]->s_max_mnt_count = cpu_to_le16(NILFS_DFL_MAX_MNT_COUNT);
 
 	sbp[0]->s_mnt_count = cpu_to_le16(mnt_count + 1);
-	sbp[0]->s_mtime = cpu_to_le64(ktime_get_real_seconds());
+	sbp[0]->s_mtime = cpu_to_le64(get_seconds());
 
 skip_mount_setup:
 	sbp[0]->s_state =

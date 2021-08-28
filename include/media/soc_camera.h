@@ -1,9 +1,12 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * camera image capture (abstract) bus driver header
  *
  * Copyright (C) 2006, Sascha Hauer, Pengutronix
  * Copyright (C) 2008, Guennadi Liakhovetski <kernel@pengutronix.de>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #ifndef SOC_CAMERA_H
@@ -114,7 +117,7 @@ struct soc_camera_host_ops {
 	int (*get_parm)(struct soc_camera_device *, struct v4l2_streamparm *);
 	int (*set_parm)(struct soc_camera_device *, struct v4l2_streamparm *);
 	int (*enum_framesizes)(struct soc_camera_device *, struct v4l2_frmsizeenum *);
-	__poll_t (*poll)(struct file *, poll_table *);
+	unsigned int (*poll)(struct file *, poll_table *);
 };
 
 #define SOCAM_SENSOR_INVERT_PCLK	(1 << 0)

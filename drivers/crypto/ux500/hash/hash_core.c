@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Cryptographic API.
  * Support for Nomadik hardware crypto engine.
@@ -9,6 +8,7 @@
  * Author: Berne Hebark <berne.herbark@stericsson.com> for ST-Ericsson.
  * Author: Niklas Hernaeus <niklas.hernaeus@stericsson.com> for ST-Ericsson.
  * Author: Andreas Westin <andreas.westin@stericsson.com> for ST-Ericsson.
+ * License terms: GNU General Public License (GPL) version 2
  */
 
 #define pr_fmt(fmt) "hashX hashX: " fmt
@@ -21,7 +21,6 @@
 #include <linux/klist.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/mod_devicetable.h>
 #include <linux/platform_device.h>
 #include <linux/crypto.h>
 
@@ -166,7 +165,7 @@ static int hash_set_dma_transfer(struct hash_ctx *ctx, struct scatterlist *sg,
 		__func__);
 	desc = dmaengine_prep_slave_sg(channel,
 			ctx->device->dma.sg, ctx->device->dma.sg_len,
-			DMA_MEM_TO_DEV, DMA_CTRL_ACK | DMA_PREP_INTERRUPT);
+			direction, DMA_CTRL_ACK | DMA_PREP_INTERRUPT);
 	if (!desc) {
 		dev_err(ctx->device->dev,
 			"%s: dmaengine_prep_slave_sg() failed!\n", __func__);
@@ -806,7 +805,7 @@ static int hash_process_data(struct hash_device_data *device_data,
 			 * HW peripheral, otherwise we first copy data
 			 * to a local buffer
 			 */
-			if (IS_ALIGNED((unsigned long)data_buffer, 4) &&
+			if ((0 == (((u32)data_buffer) % 4)) &&
 			    (0 == *index))
 				hash_processblock(device_data,
 						  (const u32 *)data_buffer,
@@ -864,8 +863,7 @@ static int hash_dma_final(struct ahash_request *req)
 	if (ret)
 		return ret;
 
-	dev_dbg(device_data->dev, "%s: (ctx=0x%lx)!\n", __func__,
-		(unsigned long)ctx);
+	dev_dbg(device_data->dev, "%s: (ctx=0x%x)!\n", __func__, (u32) ctx);
 
 	if (req_ctx->updated) {
 		ret = hash_resume_state(device_data, &device_data->state);
@@ -970,8 +968,7 @@ static int hash_hw_final(struct ahash_request *req)
 	if (ret)
 		return ret;
 
-	dev_dbg(device_data->dev, "%s: (ctx=0x%lx)!\n", __func__,
-		(unsigned long)ctx);
+	dev_dbg(device_data->dev, "%s: (ctx=0x%x)!\n", __func__, (u32) ctx);
 
 	if (req_ctx->updated) {
 		ret = hash_resume_state(device_data, &device_data->state);
@@ -1274,8 +1271,8 @@ void hash_get_digest(struct hash_device_data *device_data,
 	else
 		loop_ctr = SHA256_DIGEST_SIZE / sizeof(u32);
 
-	dev_dbg(device_data->dev, "%s: digest array:(0x%lx)\n",
-		__func__, (unsigned long)digest);
+	dev_dbg(device_data->dev, "%s: digest array:(0x%x)\n",
+		__func__, (u32) digest);
 
 	/* Copy result into digest array */
 	for (count = 0; count < loop_ctr; count++) {
@@ -1406,16 +1403,6 @@ out:
 	return ret1 ? ret1 : ret2;
 }
 
-static int ahash_noimport(struct ahash_request *req, const void *in)
-{
-	return -ENOSYS;
-}
-
-static int ahash_noexport(struct ahash_request *req, void *out)
-{
-	return -ENOSYS;
-}
-
 static int hmac_sha1_init(struct ahash_request *req)
 {
 	struct crypto_ahash *tfm = crypto_ahash_reqtfm(req);
@@ -1520,14 +1507,13 @@ static struct hash_algo_template hash_algs[] = {
 			.update = ahash_update,
 			.final = ahash_final,
 			.digest = ahash_sha1_digest,
-			.export = ahash_noexport,
-			.import = ahash_noimport,
 			.halg.digestsize = SHA1_DIGEST_SIZE,
 			.halg.statesize = sizeof(struct hash_ctx),
 			.halg.base = {
 				.cra_name = "sha1",
 				.cra_driver_name = "sha1-ux500",
-				.cra_flags = CRYPTO_ALG_ASYNC,
+				.cra_flags = (CRYPTO_ALG_TYPE_AHASH |
+					      CRYPTO_ALG_ASYNC),
 				.cra_blocksize = SHA1_BLOCK_SIZE,
 				.cra_ctxsize = sizeof(struct hash_ctx),
 				.cra_init = hash_cra_init,
@@ -1543,16 +1529,16 @@ static struct hash_algo_template hash_algs[] = {
 			.update	= ahash_update,
 			.final = ahash_final,
 			.digest = ahash_sha256_digest,
-			.export = ahash_noexport,
-			.import = ahash_noimport,
 			.halg.digestsize = SHA256_DIGEST_SIZE,
 			.halg.statesize = sizeof(struct hash_ctx),
 			.halg.base = {
 				.cra_name = "sha256",
 				.cra_driver_name = "sha256-ux500",
-				.cra_flags = CRYPTO_ALG_ASYNC,
+				.cra_flags = (CRYPTO_ALG_TYPE_AHASH |
+					      CRYPTO_ALG_ASYNC),
 				.cra_blocksize = SHA256_BLOCK_SIZE,
 				.cra_ctxsize = sizeof(struct hash_ctx),
+				.cra_type = &crypto_ahash_type,
 				.cra_init = hash_cra_init,
 				.cra_module = THIS_MODULE,
 			}
@@ -1567,16 +1553,16 @@ static struct hash_algo_template hash_algs[] = {
 			.final = ahash_final,
 			.digest = hmac_sha1_digest,
 			.setkey = hmac_sha1_setkey,
-			.export = ahash_noexport,
-			.import = ahash_noimport,
 			.halg.digestsize = SHA1_DIGEST_SIZE,
 			.halg.statesize = sizeof(struct hash_ctx),
 			.halg.base = {
 				.cra_name = "hmac(sha1)",
 				.cra_driver_name = "hmac-sha1-ux500",
-				.cra_flags = CRYPTO_ALG_ASYNC,
+				.cra_flags = (CRYPTO_ALG_TYPE_AHASH |
+					      CRYPTO_ALG_ASYNC),
 				.cra_blocksize = SHA1_BLOCK_SIZE,
 				.cra_ctxsize = sizeof(struct hash_ctx),
+				.cra_type = &crypto_ahash_type,
 				.cra_init = hash_cra_init,
 				.cra_module = THIS_MODULE,
 			}
@@ -1591,16 +1577,16 @@ static struct hash_algo_template hash_algs[] = {
 			.final = ahash_final,
 			.digest = hmac_sha256_digest,
 			.setkey = hmac_sha256_setkey,
-			.export = ahash_noexport,
-			.import = ahash_noimport,
 			.halg.digestsize = SHA256_DIGEST_SIZE,
 			.halg.statesize = sizeof(struct hash_ctx),
 			.halg.base = {
 				.cra_name = "hmac(sha256)",
 				.cra_driver_name = "hmac-sha256-ux500",
-				.cra_flags = CRYPTO_ALG_ASYNC,
+				.cra_flags = (CRYPTO_ALG_TYPE_AHASH |
+					      CRYPTO_ALG_ASYNC),
 				.cra_blocksize = SHA256_BLOCK_SIZE,
 				.cra_ctxsize = sizeof(struct hash_ctx),
+				.cra_type = &crypto_ahash_type,
 				.cra_init = hash_cra_init,
 				.cra_module = THIS_MODULE,
 			}

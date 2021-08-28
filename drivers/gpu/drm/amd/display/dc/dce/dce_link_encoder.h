@@ -210,7 +210,8 @@ void dce110_link_encoder_enable_tmds_output(
 	struct link_encoder *enc,
 	enum clock_source_id clock_source,
 	enum dc_color_depth color_depth,
-	enum signal_type signal,
+	bool hdmi,
+	bool dual_link,
 	uint32_t pixel_clock);
 
 /* enables DP PHY output */
@@ -225,16 +226,11 @@ void dce110_link_encoder_enable_dp_mst_output(
 	const struct dc_link_settings *link_settings,
 	enum clock_source_id clock_source);
 
-/* enables LVDS PHY output */
-void dce110_link_encoder_enable_lvds_output(
-	struct link_encoder *enc,
-	enum clock_source_id clock_source,
-	uint32_t pixel_clock);
-
 /* disable PHY output */
 void dce110_link_encoder_disable_output(
-	struct link_encoder *enc,
-	enum signal_type signal);
+	struct link_encoder *link_enc,
+	enum signal_type signal,
+	struct dc_link *link);
 
 /* set DP lane settings */
 void dce110_link_encoder_dp_set_lane_settings(
@@ -268,7 +264,5 @@ void dce110_psr_program_dp_dphy_fast_training(struct link_encoder *enc,
 
 void dce110_psr_program_secondary_packet(struct link_encoder *enc,
 			unsigned int sdp_transmit_line_num_deadline);
-
-bool dce110_is_dig_enabled(struct link_encoder *enc);
 
 #endif /* __DC_LINK_ENCODER__DCE110_H__ */

@@ -1,112 +1,48 @@
 # SPDX-License-Identifier: GPL-2.0
-include ../scripts/Makefile.include
-
-prefix ?= /usr/local
+prefix = /usr
 
 CC = gcc
 LEX = flex
 YACC = bison
 MAKE = make
-INSTALL ?= install
 
 CFLAGS += -Wall -O2
-CFLAGS += -D__EXPORTED_HEADERS__ -I$(srctree)/include/uapi -I$(srctree)/include
+CFLAGS += -D__EXPORTED_HEADERS__ -I../../include/uapi -I../../include
 
-# This will work when bpf is built in tools env. where srctree
-# isn't set and when invoked from selftests build, where srctree
-# is set to ".". building_out_of_srctree is undefined for in srctree
-# builds
-ifndef building_out_of_srctree
-srctree := $(patsubst %/,%,$(dir $(CURDIR)))
-srctree := $(patsubst %/,%,$(dir $(srctree)))
-endif
+%.yacc.c: %.y
+	$(YACC) -o $@ -d $<
 
-ifeq ($(V),1)
-  Q =
-else
-  Q = @
-endif
+%.lex.c: %.l
+	$(LEX) -o $@ $<
 
-FEATURE_USER = .bpf
-FEATURE_TESTS = libbfd disassembler-four-args
-FEATURE_DISPLAY = libbfd disassembler-four-args
+all: bpf_jit_disasm bpf_dbg bpf_asm bpftool
 
-check_feat := 1
-NON_CHECK_FEAT_TARGETS := clean bpftool_clean
-ifdef MAKECMDGOALS
-ifeq ($(filter-out $(NON_CHECK_FEAT_TARGETS),$(MAKECMDGOALS)),)
-  check_feat := 0
-endif
-endif
+bpf_jit_disasm : CFLAGS += -DPACKAGE='bpf_jit_disasm'
+bpf_jit_disasm : LDLIBS = -lopcodes -lbfd -ldl
+bpf_jit_disasm : bpf_jit_disasm.o
 
-ifeq ($(check_feat),1)
-ifeq ($(FEATURES_DUMP),)
-include $(srctree)/tools/build/Makefile.feature
-else
-include $(FEATURES_DUMP)
-endif
-endif
+bpf_dbg : LDLIBS = -lreadline
+bpf_dbg : bpf_dbg.o
 
-ifeq ($(feature-disassembler-four-args), 1)
-CFLAGS += -DDISASM_FOUR_ARGS_SIGNATURE
-endif
-
-$(OUTPUT)%.yacc.c: $(srctree)/tools/bpf/%.y
-	$(QUIET_BISON)$(YACC) -o $@ -d $<
-
-$(OUTPUT)%.lex.c: $(srctree)/tools/bpf/%.l
-	$(QUIET_FLEX)$(LEX) -o $@ $<
-
-$(OUTPUT)%.o: $(srctree)/tools/bpf/%.c
-	$(QUIET_CC)$(COMPILE.c) -o $@ $<
-
-$(OUTPUT)%.yacc.o: $(OUTPUT)%.yacc.c
-	$(QUIET_CC)$(COMPILE.c) -o $@ $<
-$(OUTPUT)%.lex.o: $(OUTPUT)%.lex.c
-	$(QUIET_CC)$(COMPILE.c) -o $@ $<
-
-PROGS = $(OUTPUT)bpf_jit_disasm $(OUTPUT)bpf_dbg $(OUTPUT)bpf_asm
-
-all: $(PROGS) bpftool
-
-$(OUTPUT)bpf_jit_disasm: CFLAGS += -DPACKAGE='bpf_jit_disasm'
-$(OUTPUT)bpf_jit_disasm: $(OUTPUT)bpf_jit_disasm.o
-	$(QUIET_LINK)$(CC) $(CFLAGS) -o $@ $^ -lopcodes -lbfd -ldl
-
-$(OUTPUT)bpf_dbg: $(OUTPUT)bpf_dbg.o
-	$(QUIET_LINK)$(CC) $(CFLAGS) -o $@ $^ -lreadline
-
-$(OUTPUT)bpf_asm: $(OUTPUT)bpf_asm.o $(OUTPUT)bpf_exp.yacc.o $(OUTPUT)bpf_exp.lex.o
-	$(QUIET_LINK)$(CC) $(CFLAGS) -o $@ $^
-
-$(OUTPUT)bpf_exp.lex.c: $(OUTPUT)bpf_exp.yacc.c
-$(OUTPUT)bpf_exp.yacc.o: $(OUTPUT)bpf_exp.yacc.c
-$(OUTPUT)bpf_exp.lex.o: $(OUTPUT)bpf_exp.lex.c
+bpf_asm : LDLIBS =
+bpf_asm : bpf_asm.o bpf_exp.yacc.o bpf_exp.lex.o
+bpf_exp.lex.o : bpf_exp.yacc.c
 
 clean: bpftool_clean
-	$(call QUIET_CLEAN, bpf-progs)
-	$(Q)$(RM) -r -- $(OUTPUT)*.o $(OUTPUT)bpf_jit_disasm $(OUTPUT)bpf_dbg \
-	       $(OUTPUT)bpf_asm $(OUTPUT)bpf_exp.yacc.* $(OUTPUT)bpf_exp.lex.*
-	$(call QUIET_CLEAN, core-gen)
-	$(Q)$(RM) -- $(OUTPUT)FEATURE-DUMP.bpf
-	$(Q)$(RM) -r -- $(OUTPUT)feature
+	rm -rf *.o bpf_jit_disasm bpf_dbg bpf_asm bpf_exp.yacc.* bpf_exp.lex.*
 
-install: $(PROGS) bpftool_install
-	$(call QUIET_INSTALL, bpf_jit_disasm)
-	$(Q)$(INSTALL) -m 0755 -d $(DESTDIR)$(prefix)/bin
-	$(Q)$(INSTALL) $(OUTPUT)bpf_jit_disasm $(DESTDIR)$(prefix)/bin/bpf_jit_disasm
-	$(call QUIET_INSTALL, bpf_dbg)
-	$(Q)$(INSTALL) $(OUTPUT)bpf_dbg $(DESTDIR)$(prefix)/bin/bpf_dbg
-	$(call QUIET_INSTALL, bpf_asm)
-	$(Q)$(INSTALL) $(OUTPUT)bpf_asm $(DESTDIR)$(prefix)/bin/bpf_asm
+install: bpftool_install
+	install bpf_jit_disasm $(prefix)/bin/bpf_jit_disasm
+	install bpf_dbg $(prefix)/bin/bpf_dbg
+	install bpf_asm $(prefix)/bin/bpf_asm
 
 bpftool:
-	$(call descend,bpftool)
+	$(MAKE) -C bpftool
 
 bpftool_install:
-	$(call descend,bpftool,install)
+	$(MAKE) -C bpftool install
 
 bpftool_clean:
-	$(call descend,bpftool,clean)
+	$(MAKE) -C bpftool clean
 
-.PHONY: all install clean bpftool bpftool_install bpftool_clean
+.PHONY: bpftool FORCE

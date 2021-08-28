@@ -11,10 +11,7 @@ struct netns_core {
 
 	int	sysctl_somaxconn;
 
-#ifdef CONFIG_PROC_FS
-	int __percpu *sock_inuse;
-	struct prot_inuse __percpu *prot_inuse;
-#endif
+	struct prot_inuse __percpu *inuse;
 };
 
 #endif

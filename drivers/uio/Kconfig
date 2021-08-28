@@ -1,4 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0-only
 menuconfig UIO
 	tristate "Userspace I/O drivers"
 	depends on MMU

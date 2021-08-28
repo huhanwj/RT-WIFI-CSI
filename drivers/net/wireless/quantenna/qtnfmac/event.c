@@ -1,5 +1,18 @@
-// SPDX-License-Identifier: GPL-2.0+
-/* Copyright (c) 2015-2016 Quantenna Communications. All rights reserved. */
+/*
+ * Copyright (c) 2015-2016 Quantenna Communications, Inc.
+ * All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
 
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -21,13 +34,12 @@ qtnf_event_handle_sta_assoc(struct qtnf_wmac *mac, struct qtnf_vif *vif,
 {
 	const u8 *sta_addr;
 	u16 frame_control;
-	struct station_info *sinfo;
+	struct station_info sinfo = { 0 };
 	size_t payload_len;
 	u16 tlv_type;
 	u16 tlv_value_len;
 	size_t tlv_full_len;
 	const struct qlink_tlv_hdr *tlv;
-	int ret = 0;
 
 	if (unlikely(len < sizeof(*sta_assoc))) {
 		pr_err("VIF%u.%u: payload is too short (%u < %zu)\n",
@@ -41,21 +53,16 @@ qtnf_event_handle_sta_assoc(struct qtnf_wmac *mac, struct qtnf_vif *vif,
 		return -EPROTO;
 	}
 
-	sinfo = kzalloc(sizeof(*sinfo), GFP_KERNEL);
-	if (!sinfo)
-		return -ENOMEM;
-
 	sta_addr = sta_assoc->sta_addr;
 	frame_control = le16_to_cpu(sta_assoc->frame_control);
 
 	pr_debug("VIF%u.%u: MAC:%pM FC:%x\n", mac->macid, vif->vifid, sta_addr,
 		 frame_control);
 
-	qtnf_sta_list_add(vif, sta_addr);
+	qtnf_sta_list_add(&vif->sta_list, sta_addr);
 
-	sinfo->assoc_req_ies = NULL;
-	sinfo->assoc_req_ies_len = 0;
-	sinfo->generation = vif->generation;
+	sinfo.assoc_req_ies = NULL;
+	sinfo.assoc_req_ies_len = 0;
 
 	payload_len = len - sizeof(*sta_assoc);
 	tlv = (const struct qlink_tlv_hdr *)sta_assoc->ies;
@@ -65,27 +72,23 @@ qtnf_event_handle_sta_assoc(struct qtnf_wmac *mac, struct qtnf_vif *vif,
 		tlv_value_len = le16_to_cpu(tlv->len);
 		tlv_full_len = tlv_value_len + sizeof(struct qlink_tlv_hdr);
 
-		if (tlv_full_len > payload_len) {
-			ret = -EINVAL;
-			goto out;
-		}
+		if (tlv_full_len > payload_len)
+			return -EINVAL;
 
 		if (tlv_type == QTN_TLV_ID_IE_SET) {
 			const struct qlink_tlv_ie_set *ie_set;
 			unsigned int ie_len;
 
-			if (payload_len < sizeof(*ie_set)) {
-				ret = -EINVAL;
-				goto out;
-			}
+			if (payload_len < sizeof(*ie_set))
+				return -EINVAL;
 
 			ie_set = (const struct qlink_tlv_ie_set *)tlv;
 			ie_len = tlv_value_len -
 				(sizeof(*ie_set) - sizeof(ie_set->hdr));
 
 			if (ie_set->type == QLINK_IE_SET_ASSOC_REQ && ie_len) {
-				sinfo->assoc_req_ies = ie_set->ie_data;
-				sinfo->assoc_req_ies_len = ie_len;
+				sinfo.assoc_req_ies = ie_set->ie_data;
+				sinfo.assoc_req_ies_len = ie_len;
 			}
 		}
 
@@ -93,17 +96,13 @@ qtnf_event_handle_sta_assoc(struct qtnf_wmac *mac, struct qtnf_vif *vif,
 		tlv = (struct qlink_tlv_hdr *)(tlv->val + tlv_value_len);
 	}
 
-	if (payload_len) {
-		ret = -EINVAL;
-		goto out;
-	}
+	if (payload_len)
+		return -EINVAL;
 
-	cfg80211_new_sta(vif->netdev, sta_assoc->sta_addr, sinfo,
+	cfg80211_new_sta(vif->netdev, sta_assoc->sta_addr, &sinfo,
 			 GFP_KERNEL);
 
-out:
-	kfree(sinfo);
-	return ret;
+	return 0;
 }
 
 static int
@@ -133,7 +132,7 @@ qtnf_event_handle_sta_deauth(struct qtnf_wmac *mac, struct qtnf_vif *vif,
 	pr_debug("VIF%u.%u: MAC:%pM reason:%x\n", mac->macid, vif->vifid,
 		 sta_addr, reason);
 
-	if (qtnf_sta_list_del(vif, sta_addr))
+	if (qtnf_sta_list_del(&vif->sta_list, sta_addr))
 		cfg80211_del_sta(vif->netdev, sta_deauth->sta_addr,
 				 GFP_KERNEL);
 
@@ -145,19 +144,6 @@ qtnf_event_handle_bss_join(struct qtnf_vif *vif,
 			   const struct qlink_event_bss_join *join_info,
 			   u16 len)
 {
-	struct wiphy *wiphy = priv_to_wiphy(vif->mac);
-	enum ieee80211_statuscode status = le16_to_cpu(join_info->status);
-	struct cfg80211_chan_def chandef;
-	struct cfg80211_bss *bss = NULL;
-	u8 *ie = NULL;
-	size_t payload_len;
-	u16 tlv_type;
-	u16 tlv_value_len;
-	size_t tlv_full_len;
-	const struct qlink_tlv_hdr *tlv;
-	const u8 *rsp_ies = NULL;
-	size_t rsp_ies_len = 0;
-
 	if (unlikely(len < sizeof(*join_info))) {
 		pr_err("VIF%u.%u: payload is too short (%u < %zu)\n",
 		       vif->mac->macid, vif->vifid, len,
@@ -171,131 +157,25 @@ qtnf_event_handle_bss_join(struct qtnf_vif *vif,
 		return -EPROTO;
 	}
 
-	pr_debug("VIF%u.%u: BSSID:%pM status:%u\n",
-		 vif->mac->macid, vif->vifid, join_info->bssid, status);
-
-	if (status != WLAN_STATUS_SUCCESS)
-		goto done;
-
-	qlink_chandef_q2cfg(wiphy, &join_info->chan, &chandef);
-	if (!cfg80211_chandef_valid(&chandef)) {
-		pr_warn("MAC%u.%u: bad channel freq=%u cf1=%u cf2=%u bw=%u\n",
-			vif->mac->macid, vif->vifid,
-			chandef.chan->center_freq,
-			chandef.center_freq1,
-			chandef.center_freq2,
-			chandef.width);
-		status = WLAN_STATUS_UNSPECIFIED_FAILURE;
-		goto done;
+	if (vif->sta_state != QTNF_STA_CONNECTING) {
+		pr_err("VIF%u.%u: BSS_JOIN event when STA is not connecting\n",
+		       vif->mac->macid, vif->vifid);
+		return -EPROTO;
 	}
 
-	bss = cfg80211_get_bss(wiphy, chandef.chan, join_info->bssid,
-			       NULL, 0, IEEE80211_BSS_TYPE_ESS,
-			       IEEE80211_PRIVACY_ANY);
-	if (!bss) {
-		pr_warn("VIF%u.%u: add missing BSS:%pM chan:%u\n",
-			vif->mac->macid, vif->vifid,
-			join_info->bssid, chandef.chan->hw_value);
+	pr_debug("VIF%u.%u: BSSID:%pM\n", vif->mac->macid, vif->vifid,
+		 join_info->bssid);
 
-		if (!vif->wdev.ssid_len) {
-			pr_warn("VIF%u.%u: SSID unknown for BSS:%pM\n",
-				vif->mac->macid, vif->vifid,
-				join_info->bssid);
-			status = WLAN_STATUS_UNSPECIFIED_FAILURE;
-			goto done;
-		}
+	cfg80211_connect_result(vif->netdev, join_info->bssid, NULL, 0, NULL,
+				0, le16_to_cpu(join_info->status), GFP_KERNEL);
 
-		ie = kzalloc(2 + vif->wdev.ssid_len, GFP_KERNEL);
-		if (!ie) {
-			pr_warn("VIF%u.%u: IE alloc failed for BSS:%pM\n",
-				vif->mac->macid, vif->vifid,
-				join_info->bssid);
-			status = WLAN_STATUS_UNSPECIFIED_FAILURE;
-			goto done;
-		}
-
-		ie[0] = WLAN_EID_SSID;
-		ie[1] = vif->wdev.ssid_len;
-		memcpy(ie + 2, vif->wdev.ssid, vif->wdev.ssid_len);
-
-		bss = cfg80211_inform_bss(wiphy, chandef.chan,
-					  CFG80211_BSS_FTYPE_UNKNOWN,
-					  join_info->bssid, 0,
-					  WLAN_CAPABILITY_ESS, 100,
-					  ie, 2 + vif->wdev.ssid_len,
-					  0, GFP_KERNEL);
-		if (!bss) {
-			pr_warn("VIF%u.%u: can't connect to unknown BSS: %pM\n",
-				vif->mac->macid, vif->vifid,
-				join_info->bssid);
-			status = WLAN_STATUS_UNSPECIFIED_FAILURE;
-			goto done;
-		}
-	}
-
-	payload_len = len - sizeof(*join_info);
-	tlv = (struct qlink_tlv_hdr *)join_info->ies;
-
-	while (payload_len >= sizeof(struct qlink_tlv_hdr)) {
-		tlv_type = le16_to_cpu(tlv->type);
-		tlv_value_len = le16_to_cpu(tlv->len);
-		tlv_full_len = tlv_value_len + sizeof(struct qlink_tlv_hdr);
-
-		if (payload_len < tlv_full_len) {
-			pr_warn("invalid %u TLV\n", tlv_type);
-			status = WLAN_STATUS_UNSPECIFIED_FAILURE;
-			goto done;
-		}
-
-		if (tlv_type == QTN_TLV_ID_IE_SET) {
-			const struct qlink_tlv_ie_set *ie_set;
-			unsigned int ie_len;
-
-			if (payload_len < sizeof(*ie_set)) {
-				pr_warn("invalid IE_SET TLV\n");
-				status = WLAN_STATUS_UNSPECIFIED_FAILURE;
-				goto done;
-			}
-
-			ie_set = (const struct qlink_tlv_ie_set *)tlv;
-			ie_len = tlv_value_len -
-				(sizeof(*ie_set) - sizeof(ie_set->hdr));
-
-			switch (ie_set->type) {
-			case QLINK_IE_SET_ASSOC_RESP:
-				if (ie_len) {
-					rsp_ies = ie_set->ie_data;
-					rsp_ies_len = ie_len;
-				}
-				break;
-			default:
-				pr_warn("unexpected IE type: %u\n",
-					ie_set->type);
-				break;
-			}
-		}
-
-		payload_len -= tlv_full_len;
-		tlv = (struct qlink_tlv_hdr *)(tlv->val + tlv_value_len);
-	}
-
-	if (payload_len)
-		pr_warn("VIF%u.%u: unexpected remaining payload: %zu\n",
-			vif->mac->macid, vif->vifid, payload_len);
-
-done:
-	cfg80211_connect_result(vif->netdev, join_info->bssid, NULL, 0, rsp_ies,
-				rsp_ies_len, status, GFP_KERNEL);
-	if (bss) {
-		if (!ether_addr_equal(vif->bssid, join_info->bssid))
-			ether_addr_copy(vif->bssid, join_info->bssid);
-		cfg80211_put_bss(wiphy, bss);
-	}
-
-	if (status == WLAN_STATUS_SUCCESS)
+	if (le16_to_cpu(join_info->status) == WLAN_STATUS_SUCCESS) {
+		vif->sta_state = QTNF_STA_CONNECTED;
 		netif_carrier_on(vif->netdev);
+	} else {
+		vif->sta_state = QTNF_STA_DISCONNECTED;
+	}
 
-	kfree(ie);
 	return 0;
 }
 
@@ -317,10 +197,18 @@ qtnf_event_handle_bss_leave(struct qtnf_vif *vif,
 		return -EPROTO;
 	}
 
+	if (vif->sta_state != QTNF_STA_CONNECTED) {
+		pr_err("VIF%u.%u: BSS_LEAVE event when STA is not connected\n",
+		       vif->mac->macid, vif->vifid);
+		return -EPROTO;
+	}
+
 	pr_debug("VIF%u.%u: disconnected\n", vif->mac->macid, vif->vifid);
 
 	cfg80211_disconnected(vif->netdev, le16_to_cpu(leave_info->reason),
 			      NULL, 0, 0, GFP_KERNEL);
+
+	vif->sta_state = QTNF_STA_DISCONNECTED;
 	netif_carrier_off(vif->netdev);
 
 	return 0;
@@ -349,8 +237,9 @@ qtnf_event_handle_mgmt_received(struct qtnf_vif *vif,
 	pr_debug("%s LEN:%u FC:%.4X SA:%pM\n", vif->netdev->name, frame_len,
 		 le16_to_cpu(frame->frame_control), frame->addr2);
 
-	cfg80211_rx_mgmt(&vif->wdev, le32_to_cpu(rxmgmt->freq), rxmgmt->sig_dbm,
-			 rxmgmt->frame_data, frame_len, flags);
+	cfg80211_rx_mgmt(&vif->wdev, le32_to_cpu(rxmgmt->freq),
+			 le32_to_cpu(rxmgmt->sig_dbm), rxmgmt->frame_data,
+			 frame_len, flags);
 
 	return 0;
 }
@@ -435,7 +324,7 @@ qtnf_event_handle_scan_results(struct qtnf_vif *vif,
 				  sr->bssid, get_unaligned_le64(&sr->tsf),
 				  le16_to_cpu(sr->capab),
 				  le16_to_cpu(sr->bintval), ies, ies_len,
-				  DBM_TO_MBM(sr->sig_dbm), GFP_KERNEL);
+				  sr->signal, GFP_KERNEL);
 	if (!bss)
 		return -ENOMEM;
 
@@ -480,8 +369,7 @@ qtnf_event_handle_freq_change(struct qtnf_wmac *mac,
 	qlink_chandef_q2cfg(wiphy, &data->chan, &chandef);
 
 	if (!cfg80211_chandef_valid(&chandef)) {
-		pr_err("MAC%u: bad channel freq=%u cf1=%u cf2=%u bw=%u\n",
-		       mac->macid, chandef.chan->center_freq,
+		pr_err("MAC%u: bad channel f1=%u f2=%u bw=%u\n", mac->macid,
 		       chandef.center_freq1, chandef.center_freq2,
 		       chandef.width);
 		return -EINVAL;
@@ -493,128 +381,17 @@ qtnf_event_handle_freq_change(struct qtnf_wmac *mac,
 
 	for (i = 0; i < QTNF_MAX_INTF; i++) {
 		vif = &mac->iflist[i];
-
 		if (vif->wdev.iftype == NL80211_IFTYPE_UNSPECIFIED)
 			continue;
 
-		if (vif->wdev.iftype == NL80211_IFTYPE_STATION &&
-		    !vif->wdev.current_bss)
-			continue;
-
-		if (!vif->netdev)
-			continue;
-
-		mutex_lock(&vif->wdev.mtx);
-		cfg80211_ch_switch_notify(vif->netdev, &chandef);
-		mutex_unlock(&vif->wdev.mtx);
+		if (vif->netdev) {
+			mutex_lock(&vif->wdev.mtx);
+			cfg80211_ch_switch_notify(vif->netdev, &chandef);
+			mutex_unlock(&vif->wdev.mtx);
+		}
 	}
 
 	return 0;
-}
-
-static int qtnf_event_handle_radar(struct qtnf_vif *vif,
-				   const struct qlink_event_radar *ev,
-				   u16 len)
-{
-	struct wiphy *wiphy = priv_to_wiphy(vif->mac);
-	struct cfg80211_chan_def chandef;
-
-	if (len < sizeof(*ev)) {
-		pr_err("MAC%u: payload is too short\n", vif->mac->macid);
-		return -EINVAL;
-	}
-
-	if (!wiphy->registered || !vif->netdev)
-		return 0;
-
-	qlink_chandef_q2cfg(wiphy, &ev->chan, &chandef);
-
-	if (!cfg80211_chandef_valid(&chandef)) {
-		pr_err("MAC%u: bad channel f1=%u f2=%u bw=%u\n",
-		       vif->mac->macid,
-		       chandef.center_freq1, chandef.center_freq2,
-		       chandef.width);
-		return -EINVAL;
-	}
-
-	pr_info("%s: radar event=%u f1=%u f2=%u bw=%u\n",
-		vif->netdev->name, ev->event,
-		chandef.center_freq1, chandef.center_freq2,
-		chandef.width);
-
-	switch (ev->event) {
-	case QLINK_RADAR_DETECTED:
-		cfg80211_radar_event(wiphy, &chandef, GFP_KERNEL);
-		break;
-	case QLINK_RADAR_CAC_FINISHED:
-		if (!vif->wdev.cac_started)
-			break;
-
-		cfg80211_cac_event(vif->netdev, &chandef,
-				   NL80211_RADAR_CAC_FINISHED, GFP_KERNEL);
-		break;
-	case QLINK_RADAR_CAC_ABORTED:
-		if (!vif->wdev.cac_started)
-			break;
-
-		cfg80211_cac_event(vif->netdev, &chandef,
-				   NL80211_RADAR_CAC_ABORTED, GFP_KERNEL);
-		break;
-	case QLINK_RADAR_CAC_STARTED:
-		if (vif->wdev.cac_started)
-			break;
-
-		if (!wiphy_ext_feature_isset(wiphy,
-					     NL80211_EXT_FEATURE_DFS_OFFLOAD))
-			break;
-
-		cfg80211_cac_event(vif->netdev, &chandef,
-				   NL80211_RADAR_CAC_STARTED, GFP_KERNEL);
-		break;
-	default:
-		pr_warn("%s: unhandled radar event %u\n",
-			vif->netdev->name, ev->event);
-		break;
-	}
-
-	return 0;
-}
-
-static int
-qtnf_event_handle_external_auth(struct qtnf_vif *vif,
-				const struct qlink_event_external_auth *ev,
-				u16 len)
-{
-	struct cfg80211_external_auth_params auth = {0};
-	struct wiphy *wiphy = priv_to_wiphy(vif->mac);
-	int ret;
-
-	if (len < sizeof(*ev)) {
-		pr_err("MAC%u: payload is too short\n", vif->mac->macid);
-		return -EINVAL;
-	}
-
-	if (!wiphy->registered || !vif->netdev)
-		return 0;
-
-	if (ev->ssid_len) {
-		memcpy(auth.ssid.ssid, ev->ssid, ev->ssid_len);
-		auth.ssid.ssid_len = ev->ssid_len;
-	}
-
-	auth.key_mgmt_suite = le32_to_cpu(ev->akm_suite);
-	ether_addr_copy(auth.bssid, ev->bssid);
-	auth.action = ev->action;
-
-	pr_info("%s: external auth bss=%pM action=%u akm=%u\n",
-		vif->netdev->name, auth.bssid, auth.action,
-		auth.key_mgmt_suite);
-
-	ret = cfg80211_external_auth_request(vif->netdev, &auth, GFP_KERNEL);
-	if (ret)
-		pr_warn("failed to offload external auth request\n");
-
-	return ret;
 }
 
 static int qtnf_event_parse(struct qtnf_wmac *mac,
@@ -671,14 +448,6 @@ static int qtnf_event_parse(struct qtnf_wmac *mac,
 		ret = qtnf_event_handle_freq_change(mac, (const void *)event,
 						    event_len);
 		break;
-	case QLINK_EVENT_RADAR:
-		ret = qtnf_event_handle_radar(vif, (const void *)event,
-					      event_len);
-		break;
-	case QLINK_EVENT_EXTERNAL_AUTH:
-		ret = qtnf_event_handle_external_auth(vif, (const void *)event,
-						      event_len);
-		break;
 	default:
 		pr_warn("unknown event type: %x\n", event_id);
 		break;
@@ -710,9 +479,9 @@ static int qtnf_event_process_skb(struct qtnf_bus *bus,
 	if (unlikely(!mac))
 		return -ENXIO;
 
-	rtnl_lock();
+	qtnf_bus_lock(bus);
 	res = qtnf_event_parse(mac, skb);
-	rtnl_unlock();
+	qtnf_bus_unlock(bus);
 
 	return res;
 }

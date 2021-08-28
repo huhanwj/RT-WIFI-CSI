@@ -26,8 +26,6 @@
 #ifndef __DAL_TIMING_GENERATOR_TYPES_H__
 #define __DAL_TIMING_GENERATOR_TYPES_H__
 
-#include "hw_shared.h"
-
 struct dc_bios;
 
 /* Contains CRTC vertical/horizontal pixel counters */
@@ -42,40 +40,64 @@ struct dcp_gsl_params {
 	int gsl_master;
 };
 
-struct gsl_params {
-	int gsl0_en;
-	int gsl1_en;
-	int gsl2_en;
-	int gsl_master_en;
-	int gsl_master_mode;
-	int master_update_lock_gsl_en;
-	int gsl_window_start_x;
-	int gsl_window_end_x;
-	int gsl_window_start_y;
-	int gsl_window_end_y;
-};
-
 /* define the structure of Dynamic Refresh Mode */
 struct drr_params {
 	uint32_t vertical_total_min;
 	uint32_t vertical_total_max;
-	uint32_t vertical_total_mid;
-	uint32_t vertical_total_mid_frame_num;
 	bool immediate_flip;
 };
 
 #define LEFT_EYE_3D_PRIMARY_SURFACE 1
 #define RIGHT_EYE_3D_PRIMARY_SURFACE 0
 
+enum test_pattern_dyn_range {
+	TEST_PATTERN_DYN_RANGE_VESA = 0,
+	TEST_PATTERN_DYN_RANGE_CEA
+};
+
+enum test_pattern_mode {
+	TEST_PATTERN_MODE_COLORSQUARES_RGB = 0,
+	TEST_PATTERN_MODE_COLORSQUARES_YCBCR601,
+	TEST_PATTERN_MODE_COLORSQUARES_YCBCR709,
+	TEST_PATTERN_MODE_VERTICALBARS,
+	TEST_PATTERN_MODE_HORIZONTALBARS,
+	TEST_PATTERN_MODE_SINGLERAMP_RGB,
+	TEST_PATTERN_MODE_DUALRAMP_RGB
+};
+
+enum test_pattern_color_format {
+	TEST_PATTERN_COLOR_FORMAT_BPC_6 = 0,
+	TEST_PATTERN_COLOR_FORMAT_BPC_8,
+	TEST_PATTERN_COLOR_FORMAT_BPC_10,
+	TEST_PATTERN_COLOR_FORMAT_BPC_12
+};
+
+enum controller_dp_test_pattern {
+	CONTROLLER_DP_TEST_PATTERN_D102 = 0,
+	CONTROLLER_DP_TEST_PATTERN_SYMBOLERROR,
+	CONTROLLER_DP_TEST_PATTERN_PRBS7,
+	CONTROLLER_DP_TEST_PATTERN_COLORSQUARES,
+	CONTROLLER_DP_TEST_PATTERN_VERTICALBARS,
+	CONTROLLER_DP_TEST_PATTERN_HORIZONTALBARS,
+	CONTROLLER_DP_TEST_PATTERN_COLORRAMP,
+	CONTROLLER_DP_TEST_PATTERN_VIDEOMODE,
+	CONTROLLER_DP_TEST_PATTERN_RESERVED_8,
+	CONTROLLER_DP_TEST_PATTERN_RESERVED_9,
+	CONTROLLER_DP_TEST_PATTERN_RESERVED_A,
+	CONTROLLER_DP_TEST_PATTERN_COLORSQUARES_CEA
+};
+
 enum crtc_state {
 	CRTC_STATE_VBLANK = 0,
 	CRTC_STATE_VACTIVE
 };
 
-struct vupdate_keepout_params {
-	int start_offset;
-	int end_offset;
-	int enable;
+struct _dlg_otg_param {
+	int vstartup_start;
+	int vupdate_offset;
+	int vupdate_width;
+	int vready_offset;
+	enum signal_type signal;
 };
 
 struct crtc_stereo_flags {
@@ -86,45 +108,11 @@ struct crtc_stereo_flags {
 	uint8_t DISABLE_STEREO_DP_SYNC : 1;
 };
 
-enum crc_selection {
-	/* Order must match values expected by hardware */
-	UNION_WINDOW_A_B = 0,
-	UNION_WINDOW_A_NOT_B,
-	UNION_WINDOW_NOT_A_B,
-	UNION_WINDOW_NOT_A_NOT_B,
-	INTERSECT_WINDOW_A_B,
-	INTERSECT_WINDOW_A_NOT_B,
-	INTERSECT_WINDOW_NOT_A_B,
-	INTERSECT_WINDOW_NOT_A_NOT_B,
-};
-
-enum h_timing_div_mode {
-	H_TIMING_NO_DIV,
-	H_TIMING_DIV_BY2,
-};
-
-struct crc_params {
-	/* Regions used to calculate CRC*/
-	uint16_t windowa_x_start;
-	uint16_t windowa_x_end;
-	uint16_t windowa_y_start;
-	uint16_t windowa_y_end;
-
-	uint16_t windowb_x_start;
-	uint16_t windowb_x_end;
-	uint16_t windowb_y_start;
-	uint16_t windowb_y_end;
-
-	enum crc_selection selection;
-
-	bool continuous_mode;
-	bool enable;
-};
-
 struct timing_generator {
 	const struct timing_generator_funcs *funcs;
 	struct dc_bios *bp;
 	struct dc_context *ctx;
+	struct _dlg_otg_param dlg_otg_param;
 	int inst;
 };
 
@@ -132,30 +120,12 @@ struct dc_crtc_timing;
 
 struct drr_params;
 
-
 struct timing_generator_funcs {
 	bool (*validate_timing)(struct timing_generator *tg,
 							const struct dc_crtc_timing *timing);
 	void (*program_timing)(struct timing_generator *tg,
 							const struct dc_crtc_timing *timing,
-							int vready_offset,
-							int vstartup_start,
-							int vupdate_offset,
-							int vupdate_width,
-							const enum signal_type signal,
-							bool use_vbios
-	);
-	void (*setup_vertical_interrupt0)(
-			struct timing_generator *optc,
-			uint32_t start_line,
-			uint32_t end_line);
-	void (*setup_vertical_interrupt1)(
-			struct timing_generator *optc,
-			uint32_t start_line);
-	void (*setup_vertical_interrupt2)(
-			struct timing_generator *optc,
-			uint32_t start_line);
-
+							bool use_vbios);
 	bool (*enable_crtc)(struct timing_generator *tg);
 	bool (*disable_crtc)(struct timing_generator *tg);
 	bool (*is_counter_moving)(struct timing_generator *tg);
@@ -169,11 +139,6 @@ struct timing_generator_funcs {
 		uint32_t *v_blank_end,
 		uint32_t *h_position,
 		uint32_t *v_position);
-	bool (*get_otg_active_size)(struct timing_generator *optc,
-			uint32_t *otg_active_width,
-			uint32_t *otg_active_height);
-	bool (*is_matching_timing)(struct timing_generator *tg,
-			const struct dc_crtc_timing *otg_timing);
 	void (*set_early_control)(struct timing_generator *tg,
 							   uint32_t early_cntl);
 	void (*wait_for_state)(struct timing_generator *tg,
@@ -193,17 +158,7 @@ struct timing_generator_funcs {
 							const struct dcp_gsl_params *gsl_params);
 	void (*unlock)(struct timing_generator *tg);
 	void (*lock)(struct timing_generator *tg);
-	void (*lock_doublebuffer_disable)(struct timing_generator *tg);
-	void (*lock_doublebuffer_enable)(struct timing_generator *tg);
-#if defined(CONFIG_DRM_AMD_DC_DCN2_0)
-	void(*triplebuffer_unlock)(struct timing_generator *tg);
-	void(*triplebuffer_lock)(struct timing_generator *tg);
-#endif
-	void (*enable_reset_trigger)(struct timing_generator *tg,
-				     int source_tg_inst);
-	void (*enable_crtc_reset)(struct timing_generator *tg,
-				  int source_tg_inst,
-				  struct crtc_trigger_info *crtc_tp);
+	void (*enable_reset_trigger)(struct timing_generator *tg, int source_tg_inst);
 	void (*disable_reset_trigger)(struct timing_generator *tg);
 	void (*tear_down_global_swap_lock)(struct timing_generator *tg);
 	void (*enable_advanced_request)(struct timing_generator *tg,
@@ -218,68 +173,11 @@ struct timing_generator_funcs {
 
 	bool (*arm_vert_intr)(struct timing_generator *tg, uint8_t width);
 
-	void (*program_global_sync)(struct timing_generator *tg,
-			int vready_offset,
-			int vstartup_start,
-			int vupdate_offset,
-			int vupdate_width);
+	void (*program_global_sync)(struct timing_generator *tg);
 	void (*enable_optc_clock)(struct timing_generator *tg, bool enable);
 	void (*program_stereo)(struct timing_generator *tg,
 		const struct dc_crtc_timing *timing, struct crtc_stereo_flags *flags);
 	bool (*is_stereo_left_eye)(struct timing_generator *tg);
-
-	void (*set_blank_data_double_buffer)(struct timing_generator *tg, bool enable);
-
-	void (*tg_init)(struct timing_generator *tg);
-	bool (*is_tg_enabled)(struct timing_generator *tg);
-	bool (*is_optc_underflow_occurred)(struct timing_generator *tg);
-	void (*clear_optc_underflow)(struct timing_generator *tg);
-
-#if defined(CONFIG_DRM_AMD_DC_DCN2_0)
-	void (*set_dwb_source)(struct timing_generator *optc,
-		uint32_t dwb_pipe_inst);
-
-	void (*get_optc_source)(struct timing_generator *optc,
-			uint32_t *num_of_input_segments,
-			uint32_t *seg0_src_sel,
-			uint32_t *seg1_src_sel);
-#endif
-
-	/**
-	 * Configure CRCs for the given timing generator. Return false if TG is
-	 * not on.
-	 */
-	bool (*configure_crc)(struct timing_generator *tg,
-			       const struct crc_params *params);
-
-	/**
-	 * Get CRCs for the given timing generator. Return false if CRCs are
-	 * not enabled (via configure_crc).
-	 */
-	bool (*get_crc)(struct timing_generator *tg,
-			uint32_t *r_cr, uint32_t *g_y, uint32_t *b_cb);
-
-	void (*program_manual_trigger)(struct timing_generator *optc);
-	void (*setup_manual_trigger)(struct timing_generator *optc);
-
-	void (*set_vtg_params)(struct timing_generator *optc,
-			const struct dc_crtc_timing *dc_crtc_timing);
-
-#ifdef CONFIG_DRM_AMD_DC_DCN2_0
-#ifdef CONFIG_DRM_AMD_DC_DSC_SUPPORT
-	void (*set_dsc_config)(struct timing_generator *optc,
-			       enum optc_dsc_mode dsc_mode,
-			       uint32_t dsc_bytes_per_pixel,
-			       uint32_t dsc_slice_width);
-#endif
-	void (*set_odm_bypass)(struct timing_generator *optc, const struct dc_crtc_timing *dc_crtc_timing);
-	void (*set_odm_combine)(struct timing_generator *optc, int *opp_id, int opp_cnt,
-			struct dc_crtc_timing *timing);
-	void (*set_gsl)(struct timing_generator *optc, const struct gsl_params *params);
-	void (*set_gsl_source_select)(struct timing_generator *optc,
-			int group_idx,
-			uint32_t gsl_ready_signal);
-#endif
 };
 
 #endif

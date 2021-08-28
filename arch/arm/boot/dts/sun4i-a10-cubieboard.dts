@@ -114,7 +114,7 @@
 };
 
 &emac {
-	phy-handle = <&phy1>;
+	phy = <&phy1>;
 	status = "okay";
 };
 
@@ -162,7 +162,8 @@
 &mmc0 {
 	vmmc-supply = <&reg_vcc3v3>;
 	bus-width = <4>;
-	cd-gpios = <&pio 7 1 GPIO_ACTIVE_LOW>; /* PH1 */
+	cd-gpios = <&pio 7 1 GPIO_ACTIVE_HIGH>; /* PH1 */
+	cd-inverted;
 	status = "okay";
 };
 
@@ -183,6 +184,12 @@
 		pins = "PH20", "PH21";
 		function = "gpio_out";
 		drive-strength = <20>;
+	};
+
+	usb0_id_detect_pin: usb0-id-detect-pin {
+		pins = "PH4";
+		function = "gpio_in";
+		bias-pull-up;
 	};
 };
 
@@ -248,7 +255,9 @@
 };
 
 &usbphy {
-	usb0_id_det-gpios = <&pio 7 4 (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)>; /* PH4 */
+	pinctrl-names = "default";
+	pinctrl-0 = <&usb0_id_detect_pin>;
+	usb0_id_det-gpio = <&pio 7 4 GPIO_ACTIVE_HIGH>; /* PH4 */
 	usb1_vbus-supply = <&reg_usb1_vbus>;
 	usb2_vbus-supply = <&reg_usb2_vbus>;
 	status = "okay";

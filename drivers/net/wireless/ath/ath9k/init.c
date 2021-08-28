@@ -23,7 +23,6 @@
 #include <linux/of.h>
 #include <linux/of_net.h>
 #include <linux/relay.h>
-#include <linux/dmi.h>
 #include <net/ieee80211_radiotap.h>
 
 #include "ath9k.h"
@@ -76,10 +75,6 @@ MODULE_PARM_DESC(use_chanctx, "Enable channel context for concurrency");
 
 #endif /* CONFIG_ATH9K_CHANNEL_CONTEXT */
 
-int ath9k_use_msi;
-module_param_named(use_msi, ath9k_use_msi, int, 0444);
-MODULE_PARM_DESC(use_msi, "Use MSI instead of INTx if possible");
-
 bool is_ath9k_unloaded;
 
 #ifdef CONFIG_MAC80211_LEDS
@@ -96,56 +91,6 @@ static const struct ieee80211_tpt_blink ath9k_tpt_blink[] = {
 	{ .throughput = 300 * 1024, .blink_time = 50 },
 };
 #endif
-
-static int __init set_use_msi(const struct dmi_system_id *dmi)
-{
-	ath9k_use_msi = 1;
-	return 1;
-}
-
-static const struct dmi_system_id ath9k_quirks[] __initconst = {
-	{
-		.callback = set_use_msi,
-		.ident = "Dell Inspiron 24-3460",
-		.matches = {
-			DMI_MATCH(DMI_SYS_VENDOR, "Dell Inc."),
-			DMI_MATCH(DMI_PRODUCT_NAME, "Inspiron 24-3460"),
-		},
-	},
-	{
-		.callback = set_use_msi,
-		.ident = "Dell Vostro 3262",
-		.matches = {
-			DMI_MATCH(DMI_SYS_VENDOR, "Dell Inc."),
-			DMI_MATCH(DMI_PRODUCT_NAME, "Vostro 3262"),
-		},
-	},
-	{
-		.callback = set_use_msi,
-		.ident = "Dell Inspiron 3472",
-		.matches = {
-			DMI_MATCH(DMI_SYS_VENDOR, "Dell Inc."),
-			DMI_MATCH(DMI_PRODUCT_NAME, "Inspiron 3472"),
-		},
-	},
-	{
-		.callback = set_use_msi,
-		.ident = "Dell Vostro 15-3572",
-		.matches = {
-			DMI_MATCH(DMI_SYS_VENDOR, "Dell Inc."),
-			DMI_MATCH(DMI_PRODUCT_NAME, "Vostro 15-3572"),
-		},
-	},
-	{
-		.callback = set_use_msi,
-		.ident = "Dell Inspiron 14-3473",
-		.matches = {
-			DMI_MATCH(DMI_SYS_VENDOR, "Dell Inc."),
-			DMI_MATCH(DMI_PRODUCT_NAME, "Inspiron 14-3473"),
-		},
-	},
-	{}
-};
 
 static void ath9k_deinit_softc(struct ath_softc *sc);
 
@@ -257,11 +202,6 @@ static void ath9k_reg_notifier(struct wiphy *wiphy,
 
 	ath_reg_notifier_apply(wiphy, request, reg);
 
-	/* synchronize DFS detector if regulatory domain changed */
-	if (sc->dfs_detector != NULL)
-		sc->dfs_detector->set_dfs_domain(sc->dfs_detector,
-						 request->dfs_region);
-
 	/* Set tx power */
 	if (!ah->curchan)
 		return;
@@ -272,6 +212,10 @@ static void ath9k_reg_notifier(struct wiphy *wiphy,
 	ath9k_cmn_update_txpow(ah, sc->cur_chan->cur_txpower,
 			       sc->cur_chan->txpower,
 			       &sc->cur_chan->cur_txpower);
+	/* synchronize DFS detector if regulatory domain changed */
+	if (sc->dfs_detector != NULL)
+		sc->dfs_detector->set_dfs_domain(sc->dfs_detector,
+						 request->dfs_region);
 	ath9k_ps_restore(sc);
 }
 
@@ -428,7 +372,7 @@ static void ath9k_init_misc(struct ath_softc *sc)
 	timer_setup(&common->ani.timer, ath_ani_calibrate, 0);
 
 	common->last_rssi = ATH_RSSI_DUMMY_MARKER;
-	eth_broadcast_addr(common->bssidmask);
+	memcpy(common->bssidmask, ath_bcast_mac, ETH_ALEN);
 	sc->beacon.slottime = 9;
 
 	for (i = 0; i < ARRAY_SIZE(sc->beacon.bslot); i++)
@@ -568,68 +512,7 @@ static void ath9k_eeprom_release(struct ath_softc *sc)
 {
 	release_firmware(sc->sc_ah->eeprom_blob);
 }
-#ifdef CONFIG_RT_WIFI
-static void test_trigger(void *arg)
-{
-    printk(KERN_DEBUG "test trigger\n");
-}
 
-static void test_thres(void *arg)
-{
-    printk(KERN_DEBUG "test thres\n");
-}
-
-static void ath9k_init_rt_wifi(struct ath_softc *sc)
-{
-	int ret;
-	unsigned int fifo_size = sizeof(struct ath_buf*) * RT_WIFI_KFIFO_SIZE;
-	
-	sc->rt_wifi_enable = 0;
-	ret = kfifo_alloc(&sc->rt_wifi_fifo, fifo_size, GFP_KERNEL);
-	if (ret != 0) {
-		printk(KERN_WARNING "%s: Error in allocating RT_WIFI FIFO %d.\n",
-			__FUNCTION__, ret);
-	}
-	INIT_LIST_HEAD(&(sc->rt_wifi_q));
-	sc->rt_wifi_qcount = 0;
-	spin_lock_init(&sc->rt_wifi_q_lock);
-	spin_lock_init(&sc->rt_wifi_fifo_lock);
-
-	sc->rt_wifi_timer = ath_gen_timer_alloc(sc->sc_ah, test_trigger, test_thres, (void*)sc, 7);
-	sc->rt_wifi_join = 0;
-}
-
-static void ath9k_deinit_rt_wifi(struct ath_softc *sc)
-{
-	struct ath_buf *new_buf;
-
-	sc->rt_wifi_enable = 0;
-
-	/* TODO: Not sure if the deinit is handled properly. */
-	while (true) {
-		new_buf = ath_rt_wifi_get_buf_sta(sc);
-		if (new_buf != NULL) {
-			ath_rt_wifi_tx(sc, new_buf);
-		} else {
-			break;
-		}
-	}
-	while (!list_empty(&sc->rt_wifi_q)) {
-		new_buf = list_first_entry(&sc->rt_wifi_q, struct ath_buf, list);
-		list_del_init(&new_buf->list);
-		ath_rt_wifi_tx(sc, new_buf);
-	}
-
-	if (sc->rt_wifi_timer != NULL) {
-		ath9k_gen_timer_stop(sc->sc_ah, sc->rt_wifi_timer);
-		ath_gen_timer_free(sc->sc_ah, sc->rt_wifi_timer);
-	}
-
-	if (sc->rt_wifi_superframe != NULL) {
-		kfree(sc->rt_wifi_superframe);
-	}
-}
-#endif
 static int ath9k_init_platform(struct ath_softc *sc)
 {
 	struct ath9k_platform_data *pdata = sc->dev->platform_data;
@@ -697,14 +580,14 @@ static int ath9k_of_init(struct ath_softc *sc)
 		ret = ath9k_eeprom_request(sc, eeprom_name);
 		if (ret)
 			return ret;
-
-		ah->ah_flags &= ~AH_USE_EEPROM;
-		ah->ah_flags |= AH_NO_EEP_SWAP;
 	}
 
 	mac = of_get_mac_address(np);
-	if (!IS_ERR(mac))
+	if (mac)
 		ether_addr_copy(common->macaddr, mac);
+
+	ah->ah_flags &= ~AH_USE_EEPROM;
+	ah->ah_flags |= AH_NO_EEP_SWAP;
 
 	return 0;
 }
@@ -737,6 +620,8 @@ static int ath9k_init_softc(u16 devid, struct ath_softc *sc,
 
 	/* Will be cleared in ath9k_start() */
 	set_bit(ATH_OP_INVALID, &common->op_flags);
+	sc->airtime_flags = (AIRTIME_USE_TX | AIRTIME_USE_RX |
+			     AIRTIME_USE_NEW_QUEUES);
 
 	sc->sc_ah = ah;
 	sc->dfs_detector = dfs_pattern_detector_init(common, NL80211_DFS_UNSET);
@@ -817,12 +702,10 @@ static int ath9k_init_softc(u16 devid, struct ath_softc *sc,
 	if (ret)
 		goto err_queues;
 
-		/* rt-wifi: Disable Bluetooth co-existence for GENTIMER usage. */
-#ifndef CONFIG_RT_WIFI
 	ret =  ath9k_init_btcoex(sc);
 	if (ret)
 		goto err_btcoex;
-#endif
+
 	ret = ath9k_cmn_init_channels_rates(common);
 	if (ret)
 		goto err_btcoex;
@@ -835,10 +718,6 @@ static int ath9k_init_softc(u16 devid, struct ath_softc *sc,
 	ath9k_init_misc(sc);
 	ath_chanctx_init(sc);
 	ath9k_offchannel_init(sc);
-
-#ifdef CONFIG_RT_WIFI
-	ath9k_init_rt_wifi(sc);
-#endif
 
 	if (common->bus_ops->aspm_init)
 		common->bus_ops->aspm_init(common);
@@ -872,7 +751,7 @@ static void ath9k_init_band_txpower(struct ath_softc *sc, int band)
 		ah->curchan = &ah->channels[chan->hw_value];
 		cfg80211_chandef_create(&chandef, chan, NL80211_CHAN_HT20);
 		ath9k_cmn_get_channel(sc->hw, ah, &chandef);
-		ath9k_hw_set_txpowerlimit(ah, MAX_COMBINED_POWER, true);
+		ath9k_hw_set_txpowerlimit(ah, MAX_RATE_POWER, true);
 	}
 }
 
@@ -1078,7 +957,6 @@ static void ath9k_set_hw_capab(struct ath_softc *sc, struct ieee80211_hw *hw)
 	SET_IEEE80211_PERM_ADDR(hw, common->macaddr);
 
 	wiphy_ext_feature_set(hw->wiphy, NL80211_EXT_FEATURE_CQM_RSSI_LIST);
-	wiphy_ext_feature_set(hw->wiphy, NL80211_EXT_FEATURE_AIRTIME_FAIRNESS);
 }
 
 int ath9k_init_device(u16 devid, struct ath_softc *sc,
@@ -1167,11 +1045,7 @@ deinit:
 static void ath9k_deinit_softc(struct ath_softc *sc)
 {
 	int i = 0;
-#ifdef CONFIG_RT_WIFI
-	ath9k_deinit_rt_wifi(sc);
-#else
-	ath9k_deinit_btcoex(sc);
-#endif
+
 	ath9k_deinit_p2p(sc);
 	ath9k_deinit_btcoex(sc);
 
@@ -1225,8 +1099,6 @@ static int __init ath9k_init(void)
 		error = -ENODEV;
 		goto err_pci_exit;
 	}
-
-	dmi_check_system(ath9k_quirks);
 
 	return 0;
 

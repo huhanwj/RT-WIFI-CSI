@@ -1,9 +1,19 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * MMCIF eMMC driver.
  *
  * Copyright (C) 2010 Renesas Solutions Corp.
  * Yusuke Goda <yusuke.goda.sx@renesas.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License.
+ *
+ *
+ * TODO
+ *  1. DMA
+ *  2. Power management
+ *  3. Handle MMC errors better
+ *
  */
 
 /*
@@ -57,6 +67,7 @@
 #include <linux/module.h>
 
 #define DRIVER_NAME	"sh_mmcif"
+#define DRIVER_VERSION	"2010-04-28"
 
 /* CE_CMD_SET */
 #define CMD_MASK		0x3f000000
@@ -905,7 +916,7 @@ static void sh_mmcif_start_cmd(struct sh_mmcif_host *host,
 			       struct mmc_request *mrq)
 {
 	struct mmc_command *cmd = mrq->cmd;
-	u32 opc;
+	u32 opc = cmd->opcode;
 	u32 mask = 0;
 	unsigned long flags;
 
@@ -1393,9 +1404,11 @@ static int sh_mmcif_probe(struct platform_device *pdev)
 	const char *name;
 
 	irq[0] = platform_get_irq(pdev, 0);
-	irq[1] = platform_get_irq_optional(pdev, 1);
-	if (irq[0] < 0)
+	irq[1] = platform_get_irq(pdev, 1);
+	if (irq[0] < 0) {
+		dev_err(dev, "Get irq error\n");
 		return -ENXIO;
+	}
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	reg = devm_ioremap_resource(dev, res);
@@ -1568,6 +1581,6 @@ static struct platform_driver sh_mmcif_driver = {
 module_platform_driver(sh_mmcif_driver);
 
 MODULE_DESCRIPTION("SuperH on-chip MMC/eMMC interface driver");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
 MODULE_ALIAS("platform:" DRIVER_NAME);
 MODULE_AUTHOR("Yusuke Goda <yusuke.goda.sx@renesas.com>");

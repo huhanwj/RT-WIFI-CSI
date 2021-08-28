@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Driver for C-Media CMI8328-based soundcards, such as AudioExcel AV500
  * Copyright (c) 2012 Ondrej Zary
@@ -193,7 +192,7 @@ static int snd_cmi8328_mixer(struct snd_wss *chip)
 }
 
 /* find index of an item in "-1"-ended array */
-static int array_find(int array[], int item)
+int array_find(int array[], int item)
 {
 	int i;
 
@@ -204,7 +203,7 @@ static int array_find(int array[], int item)
 	return -1;
 }
 /* the same for long */
-static int array_find_l(long array[], long item)
+int array_find_l(long array[], long item)
 {
 	int i;
 
@@ -435,6 +434,7 @@ static int snd_cmi8328_suspend(struct device *pdev, unsigned int n,
 	cmi = card->private_data;
 	snd_cmi8328_cfg_save(cmi->port, cmi->cfg);
 	snd_power_change_state(card, SNDRV_CTL_POWER_D3hot);
+	snd_pcm_suspend_all(cmi->wss->pcm);
 	cmi->wss->suspend(cmi->wss);
 
 	return 0;

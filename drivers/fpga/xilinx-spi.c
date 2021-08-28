@@ -1,10 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Xilinx Spartan6 Slave Serial SPI Driver
  *
  * Copyright (C) 2017 DENX Software Engineering
  *
  * Anatolij Gustschin <agust@denx.de>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
  *
  * Manage Xilinx FPGA firmware that is loaded over SPI using
  * the slave serial configuration interface.
@@ -140,7 +143,6 @@ static const struct fpga_manager_ops xilinx_spi_ops = {
 static int xilinx_spi_probe(struct spi_device *spi)
 {
 	struct xilinx_spi_conf *conf;
-	struct fpga_manager *mgr;
 
 	conf = devm_kzalloc(&spi->dev, sizeof(*conf), GFP_KERNEL);
 	if (!conf)
@@ -163,22 +165,13 @@ static int xilinx_spi_probe(struct spi_device *spi)
 		return PTR_ERR(conf->done);
 	}
 
-	mgr = devm_fpga_mgr_create(&spi->dev,
-				   "Xilinx Slave Serial FPGA Manager",
-				   &xilinx_spi_ops, conf);
-	if (!mgr)
-		return -ENOMEM;
-
-	spi_set_drvdata(spi, mgr);
-
-	return fpga_mgr_register(mgr);
+	return fpga_mgr_register(&spi->dev, "Xilinx Slave Serial FPGA Manager",
+				 &xilinx_spi_ops, conf);
 }
 
 static int xilinx_spi_remove(struct spi_device *spi)
 {
-	struct fpga_manager *mgr = spi_get_drvdata(spi);
-
-	fpga_mgr_unregister(mgr);
+	fpga_mgr_unregister(&spi->dev);
 
 	return 0;
 }

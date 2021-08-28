@@ -191,16 +191,12 @@ static int soc_pcmcia_hw_init(struct soc_pcmcia_socket *skt)
 {
 	int ret = 0, i;
 
-	ret = clk_prepare_enable(skt->clk);
-	if (ret)
-		return ret;
+	clk_prepare_enable(skt->clk);
 
 	if (skt->ops->hw_init) {
 		ret = skt->ops->hw_init(skt);
-		if (ret) {
-			clk_disable_unprepare(skt->clk);
+		if (ret)
 			return ret;
-		}
 	}
 
 	for (i = 0; i < ARRAY_SIZE(skt->stat); i++) {
@@ -351,20 +347,19 @@ static int soc_common_pcmcia_config_skt(
 
 	if (ret == 0) {
 		struct gpio_desc *descs[2];
-		DECLARE_BITMAP(values, 2);
-		int n = 0;
+		int values[2], n = 0;
 
 		if (skt->gpio_reset) {
 			descs[n] = skt->gpio_reset;
-			__assign_bit(n++, values, state->flags & SS_RESET);
+			values[n++] = !!(state->flags & SS_RESET);
 		}
 		if (skt->gpio_bus_enable) {
 			descs[n] = skt->gpio_bus_enable;
-			__assign_bit(n++, values, state->flags & SS_OUTPUT_ENA);
+			values[n++] = !!(state->flags & SS_OUTPUT_ENA);
 		}
 
 		if (n)
-			gpiod_set_array_value_cansleep(n, descs, NULL, values);
+			gpiod_set_array_value_cansleep(n, descs, values);
 
 		/*
 		 * This really needs a better solution.  The IRQ

@@ -24,7 +24,6 @@
 #include <linux/timer.h>
 #include <linux/kernel_stat.h>
 #include <linux/sched/signal.h>
-#include <linux/dma-mapping.h>
 
 #include <asm/ccwdev.h>
 #include <asm/cio.h>
@@ -598,13 +597,13 @@ static ssize_t vpm_show(struct device *dev, struct device_attribute *attr,
 	return sprintf(buf, "%02x\n", sch->vpm);
 }
 
-static DEVICE_ATTR_RO(devtype);
-static DEVICE_ATTR_RO(cutype);
-static DEVICE_ATTR_RO(modalias);
-static DEVICE_ATTR_RW(online);
+static DEVICE_ATTR(devtype, 0444, devtype_show, NULL);
+static DEVICE_ATTR(cutype, 0444, cutype_show, NULL);
+static DEVICE_ATTR(modalias, 0444, modalias_show, NULL);
+static DEVICE_ATTR(online, 0644, online_show, online_store);
 static DEVICE_ATTR(availability, 0444, available_show, NULL);
 static DEVICE_ATTR(logging, 0200, NULL, initiate_logging);
-static DEVICE_ATTR_RO(vpm);
+static DEVICE_ATTR(vpm, 0444, vpm_show, NULL);
 
 static struct attribute *io_subchannel_attrs[] = {
 	&dev_attr_logging.attr,
@@ -643,10 +642,10 @@ static int ccw_device_add(struct ccw_device *cdev)
 	return device_add(dev);
 }
 
-static int match_dev_id(struct device *dev, const void *data)
+static int match_dev_id(struct device *dev, void *data)
 {
 	struct ccw_device *cdev = to_ccwdev(dev);
-	struct ccw_dev_id *dev_id = (void *)data;
+	struct ccw_dev_id *dev_id = data;
 
 	return ccw_dev_id_is_equal(&cdev->private->dev_id, dev_id);
 }
@@ -688,9 +687,6 @@ ccw_device_release(struct device *dev)
 	struct ccw_device *cdev;
 
 	cdev = to_ccwdev(dev);
-	cio_gp_dma_free(cdev->private->dma_pool, cdev->private->dma_area,
-			sizeof(*cdev->private->dma_area));
-	cio_gp_dma_destroy(cdev->private->dma_pool, &cdev->dev);
 	/* Release reference of parent subchannel. */
 	put_device(cdev->dev.parent);
 	kfree(cdev->private);
@@ -700,33 +696,15 @@ ccw_device_release(struct device *dev)
 static struct ccw_device * io_subchannel_allocate_dev(struct subchannel *sch)
 {
 	struct ccw_device *cdev;
-	struct gen_pool *dma_pool;
 
 	cdev  = kzalloc(sizeof(*cdev), GFP_KERNEL);
-	if (!cdev)
-		goto err_cdev;
-	cdev->private = kzalloc(sizeof(struct ccw_device_private),
-				GFP_KERNEL | GFP_DMA);
-	if (!cdev->private)
-		goto err_priv;
-	cdev->dev.coherent_dma_mask = sch->dev.coherent_dma_mask;
-	cdev->dev.dma_mask = sch->dev.dma_mask;
-	dma_pool = cio_gp_dma_create(&cdev->dev, 1);
-	if (!dma_pool)
-		goto err_dma_pool;
-	cdev->private->dma_pool = dma_pool;
-	cdev->private->dma_area = cio_gp_dma_zalloc(dma_pool, &cdev->dev,
-					sizeof(*cdev->private->dma_area));
-	if (!cdev->private->dma_area)
-		goto err_dma_area;
-	return cdev;
-err_dma_area:
-	cio_gp_dma_destroy(dma_pool, &cdev->dev);
-err_dma_pool:
-	kfree(cdev->private);
-err_priv:
+	if (cdev) {
+		cdev->private = kzalloc(sizeof(struct ccw_device_private),
+					GFP_KERNEL | GFP_DMA);
+		if (cdev->private)
+			return cdev;
+	}
 	kfree(cdev);
-err_cdev:
 	return ERR_PTR(-ENOMEM);
 }
 
@@ -906,7 +884,7 @@ io_subchannel_recog_done(struct ccw_device *cdev)
 			wake_up(&ccw_device_init_wq);
 		break;
 	case DEV_STATE_OFFLINE:
-		/*
+		/* 
 		 * We can't register the device in interrupt context so
 		 * we schedule a work item.
 		 */
@@ -1084,14 +1062,6 @@ static int io_subchannel_probe(struct subchannel *sch)
 	if (!io_priv)
 		goto out_schedule;
 
-	io_priv->dma_area = dma_alloc_coherent(&sch->dev,
-				sizeof(*io_priv->dma_area),
-				&io_priv->dma_area_dma, GFP_KERNEL);
-	if (!io_priv->dma_area) {
-		kfree(io_priv);
-		goto out_schedule;
-	}
-
 	set_io_private(sch, io_priv);
 	css_schedule_eval(sch->schid);
 	return 0;
@@ -1103,7 +1073,8 @@ out_schedule:
 	return 0;
 }
 
-static int io_subchannel_remove(struct subchannel *sch)
+static int
+io_subchannel_remove (struct subchannel *sch)
 {
 	struct io_subchannel_private *io_priv = to_io_private(sch);
 	struct ccw_device *cdev;
@@ -1111,15 +1082,15 @@ static int io_subchannel_remove(struct subchannel *sch)
 	cdev = sch_get_cdev(sch);
 	if (!cdev)
 		goto out_free;
-
-	ccw_device_unregister(cdev);
-	spin_lock_irq(sch->lock);
+	io_subchannel_quiesce(sch);
+	/* Set ccw device to not operational and drop reference. */
+	spin_lock_irq(cdev->ccwlock);
 	sch_set_cdev(sch, NULL);
 	set_io_private(sch, NULL);
-	spin_unlock_irq(sch->lock);
+	cdev->private->state = DEV_STATE_NOT_OPER;
+	spin_unlock_irq(cdev->ccwlock);
+	ccw_device_unregister(cdev);
 out_free:
-	dma_free_coherent(&sch->dev, sizeof(*io_priv->dma_area),
-			  io_priv->dma_area, io_priv->dma_area_dma);
 	kfree(io_priv);
 	sysfs_remove_group(&sch->dev.kobj, &io_subchannel_attr_group);
 	return 0;
@@ -1625,19 +1596,13 @@ struct ccw_device * __init ccw_device_create_console(struct ccw_driver *drv)
 		return ERR_CAST(sch);
 
 	io_priv = kzalloc(sizeof(*io_priv), GFP_KERNEL | GFP_DMA);
-	if (!io_priv)
-		goto err_priv;
-	io_priv->dma_area = dma_alloc_coherent(&sch->dev,
-				sizeof(*io_priv->dma_area),
-				&io_priv->dma_area_dma, GFP_KERNEL);
-	if (!io_priv->dma_area)
-		goto err_dma_area;
+	if (!io_priv) {
+		put_device(&sch->dev);
+		return ERR_PTR(-ENOMEM);
+	}
 	set_io_private(sch, io_priv);
 	cdev = io_subchannel_create_ccwdev(sch);
 	if (IS_ERR(cdev)) {
-		dma_free_coherent(&sch->dev, sizeof(*io_priv->dma_area),
-				  io_priv->dma_area, io_priv->dma_area_dma);
-		set_io_private(sch, NULL);
 		put_device(&sch->dev);
 		kfree(io_priv);
 		return cdev;
@@ -1645,12 +1610,6 @@ struct ccw_device * __init ccw_device_create_console(struct ccw_driver *drv)
 	cdev->drv = drv;
 	ccw_device_set_int_class(cdev);
 	return cdev;
-
-err_dma_area:
-	kfree(io_priv);
-err_priv:
-	put_device(&sch->dev);
-	return ERR_PTR(-ENOMEM);
 }
 
 void __init ccw_device_destroy_console(struct ccw_device *cdev)
@@ -1661,8 +1620,6 @@ void __init ccw_device_destroy_console(struct ccw_device *cdev)
 	set_io_private(sch, NULL);
 	put_device(&sch->dev);
 	put_device(&cdev->dev);
-	dma_free_coherent(&sch->dev, sizeof(*io_priv->dma_area),
-			  io_priv->dma_area, io_priv->dma_area_dma);
 	kfree(io_priv);
 }
 
@@ -1695,6 +1652,20 @@ int ccw_device_force_console(struct ccw_device *cdev)
 EXPORT_SYMBOL_GPL(ccw_device_force_console);
 #endif
 
+/*
+ * get ccw_device matching the busid, but only if owned by cdrv
+ */
+static int
+__ccwdev_check_busid(struct device *dev, void *id)
+{
+	char *bus_id;
+
+	bus_id = id;
+
+	return (strcmp(bus_id, dev_name(dev)) == 0);
+}
+
+
 /**
  * get_ccwdev_by_busid() - obtain device from a bus id
  * @cdrv: driver the device is owned by
@@ -1711,7 +1682,8 @@ struct ccw_device *get_ccwdev_by_busid(struct ccw_driver *cdrv,
 {
 	struct device *dev;
 
-	dev = driver_find_device_by_name(&cdrv->driver, bus_id);
+	dev = driver_find_device(&cdrv->driver, NULL, (void *)bus_id,
+				 __ccwdev_check_busid);
 
 	return dev ? to_ccwdev(dev) : NULL;
 }
@@ -1749,7 +1721,6 @@ static int ccw_device_remove(struct device *dev)
 {
 	struct ccw_device *cdev = to_ccwdev(dev);
 	struct ccw_driver *cdrv = cdev->drv;
-	struct subchannel *sch;
 	int ret;
 
 	if (cdrv->remove)
@@ -1775,9 +1746,7 @@ static int ccw_device_remove(struct device *dev)
 	ccw_device_set_timeout(cdev, 0);
 	cdev->drv = NULL;
 	cdev->private->int_class = IRQIO_CIO;
-	sch = to_subchannel(cdev->dev.parent);
 	spin_unlock_irq(cdev->ccwlock);
-	io_subchannel_quiesce(sch);
 	__disable_cmf(cdev);
 
 	return 0;

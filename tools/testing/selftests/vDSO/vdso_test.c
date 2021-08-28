@@ -1,7 +1,7 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * vdso_test.c: Sample code to test parse_vdso.c
  * Copyright (c) 2014 Andy Lutomirski
+ * Subject to the GNU General Public License, version 2
  *
  * Compile with:
  * gcc -std=gnu99 vdso_test.c parse_vdso.c
@@ -14,8 +14,6 @@
 #include <stdio.h>
 #include <sys/auxv.h>
 #include <sys/time.h>
-
-#include "../kselftest.h"
 
 extern void *vdso_sym(const char *version, const char *name);
 extern void vdso_init_from_sysinfo_ehdr(uintptr_t base);
@@ -39,7 +37,7 @@ int main(int argc, char **argv)
 	unsigned long sysinfo_ehdr = getauxval(AT_SYSINFO_EHDR);
 	if (!sysinfo_ehdr) {
 		printf("AT_SYSINFO_EHDR is not present!\n");
-		return KSFT_SKIP;
+		return 0;
 	}
 
 	vdso_init_from_sysinfo_ehdr(getauxval(AT_SYSINFO_EHDR));
@@ -50,7 +48,7 @@ int main(int argc, char **argv)
 
 	if (!gtod) {
 		printf("Could not find %s\n", name);
-		return KSFT_SKIP;
+		return 1;
 	}
 
 	struct timeval tv;
@@ -61,7 +59,6 @@ int main(int argc, char **argv)
 		       (long long)tv.tv_sec, (long long)tv.tv_usec);
 	} else {
 		printf("%s failed\n", name);
-		return KSFT_FAIL;
 	}
 
 	return 0;

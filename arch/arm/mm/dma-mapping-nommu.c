@@ -1,13 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  Based on linux/arch/arm/mm/dma-mapping.c
  *
  *  Copyright (C) 2000-2004 Russell King
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
  */
 
 #include <linux/export.h>
 #include <linux/mm.h>
-#include <linux/dma-direct.h>
+#include <linux/dma-mapping.h>
 #include <linux/scatterlist.h>
 
 #include <asm/cachetype.h>
@@ -18,7 +22,7 @@
 #include "dma.h"
 
 /*
- *  The generic direct mapping code is used if
+ *  dma_noop_ops is used if
  *   - MMU/MPU is off
  *   - cpu is v7m w/o cache support
  *   - device is coherent
@@ -35,7 +39,18 @@ static void *arm_nommu_dma_alloc(struct device *dev, size_t size,
 				 unsigned long attrs)
 
 {
-	void *ret = dma_alloc_from_global_coherent(size, dma_handle);
+	const struct dma_map_ops *ops = &dma_noop_ops;
+	void *ret;
+
+	/*
+	 * Try generic allocator first if we are advertised that
+	 * consistency is not required.
+	 */
+
+	if (attrs & DMA_ATTR_NON_CONSISTENT)
+		return ops->alloc(dev, size, dma_handle, gfp, attrs);
+
+	ret = dma_alloc_from_global_coherent(size, dma_handle);
 
 	/*
 	 * dma_alloc_from_global_coherent() may fail because:
@@ -55,9 +70,18 @@ static void arm_nommu_dma_free(struct device *dev, size_t size,
 			       void *cpu_addr, dma_addr_t dma_addr,
 			       unsigned long attrs)
 {
-	int ret = dma_release_from_global_coherent(get_order(size), cpu_addr);
+	const struct dma_map_ops *ops = &dma_noop_ops;
 
-	WARN_ON_ONCE(ret == 0);
+	if (attrs & DMA_ATTR_NON_CONSISTENT) {
+		ops->free(dev, size, cpu_addr, dma_addr, attrs);
+	} else {
+		int ret = dma_release_from_global_coherent(get_order(size),
+							   cpu_addr);
+
+		WARN_ON_ONCE(ret == 0);
+	}
+
+	return;
 }
 
 static int arm_nommu_dma_mmap(struct device *dev, struct vm_area_struct *vma,
@@ -68,9 +92,8 @@ static int arm_nommu_dma_mmap(struct device *dev, struct vm_area_struct *vma,
 
 	if (dma_mmap_from_global_coherent(vma, cpu_addr, size, &ret))
 		return ret;
-	if (dma_mmap_from_dev_coherent(dev, vma, cpu_addr, size, &ret))
-		return ret;
-	return -ENXIO;
+
+	return dma_common_mmap(dev, vma, cpu_addr, dma_addr, size);
 }
 
 
@@ -188,9 +211,16 @@ const struct dma_map_ops arm_nommu_dma_ops = {
 };
 EXPORT_SYMBOL(arm_nommu_dma_ops);
 
+static const struct dma_map_ops *arm_nommu_get_dma_map_ops(bool coherent)
+{
+	return coherent ? &dma_noop_ops : &arm_nommu_dma_ops;
+}
+
 void arch_setup_dma_ops(struct device *dev, u64 dma_base, u64 size,
 			const struct iommu_ops *iommu, bool coherent)
 {
+	const struct dma_map_ops *dma_ops;
+
 	if (IS_ENABLED(CONFIG_CPU_V7M)) {
 		/*
 		 * Cache support for v7m is optional, so can be treated as
@@ -206,6 +236,20 @@ void arch_setup_dma_ops(struct device *dev, u64 dma_base, u64 size,
 		dev->archdata.dma_coherent = (get_cr() & CR_M) ? coherent : true;
 	}
 
-	if (!dev->archdata.dma_coherent)
-		set_dma_ops(dev, &arm_nommu_dma_ops);
+	dma_ops = arm_nommu_get_dma_map_ops(dev->archdata.dma_coherent);
+
+	set_dma_ops(dev, dma_ops);
 }
+
+void arch_teardown_dma_ops(struct device *dev)
+{
+}
+
+#define PREALLOC_DMA_DEBUG_ENTRIES	4096
+
+static int __init dma_debug_do_init(void)
+{
+	dma_debug_init(PREALLOC_DMA_DEBUG_ENTRIES);
+	return 0;
+}
+core_initcall(dma_debug_do_init);

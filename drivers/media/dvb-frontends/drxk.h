@@ -10,7 +10,7 @@
  *
  * @adr:		I2C address of the DRX-K
  * @parallel_ts:	True means that the device uses parallel TS,
- *			Serial otherwise.
+ * 			Serial otherwise.
  * @dynamic_clk:	True means that the clock will be dynamically
  *			adjusted. Static clock otherwise.
  * @enable_merr_cfg:	Enable SIO_PDR_PERR_CFG/SIO_PDR_MVAL_CFG.
@@ -24,7 +24,7 @@
  * @microcode_name:	Name of the firmware file with the microcode
  * @qam_demod_parameter_count:	The number of parameters used for the command
  *				to set the demodulator parameters. All
- *				firmwares are using the 2-parameter command.
+ *				firmwares are using the 2-parameter commmand.
  *				An exception is the ``drxk_a3.mc`` firmware,
  *				which uses the 4-parameter command.
  *				A value of 0 (default) or lower indicates that
@@ -67,8 +67,8 @@ extern struct dvb_frontend *drxk_attach(const struct drxk_config *config,
 static inline struct dvb_frontend *drxk_attach(const struct drxk_config *config,
 					struct i2c_adapter *i2c)
 {
-	printk(KERN_WARNING "%s: driver disabled by Kconfig\n", __func__);
-	return NULL;
+        printk(KERN_WARNING "%s: driver disabled by Kconfig\n", __func__);
+        return NULL;
 }
 #endif
 

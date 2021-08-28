@@ -1,9 +1,18 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * Comedi driver for NI PCI-MIO E series cards
  *
  * COMEDI - Linux Control and Measurement Device Interface
  * Copyright (C) 1997-8 David A. Schleef <ds@schleef.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 /*
@@ -693,7 +702,6 @@ static const struct ni_board_struct ni_boards[] = {
 		.ai_speed	= 4000,
 		.reg_type	= ni_reg_622x,
 		.caldac		= { caldac_none },
-		.dio_speed	= 1000,
 	},
 	[BOARD_PCI6221] = {
 		.name		= "pci-6221",
@@ -709,7 +717,6 @@ static const struct ni_board_struct ni_boards[] = {
 		.reg_type	= ni_reg_622x,
 		.ao_speed	= 1200,
 		.caldac		= { caldac_none },
-		.dio_speed	= 1000,
 	},
 	[BOARD_PCI6221_37PIN] = {
 		.name		= "pci-6221_37pin",
@@ -740,7 +747,6 @@ static const struct ni_board_struct ni_boards[] = {
 		.reg_type	= ni_reg_622x,
 		.ao_speed	= 1200,
 		.caldac		= { caldac_none },
-		.dio_speed	= 1000,
 	},
 	[BOARD_PCI6224] = {
 		.name		= "pci-6224",
@@ -752,7 +758,6 @@ static const struct ni_board_struct ni_boards[] = {
 		.reg_type	= ni_reg_622x,
 		.has_32dio_chan	= 1,
 		.caldac		= { caldac_none },
-		.dio_speed	= 1000,
 	},
 	[BOARD_PXI6224] = {
 		.name		= "pxi-6224",
@@ -764,7 +769,6 @@ static const struct ni_board_struct ni_boards[] = {
 		.reg_type	= ni_reg_622x,
 		.has_32dio_chan	= 1,
 		.caldac		= { caldac_none },
-		.dio_speed	= 1000,
 	},
 	[BOARD_PCI6225] = {
 		.name		= "pci-6225",
@@ -781,7 +785,6 @@ static const struct ni_board_struct ni_boards[] = {
 		.ao_speed	= 1200,
 		.has_32dio_chan	= 1,
 		.caldac		= { caldac_none },
-		.dio_speed	= 1000,
 	},
 	[BOARD_PXI6225] = {
 		.name		= "pxi-6225",
@@ -798,7 +801,6 @@ static const struct ni_board_struct ni_boards[] = {
 		.ao_speed	= 1200,
 		.has_32dio_chan	= 1,
 		.caldac		= { caldac_none },
-		.dio_speed	= 1000,
 	},
 	[BOARD_PCI6229] = {
 		.name		= "pci-6229",
@@ -831,7 +833,6 @@ static const struct ni_board_struct ni_boards[] = {
 		.ao_speed	= 1200,
 		.has_32dio_chan	= 1,
 		.caldac		= { caldac_none },
-		.dio_speed	= 1000,
 	},
 	[BOARD_PCI6250] = {
 		.name		= "pci-6250",
@@ -852,7 +853,6 @@ static const struct ni_board_struct ni_boards[] = {
 		.ai_speed	= 800,
 		.reg_type	= ni_reg_625x,
 		.caldac		= { caldac_none },
-		.dio_speed	= 100,
 	},
 	[BOARD_PCI6251] = {
 		.name		= "pci-6251",
@@ -868,7 +868,6 @@ static const struct ni_board_struct ni_boards[] = {
 		.reg_type	= ni_reg_625x,
 		.ao_speed	= 350,
 		.caldac		= { caldac_none },
-		.dio_speed	= 100,
 	},
 	[BOARD_PXI6251] = {
 		.name		= "pxi-6251",
@@ -884,7 +883,6 @@ static const struct ni_board_struct ni_boards[] = {
 		.reg_type	= ni_reg_625x,
 		.ao_speed	= 350,
 		.caldac		= { caldac_none },
-		.dio_speed	= 100,
 	},
 	[BOARD_PCIE6251] = {
 		.name		= "pcie-6251",
@@ -900,7 +898,6 @@ static const struct ni_board_struct ni_boards[] = {
 		.reg_type	= ni_reg_625x,
 		.ao_speed	= 350,
 		.caldac		= { caldac_none },
-		.dio_speed	= 100,
 	},
 	[BOARD_PXIE6251] = {
 		.name		= "pxie-6251",
@@ -916,7 +913,6 @@ static const struct ni_board_struct ni_boards[] = {
 		.reg_type	= ni_reg_625x,
 		.ao_speed	= 350,
 		.caldac		= { caldac_none },
-		.dio_speed	= 100,
 	},
 	[BOARD_PCI6254] = {
 		.name		= "pci-6254",
@@ -939,7 +935,6 @@ static const struct ni_board_struct ni_boards[] = {
 		.reg_type	= ni_reg_625x,
 		.has_32dio_chan	= 1,
 		.caldac		= { caldac_none },
-		.dio_speed	= 100,
 	},
 	[BOARD_PCI6259] = {
 		.name		= "pci-6259",
@@ -972,7 +967,6 @@ static const struct ni_board_struct ni_boards[] = {
 		.ao_speed	= 350,
 		.has_32dio_chan	= 1,
 		.caldac		= { caldac_none },
-		.dio_speed	= 100,
 	},
 	[BOARD_PCIE6259] = {
 		.name		= "pcie-6259",
@@ -1005,7 +999,6 @@ static const struct ni_board_struct ni_boards[] = {
 		.ao_speed	= 350,
 		.has_32dio_chan	= 1,
 		.caldac		= { caldac_none },
-		.dio_speed	= 100,
 	},
 	[BOARD_PCI6280] = {
 		.name		= "pci-6280",
@@ -1028,7 +1021,6 @@ static const struct ni_board_struct ni_boards[] = {
 		.ao_fifo_depth	= 8191,
 		.reg_type	= ni_reg_628x,
 		.caldac		= { caldac_none },
-		.dio_speed	= 100,
 	},
 	[BOARD_PCI6281] = {
 		.name		= "pci-6281",
@@ -1044,7 +1036,6 @@ static const struct ni_board_struct ni_boards[] = {
 		.reg_type	= ni_reg_628x,
 		.ao_speed	= 350,
 		.caldac		= { caldac_none },
-		.dio_speed	= 100,
 	},
 	[BOARD_PXI6281] = {
 		.name		= "pxi-6281",
@@ -1060,7 +1051,6 @@ static const struct ni_board_struct ni_boards[] = {
 		.reg_type	= ni_reg_628x,
 		.ao_speed	= 350,
 		.caldac		= { caldac_none },
-		.dio_speed	= 100,
 	},
 	[BOARD_PCI6284] = {
 		.name		= "pci-6284",
@@ -1083,7 +1073,6 @@ static const struct ni_board_struct ni_boards[] = {
 		.reg_type	= ni_reg_628x,
 		.has_32dio_chan	= 1,
 		.caldac		= { caldac_none },
-		.dio_speed	= 100,
 	},
 	[BOARD_PCI6289] = {
 		.name		= "pci-6289",
@@ -1116,7 +1105,6 @@ static const struct ni_board_struct ni_boards[] = {
 		.ao_speed	= 350,
 		.has_32dio_chan	= 1,
 		.caldac		= { caldac_none },
-		.dio_speed	= 100,
 	},
 	[BOARD_PCI6143] = {
 		.name		= "pci-6143",

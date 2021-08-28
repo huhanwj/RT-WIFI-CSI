@@ -23,6 +23,7 @@
 #include <asm/unaligned.h>
 
 #define WDT87XX_NAME		"wdt87xx_i2c"
+#define WDT87XX_DRV_VER		"0.9.8"
 #define WDT87XX_FW_NAME		"wdt87xx_fw.bin"
 #define WDT87XX_CFG_NAME	"wdt87xx_cfg.bin"
 
@@ -1142,7 +1143,7 @@ static int __maybe_unused wdt87xx_resume(struct device *dev)
 	 * The chip may have been reset while system is resuming,
 	 * give it some time to settle.
 	 */
-	msleep(100);
+	mdelay(100);
 
 	error = wdt87xx_send_command(client, VND_CMD_START, 0);
 	if (error)
@@ -1182,4 +1183,5 @@ module_i2c_driver(wdt87xx_driver);
 
 MODULE_AUTHOR("HN Chen <hn.chen@weidahitech.com>");
 MODULE_DESCRIPTION("WeidaHiTech WDT87XX Touchscreen driver");
+MODULE_VERSION(WDT87XX_DRV_VER);
 MODULE_LICENSE("GPL");

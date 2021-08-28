@@ -11,11 +11,9 @@
 #
 .*
 *.a
-*.asn1.[ch]
 *.bin
 *.bz2
 *.c.[012]*.*
-*.dt.yaml
 *.dtb
 *.dtb.S
 *.dwo
@@ -24,29 +22,25 @@
 *.gz
 *.i
 *.ko
-*.lex.c
 *.ll
 *.lst
 *.lz4
 *.lzma
 *.lzo
-*.mod
 *.mod.c
-*.ns_deps
 *.o
 *.o.*
+*.order
 *.patch
 *.s
 *.so
 *.so.dbg
 *.su
 *.symtypes
-*.tab.[ch]
 *.tar
 *.xz
 Module.symvers
 modules.builtin
-modules.order
 
 #
 # Top-level generic files
@@ -60,7 +54,6 @@ modules.order
 /vmlinuz
 /System.map
 /Module.markers
-/modules.builtin.modinfo
 
 #
 # RPM spec file (make rpm-pkg)
@@ -73,32 +66,23 @@ modules.order
 /debian/
 
 #
-# Snap directory (make snap-pkg)
-#
-/snap/
-
-#
 # tar directory (make tar*-pkg)
 #
 /tar-install/
 
 #
-# We don't want to ignore the following even if they are dot-files
+# git files that we don't want to ignore even if they are dot-files
 #
-!.clang-format
-!.cocciconfig
-!.get_maintainer.ignore
-!.gitattributes
 !.gitignore
 !.mailmap
+!.cocciconfig
 
 #
 # Generated include files
 #
-/include/config/
-/include/generated/
-/include/ksym/
-/arch/*/include/generated/
+include/config
+include/generated
+arch/*/include/generated
 
 # stgit generated dirs
 patches-*
@@ -134,15 +118,7 @@ signing_key.x509
 x509.genkey
 
 # Kconfig presets
-/all.config
-/alldef.config
-/allmod.config
-/allno.config
-/allrandom.config
-/allyes.config
+all.config
 
 # Kdevelop4
 *.kdev4
-
-# Clang's compilation database file
-/compile_commands.json

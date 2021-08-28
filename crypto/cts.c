@@ -40,7 +40,6 @@
  * rfc3962 includes errata information in its Appendix A.
  */
 
-#include <crypto/algapi.h>
 #include <crypto/internal/skcipher.h>
 #include <linux/err.h>
 #include <linux/init.h>
@@ -105,7 +104,7 @@ static int cts_cbc_encrypt(struct skcipher_request *req)
 	struct crypto_skcipher *tfm = crypto_skcipher_reqtfm(req);
 	struct skcipher_request *subreq = &rctx->subreq;
 	int bsize = crypto_skcipher_blocksize(tfm);
-	u8 d[MAX_CIPHER_BLOCKSIZE * 2] __aligned(__alignof__(u32));
+	u8 d[bsize * 2] __aligned(__alignof__(u32));
 	struct scatterlist *sg;
 	unsigned int offset;
 	int lastn;
@@ -152,14 +151,12 @@ static int crypto_cts_encrypt(struct skcipher_request *req)
 	struct skcipher_request *subreq = &rctx->subreq;
 	int bsize = crypto_skcipher_blocksize(tfm);
 	unsigned int nbytes = req->cryptlen;
+	int cbc_blocks = (nbytes + bsize - 1) / bsize - 1;
 	unsigned int offset;
 
 	skcipher_request_set_tfm(subreq, ctx->child);
 
-	if (nbytes < bsize)
-		return -EINVAL;
-
-	if (nbytes == bsize) {
+	if (cbc_blocks <= 0) {
 		skcipher_request_set_callback(subreq, req->base.flags,
 					      req->base.complete,
 					      req->base.data);
@@ -168,7 +165,7 @@ static int crypto_cts_encrypt(struct skcipher_request *req)
 		return crypto_skcipher_encrypt(subreq);
 	}
 
-	offset = rounddown(nbytes - 1, bsize);
+	offset = cbc_blocks * bsize;
 	rctx->offset = offset;
 
 	skcipher_request_set_callback(subreq, req->base.flags,
@@ -186,7 +183,7 @@ static int cts_cbc_decrypt(struct skcipher_request *req)
 	struct crypto_skcipher *tfm = crypto_skcipher_reqtfm(req);
 	struct skcipher_request *subreq = &rctx->subreq;
 	int bsize = crypto_skcipher_blocksize(tfm);
-	u8 d[MAX_CIPHER_BLOCKSIZE * 2] __aligned(__alignof__(u32));
+	u8 d[bsize * 2] __aligned(__alignof__(u32));
 	struct scatterlist *sg;
 	unsigned int offset;
 	u8 *space;
@@ -246,15 +243,13 @@ static int crypto_cts_decrypt(struct skcipher_request *req)
 	struct skcipher_request *subreq = &rctx->subreq;
 	int bsize = crypto_skcipher_blocksize(tfm);
 	unsigned int nbytes = req->cryptlen;
+	int cbc_blocks = (nbytes + bsize - 1) / bsize - 1;
 	unsigned int offset;
 	u8 *space;
 
 	skcipher_request_set_tfm(subreq, ctx->child);
 
-	if (nbytes < bsize)
-		return -EINVAL;
-
-	if (nbytes == bsize) {
+	if (cbc_blocks <= 0) {
 		skcipher_request_set_callback(subreq, req->base.flags,
 					      req->base.complete,
 					      req->base.data);
@@ -268,10 +263,10 @@ static int crypto_cts_decrypt(struct skcipher_request *req)
 
 	space = crypto_cts_reqctx_space(req);
 
-	offset = rounddown(nbytes - 1, bsize);
+	offset = cbc_blocks * bsize;
 	rctx->offset = offset;
 
-	if (offset <= bsize)
+	if (cbc_blocks <= 1)
 		memcpy(space, req->iv, bsize);
 	else
 		scatterwalk_map_and_copy(space, req->src, offset - 2 * bsize,
@@ -423,7 +418,7 @@ static void __exit crypto_cts_module_exit(void)
 	crypto_unregister_template(&crypto_cts_tmpl);
 }
 
-subsys_initcall(crypto_cts_module_init);
+module_init(crypto_cts_module_init);
 module_exit(crypto_cts_module_exit);
 
 MODULE_LICENSE("Dual BSD/GPL");

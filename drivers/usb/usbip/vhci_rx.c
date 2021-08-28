@@ -30,7 +30,7 @@ struct urb *pickup_urb_and_free_priv(struct vhci_device *vdev, __u32 seqnum)
 			/* fall through */
 		case -ECONNRESET:
 			dev_dbg(&urb->dev->dev,
-				 "urb seq# %u was unlinked %ssynchronously\n",
+				 "urb seq# %u was unlinked %ssynchronuously\n",
 				 seqnum, status == -ENOENT ? "" : "a");
 			break;
 		case -EINPROGRESS:
@@ -89,9 +89,6 @@ static void vhci_recv_ret_submit(struct vhci_device *vdev,
 
 	if (usbip_dbg_flag_vhci_rx)
 		usbip_dump_urb(urb);
-
-	if (urb->num_sgs)
-		urb->transfer_flags &= ~URB_DMA_MAP_SG;
 
 	usbip_dbg_vhci_rx("now giveback urb %u\n", pdu->base.seqnum);
 

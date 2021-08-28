@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* 
  * Cryptographic API.
  *
@@ -145,7 +144,7 @@ static int aes_set_key(struct crypto_tfm *tfm, const u8 *in_key,
 	ctx->cword.encrypt.keygen = 1;
 	ctx->cword.decrypt.keygen = 1;
 
-	if (aes_expandkey(&gen_aes, in_key, key_len)) {
+	if (crypto_aes_expand_key(&gen_aes, in_key, key_len)) {
 		*flags |= CRYPTO_TFM_RES_BAD_KEY_LEN;
 		return -EINVAL;
 	}
@@ -267,8 +266,6 @@ static inline void padlock_xcrypt_ecb(const u8 *input, u8 *output, void *key,
 		return;
 	}
 
-	count -= initial;
-
 	if (initial)
 		asm volatile (".byte 0xf3,0x0f,0xa7,0xc8"	/* rep xcryptecb */
 			      : "+S"(input), "+D"(output)
@@ -276,7 +273,7 @@ static inline void padlock_xcrypt_ecb(const u8 *input, u8 *output, void *key,
 
 	asm volatile (".byte 0xf3,0x0f,0xa7,0xc8"	/* rep xcryptecb */
 		      : "+S"(input), "+D"(output)
-		      : "d"(control_word), "b"(key), "c"(count));
+		      : "d"(control_word), "b"(key), "c"(count - initial));
 }
 
 static inline u8 *padlock_xcrypt_cbc(const u8 *input, u8 *output, void *key,
@@ -287,8 +284,6 @@ static inline u8 *padlock_xcrypt_cbc(const u8 *input, u8 *output, void *key,
 	if (count < cbc_fetch_blocks)
 		return cbc_crypt(input, output, key, iv, control_word, count);
 
-	count -= initial;
-
 	if (initial)
 		asm volatile (".byte 0xf3,0x0f,0xa7,0xd0"	/* rep xcryptcbc */
 			      : "+S" (input), "+D" (output), "+a" (iv)
@@ -296,11 +291,11 @@ static inline u8 *padlock_xcrypt_cbc(const u8 *input, u8 *output, void *key,
 
 	asm volatile (".byte 0xf3,0x0f,0xa7,0xd0"	/* rep xcryptcbc */
 		      : "+S" (input), "+D" (output), "+a" (iv)
-		      : "d" (control_word), "b" (key), "c" (count));
+		      : "d" (control_word), "b" (key), "c" (count-initial));
 	return iv;
 }
 
-static void padlock_aes_encrypt(struct crypto_tfm *tfm, u8 *out, const u8 *in)
+static void aes_encrypt(struct crypto_tfm *tfm, u8 *out, const u8 *in)
 {
 	struct aes_ctx *ctx = aes_ctx(tfm);
 
@@ -309,7 +304,7 @@ static void padlock_aes_encrypt(struct crypto_tfm *tfm, u8 *out, const u8 *in)
 	padlock_store_cword(&ctx->cword.encrypt);
 }
 
-static void padlock_aes_decrypt(struct crypto_tfm *tfm, u8 *out, const u8 *in)
+static void aes_decrypt(struct crypto_tfm *tfm, u8 *out, const u8 *in)
 {
 	struct aes_ctx *ctx = aes_ctx(tfm);
 
@@ -332,8 +327,8 @@ static struct crypto_alg aes_alg = {
 			.cia_min_keysize	=	AES_MIN_KEY_SIZE,
 			.cia_max_keysize	=	AES_MAX_KEY_SIZE,
 			.cia_setkey	   	= 	aes_set_key,
-			.cia_encrypt	 	=	padlock_aes_encrypt,
-			.cia_decrypt	  	=	padlock_aes_decrypt,
+			.cia_encrypt	 	=	aes_encrypt,
+			.cia_decrypt	  	=	aes_decrypt,
 		}
 	}
 };
@@ -517,7 +512,7 @@ static int __init padlock_init(void)
 
 	printk(KERN_NOTICE PFX "Using VIA PadLock ACE for AES algorithm.\n");
 
-	if (c->x86 == 6 && c->x86_model == 15 && c->x86_stepping == 2) {
+	if (c->x86 == 6 && c->x86_model == 15 && c->x86_mask == 2) {
 		ecb_fetch_blocks = MAX_ECB_FETCH_BLOCKS;
 		cbc_fetch_blocks = MAX_CBC_FETCH_BLOCKS;
 		printk(KERN_NOTICE PFX "VIA Nano stepping 2 detected: enabling workaround.\n");

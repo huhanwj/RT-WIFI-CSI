@@ -631,19 +631,19 @@ printer_write(struct file *fd, const char __user *buf, size_t len, loff_t *ptr)
 			return -EAGAIN;
 		}
 
-		list_add(&req->list, &dev->tx_reqs_active);
-
 		/* here, we unlock, and only unlock, to avoid deadlock. */
 		spin_unlock(&dev->lock);
 		value = usb_ep_queue(dev->in_ep, req, GFP_ATOMIC);
 		spin_lock(&dev->lock);
 		if (value) {
-			list_del(&req->list);
 			list_add(&req->list, &dev->tx_reqs);
 			spin_unlock_irqrestore(&dev->lock, flags);
 			mutex_unlock(&dev->lock_printer_io);
 			return -EAGAIN;
 		}
+
+		list_add(&req->list, &dev->tx_reqs_active);
+
 	}
 
 	spin_unlock_irqrestore(&dev->lock, flags);
@@ -680,12 +680,12 @@ printer_fsync(struct file *fd, loff_t start, loff_t end, int datasync)
 	return 0;
 }
 
-static __poll_t
+static unsigned int
 printer_poll(struct file *fd, poll_table *wait)
 {
 	struct printer_dev	*dev = fd->private_data;
 	unsigned long		flags;
-	__poll_t		status = 0;
+	int			status = 0;
 
 	mutex_lock(&dev->lock_printer_io);
 	spin_lock_irqsave(&dev->lock, flags);
@@ -698,11 +698,11 @@ printer_poll(struct file *fd, poll_table *wait)
 
 	spin_lock_irqsave(&dev->lock, flags);
 	if (likely(!list_empty(&dev->tx_reqs)))
-		status |= EPOLLOUT | EPOLLWRNORM;
+		status |= POLLOUT | POLLWRNORM;
 
 	if (likely(dev->current_rx_bytes) ||
 			likely(!list_empty(&dev->rx_buffers)))
-		status |= EPOLLIN | EPOLLRDNORM;
+		status |= POLLIN | POLLRDNORM;
 
 	spin_unlock_irqrestore(&dev->lock, flags);
 

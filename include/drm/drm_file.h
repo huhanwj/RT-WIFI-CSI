@@ -32,7 +32,6 @@
 
 #include <linux/types.h>
 #include <linux/completion.h>
-#include <linux/idr.h>
 
 #include <uapi/drm/drm.h>
 
@@ -48,9 +47,6 @@ struct device;
  * header include loops we need it here for now.
  */
 
-/* Note that the order of this enum is ABI (it determines
- * /dev/dri/renderD* numbers).
- */
 enum drm_minor_type {
 	DRM_MINOR_PRIMARY,
 	DRM_MINOR_CONTROL,
@@ -165,14 +161,14 @@ struct drm_file {
 	 * See also the :ref:`section on primary nodes and authentication
 	 * <drm_primary_node>`.
 	 */
-	bool authenticated;
+	unsigned authenticated :1;
 
 	/**
 	 * @stereo_allowed:
 	 *
 	 * True when the client has asked us to expose stereo 3D mode flags.
 	 */
-	bool stereo_allowed;
+	unsigned stereo_allowed :1;
 
 	/**
 	 * @universal_planes:
@@ -180,25 +176,10 @@ struct drm_file {
 	 * True if client understands CRTC primary planes and cursor planes
 	 * in the plane list. Automatically set when @atomic is set.
 	 */
-	bool universal_planes;
+	unsigned universal_planes:1;
 
 	/** @atomic: True if client understands atomic properties. */
-	bool atomic;
-
-	/**
-	 * @aspect_ratio_allowed:
-	 *
-	 * True, if client can handle picture aspect ratios, and has requested
-	 * to pass this information along with the mode.
-	 */
-	bool aspect_ratio_allowed;
-
-	/**
-	 * @writeback_connectors:
-	 *
-	 * True if client understands writeback connectors
-	 */
-	bool writeback_connectors;
+	unsigned atomic:1;
 
 	/**
 	 * @is_master:
@@ -209,7 +190,7 @@ struct drm_file {
 	 * See also the :ref:`section on primary nodes and authentication
 	 * <drm_primary_node>`.
 	 */
-	bool is_master;
+	unsigned is_master:1;
 
 	/**
 	 * @master:
@@ -335,9 +316,7 @@ struct drm_file {
 	struct drm_prime_file_private prime;
 
 	/* private: */
-#if IS_ENABLED(CONFIG_DRM_LEGACY)
 	unsigned long lock_count; /* DRI1 legacy lock count */
-#endif
 };
 
 /**
@@ -369,11 +348,23 @@ static inline bool drm_is_render_client(const struct drm_file *file_priv)
 	return file_priv->minor->type == DRM_MINOR_RENDER;
 }
 
+/**
+ * drm_is_control_client - is this an open file of the control node
+ * @file_priv: DRM file
+ *
+ * Control nodes are deprecated and in the process of getting removed from the
+ * DRM userspace API. Do not ever use!
+ */
+static inline bool drm_is_control_client(const struct drm_file *file_priv)
+{
+	return file_priv->minor->type == DRM_MINOR_CONTROL;
+}
+
 int drm_open(struct inode *inode, struct file *filp);
 ssize_t drm_read(struct file *filp, char __user *buffer,
 		 size_t count, loff_t *offset);
 int drm_release(struct inode *inode, struct file *filp);
-__poll_t drm_poll(struct file *filp, struct poll_table_struct *wait);
+unsigned int drm_poll(struct file *filp, struct poll_table_struct *wait);
 int drm_event_reserve_init_locked(struct drm_device *dev,
 				  struct drm_file *file_priv,
 				  struct drm_pending_event *p,

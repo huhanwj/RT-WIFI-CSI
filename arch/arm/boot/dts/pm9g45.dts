@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * pm9g45.dts - Device Tree file for Ronetix pm9g45 board
  *
  *  Copyright (C) 2012 Jean-Christophe PLAGNIOL-VILLARD <plagnioj@jcrosoft.com>
+ *
+ * Licensed under GPLv2.
  */
 /dts-v1/;
 #include "at91sam9g45.dtsi"
@@ -48,18 +49,6 @@
 						atmel,pins =
 							<AT91_PIOD 6 AT91_PERIPH_GPIO AT91_PINCTRL_PULL_UP_DEGLITCH>;	/* PD6 gpio CD pin pull_up and deglitch */
 					};
-				};
-			};
-
-			tcb0: timer@fff7c000 {
-				timer@0 {
-					compatible = "atmel,tcb-timer";
-					reg = <0>, <1>;
-				};
-
-				timer@2 {
-					compatible = "atmel,tcb-timer";
-					reg = <2>;
 				};
 			};
 

@@ -3,25 +3,22 @@
 # Makefile for s390 specific build tools
 #
 
-kapi := arch/$(ARCH)/include/generated/asm
-kapi-hdrs-y := $(kapi)/facility-defs.h $(kapi)/dis-defs.h
-
-PHONY += kapi
-
-kapi:	$(kapi-hdrs-y)
-
 hostprogs-y		    += gen_facilities
 hostprogs-y		    += gen_opcode_table
 
-HOSTCFLAGS_gen_facilities.o += $(LINUXINCLUDE)
+HOSTCFLAGS_gen_facilities.o += -Wall $(LINUXINCLUDE)
+HOSTCFLAGS_gen_opcode_table.o += -Wall $(LINUXINCLUDE)
 
-filechk_facility-defs.h = $(obj)/gen_facilities
+define filechk_facilities.h
+	$(obj)/gen_facilities
+endef
 
-filechk_dis-defs.h = \
-	$(obj)/gen_opcode_table < $(srctree)/arch/$(ARCH)/tools/opcodes.txt
+define filechk_dis.h
+	( $(obj)/gen_opcode_table < $(srctree)/arch/$(ARCH)/tools/opcodes.txt )
+endef
 
-$(kapi)/facility-defs.h: $(obj)/gen_facilities FORCE
-	$(call filechk,facility-defs.h)
+include/generated/facilities.h: $(obj)/gen_facilities FORCE
+	$(call filechk,facilities.h)
 
-$(kapi)/dis-defs.h: $(obj)/gen_opcode_table FORCE
-	$(call filechk,dis-defs.h)
+include/generated/dis.h: $(obj)/gen_opcode_table FORCE
+	$(call filechk,dis.h)

@@ -1,7 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * (C) 2011 Pablo Neira Ayuso <pablo@netfilter.org>
  * (C) 2011 Intra2net AG <http://www.intra2net.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation (or any later at your option).
  */
 #include <linux/init.h>
 #include <linux/module.h>
@@ -112,7 +115,7 @@ static int nfnl_acct_new(struct net *net, struct sock *nfnl,
 		nfacct->flags = flags;
 	}
 
-	nla_strlcpy(nfacct->name, tb[NFACCT_NAME], NFACCT_NAME_MAX);
+	strncpy(nfacct->name, nla_data(tb[NFACCT_NAME]), NFACCT_NAME_MAX);
 
 	if (tb[NFACCT_BYTES]) {
 		atomic64_set(&nfacct->bytes,
@@ -235,33 +238,29 @@ static const struct nla_policy filter_policy[NFACCT_FILTER_MAX + 1] = {
 	[NFACCT_FILTER_VALUE]	= { .type = NLA_U32 },
 };
 
-static int nfnl_acct_start(struct netlink_callback *cb)
+static struct nfacct_filter *
+nfacct_filter_alloc(const struct nlattr * const attr)
 {
-	const struct nlattr *const attr = cb->data;
-	struct nlattr *tb[NFACCT_FILTER_MAX + 1];
 	struct nfacct_filter *filter;
+	struct nlattr *tb[NFACCT_FILTER_MAX + 1];
 	int err;
 
-	if (!attr)
-		return 0;
-
-	err = nla_parse_nested_deprecated(tb, NFACCT_FILTER_MAX, attr,
-					  filter_policy, NULL);
+	err = nla_parse_nested(tb, NFACCT_FILTER_MAX, attr, filter_policy,
+			       NULL);
 	if (err < 0)
-		return err;
+		return ERR_PTR(err);
 
 	if (!tb[NFACCT_FILTER_MASK] || !tb[NFACCT_FILTER_VALUE])
-		return -EINVAL;
+		return ERR_PTR(-EINVAL);
 
 	filter = kzalloc(sizeof(struct nfacct_filter), GFP_KERNEL);
 	if (!filter)
-		return -ENOMEM;
+		return ERR_PTR(-ENOMEM);
 
 	filter->mask = ntohl(nla_get_be32(tb[NFACCT_FILTER_MASK]));
 	filter->value = ntohl(nla_get_be32(tb[NFACCT_FILTER_VALUE]));
-	cb->data = filter;
 
-	return 0;
+	return filter;
 }
 
 static int nfnl_acct_get(struct net *net, struct sock *nfnl,
@@ -276,11 +275,18 @@ static int nfnl_acct_get(struct net *net, struct sock *nfnl,
 	if (nlh->nlmsg_flags & NLM_F_DUMP) {
 		struct netlink_dump_control c = {
 			.dump = nfnl_acct_dump,
-			.start = nfnl_acct_start,
 			.done = nfnl_acct_done,
-			.data = (void *)tb[NFACCT_FILTER],
 		};
 
+		if (tb[NFACCT_FILTER]) {
+			struct nfacct_filter *filter;
+
+			filter = nfacct_filter_alloc(tb[NFACCT_FILTER]);
+			if (IS_ERR(filter))
+				return PTR_ERR(filter);
+
+			c.data = filter;
+		}
 		return netlink_dump_start(nfnl, skb, nlh, &c);
 	}
 
@@ -461,7 +467,8 @@ static void nfnl_overquota_report(struct net *net, struct nf_acct *nfacct)
 			  GFP_ATOMIC);
 }
 
-int nfnl_acct_overquota(struct net *net, struct nf_acct *nfacct)
+int nfnl_acct_overquota(struct net *net, const struct sk_buff *skb,
+			struct nf_acct *nfacct)
 {
 	u64 now;
 	u64 *quota;
@@ -520,6 +527,7 @@ static int __init nfnl_acct_init(void)
 		goto err_out;
 	}
 
+	pr_info("nfnl_acct: registering with nfnetlink.\n");
 	ret = nfnetlink_subsys_register(&nfnl_acct_subsys);
 	if (ret < 0) {
 		pr_err("nfnl_acct_init: cannot register with nfnetlink.\n");
@@ -535,6 +543,7 @@ err_out:
 
 static void __exit nfnl_acct_exit(void)
 {
+	pr_info("nfnl_acct: unregistering from nfnetlink.\n");
 	nfnetlink_subsys_unregister(&nfnl_acct_subsys);
 	unregister_pernet_subsys(&nfnl_acct_ops);
 }

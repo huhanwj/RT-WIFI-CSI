@@ -1,7 +1,11 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 #ifndef _I8042_X86IA64IO_H
 #define _I8042_X86IA64IO_H
 
+/*
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
+ */
 
 #ifdef CONFIG_X86
 #include <asm/x86_init.h>
@@ -523,27 +527,6 @@ static const struct dmi_system_id __initconst i8042_dmi_nomux_table[] = {
 			DMI_MATCH(DMI_PRODUCT_NAME, "N24_25BU"),
 		},
 	},
-	{
-		/* Lenovo LaVie Z */
-		.matches = {
-			DMI_MATCH(DMI_SYS_VENDOR, "LENOVO"),
-			DMI_MATCH(DMI_PRODUCT_VERSION, "Lenovo LaVie Z"),
-		},
-	},
-	{ }
-};
-
-static const struct dmi_system_id i8042_dmi_forcemux_table[] __initconst = {
-	{
-		/*
-		 * Sony Vaio VGN-CS series require MUX or the touch sensor
-		 * buttons will disturb touchpad operation
-		 */
-		.matches = {
-			DMI_MATCH(DMI_SYS_VENDOR, "Sony Corporation"),
-			DMI_MATCH(DMI_PRODUCT_NAME, "VGN-CS"),
-		},
-	},
 	{ }
 };
 
@@ -635,13 +618,6 @@ static const struct dmi_system_id __initconst i8042_dmi_reset_table[] = {
 		.matches = {
 			DMI_MATCH(DMI_SYS_VENDOR, "LENOVO"),
 			DMI_MATCH(DMI_PRODUCT_NAME, "20046"),
-		},
-	},
-	{
-		/* Lenovo ThinkPad L460 */
-		.matches = {
-			DMI_MATCH(DMI_SYS_VENDOR, "LENOVO"),
-			DMI_MATCH(DMI_PRODUCT_VERSION, "ThinkPad L460"),
 		},
 	},
 	{
@@ -1186,9 +1162,6 @@ static int __init i8042_platform_init(void)
 
 	if (dmi_check_system(i8042_dmi_nomux_table))
 		i8042_nomux = true;
-
-	if (dmi_check_system(i8042_dmi_forcemux_table))
-		i8042_nomux = false;
 
 	if (dmi_check_system(i8042_dmi_notimeout_table))
 		i8042_notimeout = true;

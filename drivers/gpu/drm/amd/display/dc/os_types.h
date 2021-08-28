@@ -26,15 +26,15 @@
 #ifndef _OS_TYPES_H_
 #define _OS_TYPES_H_
 
-#include <linux/kgdb.h>
-#include <linux/kref.h>
-#include <linux/types.h>
+#if defined __KERNEL__
 
 #include <asm/byteorder.h>
+#include <linux/types.h>
+#include <drm/drmP.h>
 
-#include <drm/drm_print.h>
+#include <linux/kref.h>
 
-#include "cgs_common.h"
+#include "cgs_linux.h"
 
 #if defined(__BIG_ENDIAN) && !defined(BIGENDIAN_CPU)
 #define BIGENDIAN_CPU
@@ -42,14 +42,18 @@
 #define LITTLEENDIAN_CPU
 #endif
 
+#undef READ
+#undef WRITE
 #undef FRAME_SIZE
 
-#define dm_output_to_console(fmt, ...) DRM_DEBUG_KMS(fmt, ##__VA_ARGS__)
+#define dm_output_to_console(fmt, ...) DRM_INFO(fmt, ##__VA_ARGS__)
 
 #define dm_error(fmt, ...) DRM_ERROR(fmt, ##__VA_ARGS__)
 
-#if defined(CONFIG_DRM_AMD_DC_DCN1_0)
-#include <asm/fpu/api.h>
+#define dm_debug(fmt, ...) DRM_DEBUG_KMS(fmt, ##__VA_ARGS__)
+
+#define dm_vlog(fmt, args) vprintk(fmt, args)
+
 #endif
 
 /*
@@ -84,5 +88,9 @@
 	dm_error(__VA_ARGS__); \
 	BREAK_TO_DEBUGGER(); \
 } while (0)
+
+#if defined(CONFIG_DRM_AMD_DC_DCN1_0)
+#include <asm/fpu/api.h>
+#endif
 
 #endif /* _OS_TYPES_H_ */

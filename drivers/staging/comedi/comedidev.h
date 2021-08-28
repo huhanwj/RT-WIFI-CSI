@@ -1,10 +1,19 @@
-/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * comedidev.h
  * header file for kernel-only structures, variables, and constants
  *
  * COMEDI - Linux Control and Measurement Device Interface
  * Copyright (C) 1997-2000 David A. Schleef <ds@schleef.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #ifndef _COMEDIDEV_H
@@ -177,27 +186,23 @@ struct comedi_subdevice {
 
 	unsigned int *chanlist;	/* driver-owned chanlist (not used) */
 
-	int (*insn_read)(struct comedi_device *dev, struct comedi_subdevice *s,
-			 struct comedi_insn *insn, unsigned int *data);
-	int (*insn_write)(struct comedi_device *dev, struct comedi_subdevice *s,
-			  struct comedi_insn *insn, unsigned int *data);
-	int (*insn_bits)(struct comedi_device *dev, struct comedi_subdevice *s,
-			 struct comedi_insn *insn, unsigned int *data);
-	int (*insn_config)(struct comedi_device *dev,
-			   struct comedi_subdevice *s,
-			   struct comedi_insn *insn,
-			   unsigned int *data);
+	int (*insn_read)(struct comedi_device *, struct comedi_subdevice *,
+			 struct comedi_insn *, unsigned int *);
+	int (*insn_write)(struct comedi_device *, struct comedi_subdevice *,
+			  struct comedi_insn *, unsigned int *);
+	int (*insn_bits)(struct comedi_device *, struct comedi_subdevice *,
+			 struct comedi_insn *, unsigned int *);
+	int (*insn_config)(struct comedi_device *, struct comedi_subdevice *,
+			   struct comedi_insn *, unsigned int *);
 
-	int (*do_cmd)(struct comedi_device *dev, struct comedi_subdevice *s);
-	int (*do_cmdtest)(struct comedi_device *dev,
-			  struct comedi_subdevice *s,
-			  struct comedi_cmd *cmd);
-	int (*poll)(struct comedi_device *dev, struct comedi_subdevice *s);
-	int (*cancel)(struct comedi_device *dev, struct comedi_subdevice *s);
+	int (*do_cmd)(struct comedi_device *, struct comedi_subdevice *);
+	int (*do_cmdtest)(struct comedi_device *, struct comedi_subdevice *,
+			  struct comedi_cmd *);
+	int (*poll)(struct comedi_device *, struct comedi_subdevice *);
+	int (*cancel)(struct comedi_device *, struct comedi_subdevice *);
 
 	/* called when the buffer changes */
-	int (*buf_change)(struct comedi_device *dev,
-			  struct comedi_subdevice *s);
+	int (*buf_change)(struct comedi_device *, struct comedi_subdevice *);
 
 	void (*munge)(struct comedi_device *dev, struct comedi_subdevice *s,
 		      void *data, unsigned int num_bytes,
@@ -440,9 +445,9 @@ struct comedi_driver {
 	/* public: */
 	const char *driver_name;
 	struct module *module;
-	int (*attach)(struct comedi_device *dev, struct comedi_devconfig *it);
-	void (*detach)(struct comedi_device *dev);
-	int (*auto_attach)(struct comedi_device *dev, unsigned long context);
+	int (*attach)(struct comedi_device *, struct comedi_devconfig *);
+	void (*detach)(struct comedi_device *);
+	int (*auto_attach)(struct comedi_device *, unsigned long);
 	unsigned int num_names;
 	const char *const *board_name;
 	int offset;
@@ -516,15 +521,6 @@ struct comedi_driver {
  *	called when @use_count changes from 0 to 1.
  * @close: Optional pointer to a function set by the low-level driver to be
  *	called when @use_count changed from 1 to 0.
- * @insn_device_config: Optional pointer to a handler for all sub-instructions
- *	except %INSN_DEVICE_CONFIG_GET_ROUTES of the %INSN_DEVICE_CONFIG
- *	instruction.  If this is not initialized by the low-level driver, a
- *	default handler will be set during post-configuration.
- * @get_valid_routes: Optional pointer to a handler for the
- *	%INSN_DEVICE_CONFIG_GET_ROUTES sub-instruction of the
- *	%INSN_DEVICE_CONFIG instruction set.  If this is not initialized by the
- *	low-level driver, a default handler that copies zero routes back to the
- *	user will be used.
  *
  * This is the main control data structure for a COMEDI device (as far as the
  * COMEDI core is concerned).  There are two groups of COMEDI devices -
@@ -551,8 +547,8 @@ struct comedi_device {
 
 	const char *board_name;
 	const void *board_ptr;
-	unsigned int attached:1;
-	unsigned int ioenabled:1;
+	bool attached:1;
+	bool ioenabled:1;
 	spinlock_t spinlock;	/* generic spin-lock for low-level driver */
 	struct mutex mutex;	/* generic mutex for COMEDI core */
 	struct rw_semaphore attach_lock;
@@ -574,11 +570,6 @@ struct comedi_device {
 
 	int (*open)(struct comedi_device *dev);
 	void (*close)(struct comedi_device *dev);
-	int (*insn_device_config)(struct comedi_device *dev,
-				  struct comedi_insn *insn, unsigned int *data);
-	unsigned int (*get_valid_routes)(struct comedi_device *dev,
-					 unsigned int n_pairs,
-					 unsigned int *pair_data);
 };
 
 /*
@@ -1001,8 +992,6 @@ int comedi_dio_insn_config(struct comedi_device *dev,
 			   unsigned int mask);
 unsigned int comedi_dio_update_state(struct comedi_subdevice *s,
 				     unsigned int *data);
-unsigned int comedi_bytes_per_scan_cmd(struct comedi_subdevice *s,
-				       struct comedi_cmd *cmd);
 unsigned int comedi_bytes_per_scan(struct comedi_subdevice *s);
 unsigned int comedi_nscans_left(struct comedi_subdevice *s,
 				unsigned int nscans);

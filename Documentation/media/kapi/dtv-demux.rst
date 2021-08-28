@@ -1,5 +1,3 @@
-.. SPDX-License-Identifier: GPL-2.0
-
 Digital TV Demux kABI
 ---------------------
 
@@ -10,7 +8,7 @@ The Kernel Digital TV Demux kABI defines a driver-internal interface for
 registering low-level, hardware specific driver to a hardware independent
 demux layer. It is only of interest for Digital TV device driver writers.
 The header file for this kABI is named ``demux.h`` and located in
-``include/media``.
+``drivers/media/dvb-core``.
 
 The demux kABI should be implemented for each demux in the system. It is
 used to select the TS source of a demux and to manage the demux resources.
@@ -71,14 +69,14 @@ callbacks.
 Digital TV Demux device registration functions and data structures
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. kernel-doc:: include/media/dmxdev.h
+.. kernel-doc:: drivers/media/dvb-core/dmxdev.h
 
 High-level Digital TV demux interface
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. kernel-doc:: include/media/dvb_demux.h
+.. kernel-doc:: drivers/media/dvb-core/dvb_demux.h
 
 Driver-internal low-level hardware specific driver demux interface
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. kernel-doc:: include/media/demux.h
+.. kernel-doc:: drivers/media/dvb-core/demux.h

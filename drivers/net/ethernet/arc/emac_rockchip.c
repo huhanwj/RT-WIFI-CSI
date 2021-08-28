@@ -1,8 +1,17 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /**
  * emac-rockchip.c - Rockchip EMAC specific glue layer
  *
  * Copyright (C) 2014 Romain Perier <romain.perier@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/etherdevice.h>
@@ -160,10 +169,8 @@ static int emac_rockchip_probe(struct platform_device *pdev)
 	/* Optional regulator for PHY */
 	priv->regulator = devm_regulator_get_optional(dev, "phy");
 	if (IS_ERR(priv->regulator)) {
-		if (PTR_ERR(priv->regulator) == -EPROBE_DEFER) {
-			err = -EPROBE_DEFER;
-			goto out_clk_disable;
-		}
+		if (PTR_ERR(priv->regulator) == -EPROBE_DEFER)
+			return -EPROBE_DEFER;
 		dev_err(dev, "no regulator found\n");
 		priv->regulator = NULL;
 	}
@@ -255,9 +262,6 @@ static int emac_rockchip_remove(struct platform_device *pdev)
 
 	if (priv->regulator)
 		regulator_disable(priv->regulator);
-
-	if (priv->soc_data->need_div_macclk)
-		clk_disable_unprepare(priv->macclk);
 
 	free_netdev(ndev);
 	return err;

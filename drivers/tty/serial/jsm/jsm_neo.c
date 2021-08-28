@@ -282,6 +282,9 @@ static void neo_copy_data_from_uart_to_queue(struct jsm_channel *ch)
 	u16 head;
 	u16 tail;
 
+	if (!ch)
+		return;
+
 	/* cache head and tail of queue */
 	head = ch->ch_r_head & RQUEUEMASK;
 	tail = ch->ch_r_tail & RQUEUEMASK;
@@ -1172,9 +1175,6 @@ static irqreturn_t neo_intr(int irq, void *voidbrd)
 				continue;
 
 			ch = brd->channels[port];
-			if (!ch)
-				continue;
-
 			neo_copy_data_from_uart_to_queue(ch);
 
 			/* Call our tty layer to enforce queue flow control if needed. */

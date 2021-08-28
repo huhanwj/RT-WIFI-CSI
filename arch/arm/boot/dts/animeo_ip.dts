@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * animeo_ip.dts - Device Tree file for Somfy Animeo IP Boards
  *
  *  Copyright (C) 2011-2012 Jean-Christophe PLAGNIOL-VILLARD <plagnioj@jcrosoft.com>
+ *
+ * Licensed under GPLv2 only.
  */
 
 /dts-v1/;
@@ -23,7 +24,7 @@
 	};
 
 	chosen {
-		stdout-path = &usart2;
+		linux,stdout-path = &usart2;
 	};
 
 	memory {
@@ -42,18 +43,6 @@
 
 	ahb {
 		apb {
-			tcb0: timer@fffa0000 {
-				timer@0 {
-					compatible = "atmel,tcb-timer";
-					reg = <0>, <1>;
-				};
-
-				timer@2 {
-					compatible = "atmel,tcb-timer";
-					reg = <2>;
-				};
-			};
-
 			usart0: serial@fffb0000 {
 				pinctrl-0 = <&pinctrl_usart0 &pinctrl_usart0_rts>;
 				linux,rs485-enabled-at-boot-time;

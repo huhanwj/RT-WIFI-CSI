@@ -1,10 +1,20 @@
-// SPDX-License-Identifier: GPL-2.0
-// tm6000-i2c.c - driver for TM5600/TM6000/TM6010 USB video capture devices
-//
-// Copyright (c) 2006-2007 Mauro Carvalho Chehab <mchehab@kernel.org>
-//
-// Copyright (c) 2007 Michel Ludwig <michel.ludwig@gmail.com>
-//	- Fix SMBus Read Byte command
+/*
+ *  tm6000-i2c.c - driver for TM5600/TM6000/TM6010 USB video capture devices
+ *
+ *  Copyright (C) 2006-2007 Mauro Carvalho Chehab <mchehab@infradead.org>
+ *
+ *  Copyright (C) 2007 Michel Ludwig <michel.ludwig@gmail.com>
+ *	- Fix SMBus Read Byte command
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation version 2
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ */
 
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -145,6 +155,8 @@ static int tm6000_i2c_xfer(struct i2c_adapter *i2c_adap,
 	struct tm6000_core *dev = i2c_adap->algo_data;
 	int addr, rc, i, byte;
 
+	if (num <= 0)
+		return 0;
 	for (i = 0; i < num; i++) {
 		addr = (msgs[i].addr << 1) & 0xff;
 		i2c_dprintk(2, "%s %s addr=0x%x len=%d:",
@@ -155,7 +167,7 @@ static int tm6000_i2c_xfer(struct i2c_adapter *i2c_adap,
 			/*
 			 * The TM6000 only supports a read transaction
 			 * immediately after a 1 or 2 byte write to select
-			 * a register.  We cannot fulfill this request.
+			 * a register.  We cannot fulfil this request.
 			 */
 			i2c_dprintk(2, " read without preceding write not supported");
 			rc = -EOPNOTSUPP;
@@ -292,7 +304,7 @@ int tm6000_i2c_register(struct tm6000_core *dev)
 	dev->i2c_adap.owner = THIS_MODULE;
 	dev->i2c_adap.algo = &tm6000_algo;
 	dev->i2c_adap.dev.parent = &dev->udev->dev;
-	strscpy(dev->i2c_adap.name, dev->name, sizeof(dev->i2c_adap.name));
+	strlcpy(dev->i2c_adap.name, dev->name, sizeof(dev->i2c_adap.name));
 	dev->i2c_adap.algo_data = dev;
 	i2c_set_adapdata(&dev->i2c_adap, &dev->v4l2_dev);
 	rc = i2c_add_adapter(&dev->i2c_adap);
@@ -300,7 +312,7 @@ int tm6000_i2c_register(struct tm6000_core *dev)
 		return rc;
 
 	dev->i2c_client.adapter = &dev->i2c_adap;
-	strscpy(dev->i2c_client.name, "tm6000 internal", I2C_NAME_SIZE);
+	strlcpy(dev->i2c_client.name, "tm6000 internal", I2C_NAME_SIZE);
 	tm6000_i2c_eeprom(dev);
 
 	return 0;

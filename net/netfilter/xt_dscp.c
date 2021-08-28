@@ -1,7 +1,10 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /* IP tables module for matching the value of the IPv4/IPv6 DSCP field
  *
  * (C) 2002 by Harald Welte <laforge@netfilter.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #include <linux/module.h>
@@ -43,8 +46,10 @@ static int dscp_mt_check(const struct xt_mtchk_param *par)
 {
 	const struct xt_dscp_info *info = par->matchinfo;
 
-	if (info->dscp > XT_DSCP_MAX)
+	if (info->dscp > XT_DSCP_MAX) {
+		pr_info("dscp %x out of range\n", info->dscp);
 		return -EDOM;
+	}
 
 	return 0;
 }

@@ -1,6 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2013 Heiko Stuebner <heiko@sntech.de>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  *
  * Common Clock Framework support for s3c24xx external clock output.
  */
@@ -9,7 +12,6 @@
 #include <linux/slab.h>
 #include <linux/clk.h>
 #include <linux/clk-provider.h>
-#include <linux/io.h>
 #include <linux/platform_device.h>
 #include <linux/module.h>
 #include "clk.h"
@@ -103,7 +105,7 @@ static struct clk_hw *s3c24xx_register_clkout(struct device *dev,
 
 	init.name = name;
 	init.ops = &s3c24xx_clkout_ops;
-	init.flags = 0;
+	init.flags = CLK_IS_BASIC;
 	init.parent_names = parent_names;
 	init.num_parents = num_parents;
 
@@ -217,7 +219,8 @@ static int s3c24xx_dclk1_div_notify(struct notifier_block *nb,
 #ifdef CONFIG_PM_SLEEP
 static int s3c24xx_dclk_suspend(struct device *dev)
 {
-	struct s3c24xx_dclk *s3c24xx_dclk = dev_get_drvdata(dev);
+	struct platform_device *pdev = to_platform_device(dev);
+	struct s3c24xx_dclk *s3c24xx_dclk = platform_get_drvdata(pdev);
 
 	s3c24xx_dclk->reg_save = readl_relaxed(s3c24xx_dclk->base);
 	return 0;
@@ -225,7 +228,8 @@ static int s3c24xx_dclk_suspend(struct device *dev)
 
 static int s3c24xx_dclk_resume(struct device *dev)
 {
-	struct s3c24xx_dclk *s3c24xx_dclk = dev_get_drvdata(dev);
+	struct platform_device *pdev = to_platform_device(dev);
+	struct s3c24xx_dclk *s3c24xx_dclk = platform_get_drvdata(pdev);
 
 	writel_relaxed(s3c24xx_dclk->reg_save, s3c24xx_dclk->base);
 	return 0;
@@ -243,10 +247,9 @@ static int s3c24xx_dclk_probe(struct platform_device *pdev)
 	struct clk_hw **clk_table;
 	int ret, i;
 
-	s3c24xx_dclk = devm_kzalloc(&pdev->dev,
-				    struct_size(s3c24xx_dclk, clk_data.hws,
-						DCLK_MAX_CLKS),
-				    GFP_KERNEL);
+	s3c24xx_dclk = devm_kzalloc(&pdev->dev, sizeof(*s3c24xx_dclk) +
+			    sizeof(*s3c24xx_dclk->clk_data.hws) * DCLK_MAX_CLKS,
+			    GFP_KERNEL);
 	if (!s3c24xx_dclk)
 		return -ENOMEM;
 

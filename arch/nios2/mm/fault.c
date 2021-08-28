@@ -24,6 +24,7 @@
 #include <linux/mm.h>
 #include <linux/extable.h>
 #include <linux/uaccess.h>
+#include <linux/ptrace.h>
 
 #include <asm/mmu_context.h>
 #include <asm/traps.h>
@@ -46,7 +47,7 @@ asmlinkage void do_page_fault(struct pt_regs *regs, unsigned long cause,
 	struct task_struct *tsk = current;
 	struct mm_struct *mm = tsk->mm;
 	int code = SEGV_MAPERR;
-	vm_fault_t fault;
+	int fault;
 	unsigned int flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
 
 	cause >>= 2;
@@ -270,7 +271,7 @@ vmalloc_fault:
 		if (!pte_present(*pte_k))
 			goto no_context;
 
-		flush_tlb_kernel_page(address);
+		flush_tlb_one(address);
 		return;
 	}
 }

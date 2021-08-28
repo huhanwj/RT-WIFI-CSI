@@ -1,9 +1,22 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright (C) 2009 Sunplus Core Technology Co., Ltd.
  *  Lennox Wu <lennox.wu@sunplusct.com>
  *  Chen Liqin <liqin.chen@sunplusct.com>
  * Copyright (C) 2012 Regents of the University of California
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, see the file COPYING, or write
+ * to the Free Software Foundation, Inc.,
  */
 
 
@@ -16,9 +29,7 @@
 
 #include <asm/pgalloc.h>
 #include <asm/ptrace.h>
-#include <asm/tlbflush.h>
-
-#include "../kernel/head.h"
+#include <asm/uaccess.h>
 
 /*
  * This routine handles page faults.  It determines the address and the
@@ -31,8 +42,7 @@ asmlinkage void do_page_fault(struct pt_regs *regs)
 	struct mm_struct *mm;
 	unsigned long addr, cause;
 	unsigned int flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
-	int code = SEGV_MAPERR;
-	vm_fault_t fault;
+	int fault, code = SEGV_MAPERR;
 
 	cause = regs->scause;
 	addr = regs->sbadaddr;
@@ -171,7 +181,7 @@ bad_area:
 	up_read(&mm->mmap_sem);
 	/* User mode accesses just cause a SIGSEGV */
 	if (user_mode(regs)) {
-		do_trap(regs, SIGSEGV, code, addr);
+		do_trap(regs, SIGSEGV, code, addr, tsk);
 		return;
 	}
 
@@ -207,7 +217,7 @@ do_sigbus:
 	/* Kernel mode? Handle exceptions or die */
 	if (!user_mode(regs))
 		goto no_context;
-	do_trap(regs, SIGBUS, BUS_ADRERR, addr);
+	do_trap(regs, SIGBUS, BUS_ADRERR, addr, tsk);
 	return;
 
 vmalloc_fault:
@@ -219,9 +229,8 @@ vmalloc_fault:
 		pte_t *pte_k;
 		int index;
 
-		/* User mode accesses just cause a SIGSEGV */
 		if (user_mode(regs))
-			return do_trap(regs, SIGSEGV, code, addr);
+			goto bad_area;
 
 		/*
 		 * Synchronize this task's top level page-table
@@ -232,7 +241,7 @@ vmalloc_fault:
 		 * of a task switch.
 		 */
 		index = pgd_index(addr);
-		pgd = (pgd_t *)pfn_to_virt(csr_read(CSR_SATP)) + index;
+		pgd = (pgd_t *)pfn_to_virt(csr_read(sptbr)) + index;
 		pgd_k = init_mm.pgd + index;
 
 		if (!pgd_present(*pgd_k))
@@ -268,15 +277,6 @@ vmalloc_fault:
 		pte_k = pte_offset_kernel(pmd_k, addr);
 		if (!pte_present(*pte_k))
 			goto no_context;
-
-		/*
-		 * The kernel assumes that TLBs don't cache invalid
-		 * entries, but in RISC-V, SFENCE.VMA specifies an
-		 * ordering constraint, not a cache flush; it is
-		 * necessary even after writing invalid entries.
-		 */
-		local_flush_tlb_page(addr);
-
 		return;
 	}
 }

@@ -1,6 +1,3 @@
-.. SPDX-License-Identifier: GPL-2.0
-.. include:: <isonum.txt>
-
 .. |struct dev_pm_ops| replace:: :c:type:`struct dev_pm_ops <dev_pm_ops>`
 .. |struct dev_pm_domain| replace:: :c:type:`struct dev_pm_domain <dev_pm_domain>`
 .. |struct bus_type| replace:: :c:type:`struct bus_type <bus_type>`
@@ -9,18 +6,15 @@
 .. |struct wakeup_source| replace:: :c:type:`struct wakeup_source <wakeup_source>`
 .. |struct device| replace:: :c:type:`struct device <device>`
 
-.. _driverapi_pm_devices:
-
 ==============================
 Device Power Management Basics
 ==============================
 
-:Copyright: |copy| 2010-2011 Rafael J. Wysocki <rjw@sisk.pl>, Novell Inc.
-:Copyright: |copy| 2010 Alan Stern <stern@rowland.harvard.edu>
-:Copyright: |copy| 2016 Intel Corporation
+::
 
-:Author: Rafael J. Wysocki <rafael.j.wysocki@intel.com>
-
+ Copyright (c) 2010-2011 Rafael J. Wysocki <rjw@sisk.pl>, Novell Inc.
+ Copyright (c) 2010 Alan Stern <stern@rowland.harvard.edu>
+ Copyright (c) 2016 Intel Corp., Rafael J. Wysocki <rafael.j.wysocki@intel.com>
 
 Most of the code in Linux is device drivers, so most of the Linux power
 management (PM) code is also driver-specific.  Most drivers will do very
@@ -225,7 +219,7 @@ system-wide transition to a sleep state even though its :c:member:`runtime_auto`
 flag is clear.
 
 For more information about the runtime power management framework, refer to
-:file:`Documentation/power/runtime_pm.rst`.
+:file:`Documentation/power/runtime_pm.txt`.
 
 
 Calling Drivers to Enter and Leave System Sleep States
@@ -728,7 +722,7 @@ it into account in any way.
 
 Devices may be defined as IRQ-safe which indicates to the PM core that their
 runtime PM callbacks may be invoked with disabled interrupts (see
-:file:`Documentation/power/runtime_pm.rst` for more information).  If an
+:file:`Documentation/power/runtime_pm.txt` for more information).  If an
 IRQ-safe device belongs to a PM domain, the runtime PM of the domain will be
 disallowed, unless the domain itself is defined as IRQ-safe. However, it
 makes sense to define a PM domain as IRQ-safe only if all the devices in it
@@ -783,51 +777,17 @@ The driver can indicate that by setting ``DPM_FLAG_SMART_SUSPEND`` in
 runtime suspend at the beginning of the ``suspend_late`` phase of system-wide
 suspend (or in the ``poweroff_late`` phase of hibernation), when runtime PM
 has been disabled for it, under the assumption that its state should not change
-after that point until the system-wide transition is over (the PM core itself
-does that for devices whose "noirq", "late" and "early" system-wide PM callbacks
-are executed directly by it).  If that happens, the driver's system-wide resume
-callbacks, if present, may still be invoked during the subsequent system-wide
-resume transition and the device's runtime power management status may be set
-to "active" before enabling runtime PM for it, so the driver must be prepared to
-cope with the invocation of its system-wide resume callbacks back-to-back with
-its ``->runtime_suspend`` one (without the intervening ``->runtime_resume`` and
-so on) and the final state of the device must reflect the "active" runtime PM
-status in that case.
+after that point until the system-wide transition is over.  If that happens, the
+driver's system-wide resume callbacks, if present, may still be invoked during
+the subsequent system-wide resume transition and the device's runtime power
+management status may be set to "active" before enabling runtime PM for it,
+so the driver must be prepared to cope with the invocation of its system-wide
+resume callbacks back-to-back with its ``->runtime_suspend`` one (without the
+intervening ``->runtime_resume`` and so on) and the final state of the device
+must reflect the "active" status for runtime PM in that case.
 
 During system-wide resume from a sleep state it's easiest to put devices into
-the full-power state, as explained in :file:`Documentation/power/runtime_pm.rst`.
-[Refer to that document for more information regarding this particular issue as
+the full-power state, as explained in :file:`Documentation/power/runtime_pm.txt`.
+Refer to that document for more information regarding this particular issue as
 well as for information on the device runtime power management framework in
-general.]
-
-However, it often is desirable to leave devices in suspend after system
-transitions to the working state, especially if those devices had been in
-runtime suspend before the preceding system-wide suspend (or analogous)
-transition.  Device drivers can use the ``DPM_FLAG_LEAVE_SUSPENDED`` flag to
-indicate to the PM core (and middle-layer code) that they prefer the specific
-devices handled by them to be left suspended and they have no problems with
-skipping their system-wide resume callbacks for this reason.  Whether or not the
-devices will actually be left in suspend may depend on their state before the
-given system suspend-resume cycle and on the type of the system transition under
-way.  In particular, devices are not left suspended if that transition is a
-restore from hibernation, as device states are not guaranteed to be reflected
-by the information stored in the hibernation image in that case.
-
-The middle-layer code involved in the handling of the device is expected to
-indicate to the PM core if the device may be left in suspend by setting its
-:c:member:`power.may_skip_resume` status bit which is checked by the PM core
-during the "noirq" phase of the preceding system-wide suspend (or analogous)
-transition.  The middle layer is then responsible for handling the device as
-appropriate in its "noirq" resume callback, which is executed regardless of
-whether or not the device is left suspended, but the other resume callbacks
-(except for ``->complete``) will be skipped automatically by the PM core if the
-device really can be left in suspend.
-
-For devices whose "noirq", "late" and "early" driver callbacks are invoked
-directly by the PM core, all of the system-wide resume callbacks are skipped if
-``DPM_FLAG_LEAVE_SUSPENDED`` is set and the device is in runtime suspend during
-the ``suspend_noirq`` (or analogous) phase or the transition under way is a
-proper system suspend (rather than anything related to hibernation) and the
-device's wakeup settings are suitable for runtime PM (that is, it cannot
-generate wakeup signals at all or it is allowed to wake up the system from
-sleep).
+general.

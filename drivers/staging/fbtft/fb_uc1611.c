@@ -1,16 +1,25 @@
-// SPDX-License-Identifier: GPL-2.0+
 /*
  * FB driver for the UltraChip UC1611 LCD controller
  *
  * The display is 4-bit grayscale (16 shades) 240x160.
  *
  * Copyright (C) 2015 Henri Chain
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
-#include <linux/gpio/consumer.h>
+#include <linux/gpio.h>
 #include <linux/spi/spi.h>
 #include <linux/delay.h>
 
@@ -129,7 +138,7 @@ static void set_addr_win(struct fbtft_par *par, int xs, int ys, int xe, int ye)
 
 static int blank(struct fbtft_par *par, bool on)
 {
-	fbtft_par_dbg(DEBUG_BLANK, par, "(%s=%s)\n",
+	fbtft_par_dbg(DEBUG_BLANK, par, "%s(blank=%s)\n",
 		      __func__, on ? "true" : "false");
 
 	if (on)
@@ -251,7 +260,7 @@ static int write_vmem(struct fbtft_par *par, size_t offset, size_t len)
 			}
 			break;
 		}
-		gpiod_set_value(par->gpio.dc, 1);
+		gpio_set_value(par->gpio.dc, 1);
 
 		/* Write data */
 		ret = par->fbtftops.write(par, par->txbuf.buf, len / 2);

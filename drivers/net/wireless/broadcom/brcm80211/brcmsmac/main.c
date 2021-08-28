@@ -507,7 +507,7 @@ brcms_c_attach_malloc(uint unit, uint *err, uint devid)
 	wlc->hw->wlc = wlc;
 
 	wlc->hw->bandstate[0] =
-		kcalloc(MAXBANDS, sizeof(struct brcms_hw_band), GFP_ATOMIC);
+		kzalloc(sizeof(struct brcms_hw_band) * MAXBANDS, GFP_ATOMIC);
 	if (wlc->hw->bandstate[0] == NULL) {
 		*err = 1006;
 		goto fail;
@@ -521,8 +521,7 @@ brcms_c_attach_malloc(uint unit, uint *err, uint devid)
 	}
 
 	wlc->modulecb =
-		kcalloc(BRCMS_MAXMODULES, sizeof(struct modulecb),
-			GFP_ATOMIC);
+		kzalloc(sizeof(struct modulecb) * BRCMS_MAXMODULES, GFP_ATOMIC);
 	if (wlc->modulecb == NULL) {
 		*err = 1009;
 		goto fail;
@@ -554,7 +553,7 @@ brcms_c_attach_malloc(uint unit, uint *err, uint devid)
 	}
 
 	wlc->bandstate[0] =
-		kcalloc(MAXBANDS, sizeof(struct brcms_band), GFP_ATOMIC);
+		kzalloc(sizeof(struct brcms_band)*MAXBANDS, GFP_ATOMIC);
 	if (wlc->bandstate[0] == NULL) {
 		*err = 1025;
 		goto fail;
@@ -5248,7 +5247,15 @@ int brcms_c_set_gmode(struct brcms_c_info *wlc, u8 gmode, bool config)
 	/* Default to 54g Auto */
 	/* Advertise and use shortslot (-1/0/1 Auto/Off/On) */
 	s8 shortslot = BRCMS_SHORTSLOT_AUTO;
+	bool shortslot_restrict = false; /* Restrict association to stations
+					  * that support shortslot
+					  */
 	bool ofdm_basic = false;	/* Make 6, 12, and 24 basic rates */
+	/* Advertise and use short preambles (-1/0/1 Auto/Off/On) */
+	int preamble = BRCMS_PLCP_LONG;
+	bool preamble_restrict = false;	/* Restrict association to stations
+					 * that support short preambles
+					 */
 	struct brcms_band *band;
 
 	/* if N-support is enabled, allow Gmode set as long as requested
@@ -5289,11 +5296,16 @@ int brcms_c_set_gmode(struct brcms_c_info *wlc, u8 gmode, bool config)
 
 	case GMODE_ONLY:
 		ofdm_basic = true;
+		preamble = BRCMS_PLCP_SHORT;
+		preamble_restrict = true;
 		break;
 
 	case GMODE_PERFORMANCE:
 		shortslot = BRCMS_SHORTSLOT_ON;
+		shortslot_restrict = true;
 		ofdm_basic = true;
+		preamble = BRCMS_PLCP_SHORT;
+		preamble_restrict = true;
 		break;
 
 	default:

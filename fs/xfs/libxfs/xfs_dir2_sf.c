@@ -1,17 +1,32 @@
-// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2000-2003,2005 Silicon Graphics, Inc.
  * All Rights Reserved.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it would be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write the Free Software Foundation,
+ * Inc.,  51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 #include "xfs.h"
 #include "xfs_fs.h"
-#include "xfs_shared.h"
 #include "xfs_format.h"
 #include "xfs_log_format.h"
 #include "xfs_trans_resv.h"
 #include "xfs_mount.h"
+#include "xfs_da_format.h"
+#include "xfs_da_btree.h"
 #include "xfs_inode.h"
 #include "xfs_trans.h"
+#include "xfs_inode_item.h"
+#include "xfs_error.h"
 #include "xfs_dir2.h"
 #include "xfs_dir2_priv.h"
 #include "xfs_trace.h"
@@ -141,6 +156,7 @@ xfs_dir2_block_to_sf(
 	xfs_dir2_sf_hdr_t	*sfhp)		/* shortform directory hdr */
 {
 	xfs_dir2_data_hdr_t	*hdr;		/* block header */
+	xfs_dir2_block_tail_t	*btp;		/* block tail pointer */
 	xfs_dir2_data_entry_t	*dep;		/* data entry pointer */
 	xfs_inode_t		*dp;		/* incore directory inode */
 	xfs_dir2_data_unused_t	*dup;		/* unused data pointer */
@@ -164,7 +180,7 @@ xfs_dir2_block_to_sf(
 	 * can free the block and copy the formatted data into the inode literal
 	 * area.
 	 */
-	dst = kmem_alloc(mp->m_sb.sb_inodesize, 0);
+	dst = kmem_alloc(mp->m_sb.sb_inodesize, KM_SLEEP);
 	hdr = bp->b_addr;
 
 	/*
@@ -176,8 +192,9 @@ xfs_dir2_block_to_sf(
 	/*
 	 * Set up to loop over the block's entries.
 	 */
+	btp = xfs_dir2_block_tail_p(args->geo, hdr);
 	ptr = (char *)dp->d_ops->data_entry_p(hdr);
-	endptr = xfs_dir3_data_endp(args->geo, hdr);
+	endptr = (char *)xfs_dir2_block_leaf_p(btp);
 	sfep = xfs_dir2_sf_firstentry(sfp);
 	/*
 	 * Loop over the active and unused entries.
@@ -436,7 +453,7 @@ xfs_dir2_sf_addname_hard(
 
 	sfp = (xfs_dir2_sf_hdr_t *)dp->i_df.if_u1.if_data;
 	old_isize = (int)dp->i_d.di_size;
-	buf = kmem_alloc(old_isize, 0);
+	buf = kmem_alloc(old_isize, KM_SLEEP);
 	oldsfp = (xfs_dir2_sf_hdr_t *)buf;
 	memcpy(oldsfp, sfp, old_isize);
 	/*
@@ -613,7 +630,7 @@ xfs_dir2_sf_check(
 #endif	/* DEBUG */
 
 /* Verify the consistency of an inline directory. */
-xfs_failaddr_t
+int
 xfs_dir2_sf_verify(
 	struct xfs_inode		*ip)
 {
@@ -648,7 +665,7 @@ xfs_dir2_sf_verify(
 	 */
 	if (size <= offsetof(struct xfs_dir2_sf_hdr, parent) ||
 	    size < xfs_dir2_sf_hdr_size(sfp->i8count))
-		return __this_address;
+		return -EFSCORRUPTED;
 
 	endp = (char *)sfp + size;
 
@@ -657,7 +674,7 @@ xfs_dir2_sf_verify(
 	i8count = ino > XFS_DIR2_MAX_SHORT_INUM;
 	error = xfs_dir_ino_validate(mp, ino);
 	if (error)
-		return __this_address;
+		return error;
 	offset = dops->data_first_offset;
 
 	/* Check all reported entries */
@@ -669,11 +686,11 @@ xfs_dir2_sf_verify(
 		 * within the data buffer.
 		 */
 		if (((char *)sfep + sizeof(*sfep)) >= endp)
-			return __this_address;
+			return -EFSCORRUPTED;
 
 		/* Don't allow names with known bad length. */
 		if (sfep->namelen == 0)
-			return __this_address;
+			return -EFSCORRUPTED;
 
 		/*
 		 * Check that the variable-length part of the structure is
@@ -682,23 +699,23 @@ xfs_dir2_sf_verify(
 		 */
 		next_sfep = dops->sf_nextentry(sfp, sfep);
 		if (endp < (char *)next_sfep)
-			return __this_address;
+			return -EFSCORRUPTED;
 
 		/* Check that the offsets always increase. */
 		if (xfs_dir2_sf_get_offset(sfep) < offset)
-			return __this_address;
+			return -EFSCORRUPTED;
 
 		/* Check the inode number. */
 		ino = dops->sf_get_ino(sfp, sfep);
 		i8count += ino > XFS_DIR2_MAX_SHORT_INUM;
 		error = xfs_dir_ino_validate(mp, ino);
 		if (error)
-			return __this_address;
+			return error;
 
 		/* Check the file type. */
 		filetype = dops->sf_get_ftype(sfep);
 		if (filetype >= XFS_DIR3_FT_MAX)
-			return __this_address;
+			return -EFSCORRUPTED;
 
 		offset = xfs_dir2_sf_get_offset(sfep) +
 				dops->data_entsize(sfep->namelen);
@@ -706,16 +723,16 @@ xfs_dir2_sf_verify(
 		sfep = next_sfep;
 	}
 	if (i8count != sfp->i8count)
-		return __this_address;
+		return -EFSCORRUPTED;
 	if ((void *)sfep != (void *)endp)
-		return __this_address;
+		return -EFSCORRUPTED;
 
 	/* Make sure this whole thing ought to be in local format. */
 	if (offset + (sfp->count + 2) * (uint)sizeof(xfs_dir2_leaf_entry_t) +
 	    (uint)sizeof(xfs_dir2_block_tail_t) > mp->m_dir_geo->blksize)
-		return __this_address;
+		return -EFSCORRUPTED;
 
-	return NULL;
+	return 0;
 }
 
 /*
@@ -1096,7 +1113,7 @@ xfs_dir2_sf_toino4(
 	 * Don't want xfs_idata_realloc copying the data here.
 	 */
 	oldsize = dp->i_df.if_bytes;
-	buf = kmem_alloc(oldsize, 0);
+	buf = kmem_alloc(oldsize, KM_SLEEP);
 	oldsfp = (xfs_dir2_sf_hdr_t *)dp->i_df.if_u1.if_data;
 	ASSERT(oldsfp->i8count == 1);
 	memcpy(buf, oldsfp, oldsize);
@@ -1169,7 +1186,7 @@ xfs_dir2_sf_toino8(
 	 * Don't want xfs_idata_realloc copying the data here.
 	 */
 	oldsize = dp->i_df.if_bytes;
-	buf = kmem_alloc(oldsize, 0);
+	buf = kmem_alloc(oldsize, KM_SLEEP);
 	oldsfp = (xfs_dir2_sf_hdr_t *)dp->i_df.if_u1.if_data;
 	ASSERT(oldsfp->i8count == 0);
 	memcpy(buf, oldsfp, oldsize);

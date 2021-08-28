@@ -23,18 +23,13 @@
 #ifndef __DRM_FRAMEBUFFER_H__
 #define __DRM_FRAMEBUFFER_H__
 
-#include <linux/ctype.h>
 #include <linux/list.h>
-#include <linux/sched.h>
-
+#include <linux/ctype.h>
 #include <drm/drm_mode_object.h>
 
-struct drm_clip_rect;
-struct drm_device;
-struct drm_file;
-struct drm_format_info;
 struct drm_framebuffer;
-struct drm_gem_object;
+struct drm_file;
+struct drm_device;
 
 /**
  * struct drm_framebuffer_funcs - framebuffer hooks
@@ -87,9 +82,6 @@ struct drm_framebuffer_funcs {
 	 * for more information as all the semantics and arguments have a one to
 	 * one mapping on this function.
 	 *
-	 * Atomic drivers should use drm_atomic_helper_dirtyfb() to implement
-	 * this hook.
-	 *
 	 * RETURNS:
 	 *
 	 * 0 on success or a negative error code on failure.
@@ -129,12 +121,6 @@ struct drm_framebuffer {
 	 * @base: base modeset object structure, contains the reference count.
 	 */
 	struct drm_mode_object base;
-
-	/**
-	 * @comm: Name of the process allocating the fb, used for fb dumping.
-	 */
-	char comm[TASK_COMM_LEN];
-
 	/**
 	 * @format: framebuffer format information
 	 */
@@ -249,12 +235,36 @@ static inline void drm_framebuffer_put(struct drm_framebuffer *fb)
 }
 
 /**
+ * drm_framebuffer_reference - acquire a framebuffer reference
+ * @fb: DRM framebuffer
+ *
+ * This is a compatibility alias for drm_framebuffer_get() and should not be
+ * used by new code.
+ */
+static inline void drm_framebuffer_reference(struct drm_framebuffer *fb)
+{
+	drm_framebuffer_get(fb);
+}
+
+/**
+ * drm_framebuffer_unreference - release a framebuffer reference
+ * @fb: DRM framebuffer
+ *
+ * This is a compatibility alias for drm_framebuffer_put() and should not be
+ * used by new code.
+ */
+static inline void drm_framebuffer_unreference(struct drm_framebuffer *fb)
+{
+	drm_framebuffer_put(fb);
+}
+
+/**
  * drm_framebuffer_read_refcount - read the framebuffer reference count.
  * @fb: framebuffer
  *
  * This functions returns the framebuffer's reference count.
  */
-static inline uint32_t drm_framebuffer_read_refcount(const struct drm_framebuffer *fb)
+static inline uint32_t drm_framebuffer_read_refcount(struct drm_framebuffer *fb)
 {
 	return kref_read(&fb->base.refcount);
 }

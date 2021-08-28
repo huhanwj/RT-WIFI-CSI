@@ -1,6 +1,9 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (C) 2004, 2007-2010, 2011-2012 Synopsys, Inc. (www.synopsys.com)
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #ifndef _ASM_ARC_ARCREGS_H
@@ -79,7 +82,6 @@
 #define ECR_V_DTLB_MISS			0x05
 #define ECR_V_PROTV			0x06
 #define ECR_V_TRAP			0x09
-#define ECR_V_MISALIGN			0x0d
 #endif
 
 /* DTLB Miss and Protection Violation Cause Codes */
@@ -149,19 +151,19 @@ struct bcr_isa_arcv2 {
 #endif
 };
 
-struct bcr_uarch_build_arcv2 {
-#ifdef CONFIG_CPU_BIG_ENDIAN
-	unsigned int pad:8, prod:8, maj:8, min:8;
-#else
-	unsigned int min:8, maj:8, prod:8, pad:8;
-#endif
-};
-
 struct bcr_mpy {
 #ifdef CONFIG_CPU_BIG_ENDIAN
 	unsigned int pad:8, x1616:8, dsp:4, cycles:2, type:2, ver:8;
 #else
 	unsigned int ver:8, type:2, cycles:2, dsp:4, x1616:8, pad:8;
+#endif
+};
+
+struct bcr_extn_xymem {
+#ifdef CONFIG_CPU_BIG_ENDIAN
+	unsigned int ram_org:2, num_banks:4, bank_sz:4, ver:8;
+#else
+	unsigned int ver:8, bank_sz:4, num_banks:4, ram_org:2;
 #endif
 };
 
@@ -211,14 +213,6 @@ struct bcr_fp_arcv2 {
 	unsigned int pad2:15, dp:1, pad1:7, sp:1, ver:8;
 #else
 	unsigned int ver:8, sp:1, pad1:7, dp:1, pad2:15;
-#endif
-};
-
-struct bcr_actionpoint {
-#ifdef CONFIG_CPU_BIG_ENDIAN
-	unsigned int pad:21, min:1, num:2, ver:8;
-#else
-	unsigned int ver:8, num:2, min:1, pad:21;
 #endif
 };
 
@@ -289,7 +283,7 @@ struct cpuinfo_arc_cache {
 };
 
 struct cpuinfo_arc_bpu {
-	unsigned int ver, full, num_cache, num_pred, ret_stk;
+	unsigned int ver, full, num_cache, num_pred;
 };
 
 struct cpuinfo_arc_ccm {
@@ -302,16 +296,17 @@ struct cpuinfo_arc {
 	struct cpuinfo_arc_bpu bpu;
 	struct bcr_identity core;
 	struct bcr_isa_arcv2 isa;
-	const char *release, *name;
+	const char *details, *name;
 	unsigned int vec_base;
 	struct cpuinfo_arc_ccm iccm, dccm;
 	struct {
 		unsigned int swap:1, norm:1, minmax:1, barrel:1, crc:1, swape:1, pad1:2,
 			     fpu_sp:1, fpu_dp:1, dual:1, dual_enb:1, pad2:4,
-			     ap_num:4, ap_full:1, smart:1, rtt:1, pad3:1,
+			     debug:1, ap:1, smart:1, rtt:1, pad3:4,
 			     timer0:1, timer1:1, rtc:1, gfrc:1, pad4:4;
 	} extn;
 	struct bcr_mpy extn_mpy;
+	struct bcr_extn_xymem extn_xymem;
 };
 
 extern struct cpuinfo_arc cpuinfo_arc700[];

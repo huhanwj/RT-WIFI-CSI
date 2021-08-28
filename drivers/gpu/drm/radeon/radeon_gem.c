@@ -25,13 +25,8 @@
  *          Alex Deucher
  *          Jerome Glisse
  */
-
-#include <drm/drm_debugfs.h>
-#include <drm/drm_device.h>
-#include <drm/drm_file.h>
-#include <drm/drm_pci.h>
+#include <drm/drmP.h>
 #include <drm/radeon_drm.h>
-
 #include "radeon.h"
 
 void radeon_gem_object_free(struct drm_gem_object *gobj)
@@ -39,6 +34,8 @@ void radeon_gem_object_free(struct drm_gem_object *gobj)
 	struct radeon_bo *robj = gem_to_radeon_bo(gobj);
 
 	if (robj) {
+		if (robj->gem_base.import_attach)
+			drm_prime_gem_destroy(&robj->gem_base, robj->tbo.sg);
 		radeon_mn_unregister(robj);
 		radeon_bo_unref(&robj);
 	}
@@ -83,7 +80,7 @@ retry:
 		}
 		return r;
 	}
-	*obj = &robj->tbo.base;
+	*obj = &robj->gem_base;
 	robj->pid = task_pid_nr(current);
 
 	mutex_lock(&rdev->gem.mutex);
@@ -114,7 +111,7 @@ static int radeon_gem_set_domain(struct drm_gem_object *gobj,
 	}
 	if (domain == RADEON_GEM_DOMAIN_CPU) {
 		/* Asking for cpu access wait for object idle */
-		r = dma_resv_wait_timeout_rcu(robj->tbo.base.resv, true, true, 30 * HZ);
+		r = reservation_object_wait_timeout_rcu(robj->tbo.resv, true, true, 30 * HZ);
 		if (!r)
 			r = -EBUSY;
 
@@ -288,15 +285,12 @@ int radeon_gem_create_ioctl(struct drm_device *dev, void *data,
 int radeon_gem_userptr_ioctl(struct drm_device *dev, void *data,
 			     struct drm_file *filp)
 {
-	struct ttm_operation_ctx ctx = { true, false };
 	struct radeon_device *rdev = dev->dev_private;
 	struct drm_radeon_gem_userptr *args = data;
 	struct drm_gem_object *gobj;
 	struct radeon_bo *bo;
 	uint32_t handle;
 	int r;
-
-	args->addr = untagged_addr(args->addr);
 
 	if (offset_in_page(args->addr | args->size))
 		return -EINVAL;
@@ -349,7 +343,7 @@ int radeon_gem_userptr_ioctl(struct drm_device *dev, void *data,
 		}
 
 		radeon_ttm_placement_from_domain(bo, RADEON_GEM_DOMAIN_GTT);
-		r = ttm_bo_validate(&bo->tbo, &bo->placement, &ctx);
+		r = ttm_bo_validate(&bo->tbo, &bo->placement, true, false);
 		radeon_bo_unreserve(bo);
 		up_read(&current->mm->mmap_sem);
 		if (r)
@@ -451,7 +445,7 @@ int radeon_gem_busy_ioctl(struct drm_device *dev, void *data,
 	}
 	robj = gem_to_radeon_bo(gobj);
 
-	r = dma_resv_test_signaled_rcu(robj->tbo.base.resv, true);
+	r = reservation_object_test_signaled_rcu(robj->tbo.resv, true);
 	if (r == 0)
 		r = -EBUSY;
 	else
@@ -480,7 +474,7 @@ int radeon_gem_wait_idle_ioctl(struct drm_device *dev, void *data,
 	}
 	robj = gem_to_radeon_bo(gobj);
 
-	ret = dma_resv_wait_timeout_rcu(robj->tbo.base.resv, true, true, 30 * HZ);
+	ret = reservation_object_wait_timeout_rcu(robj->tbo.resv, true, true, 30 * HZ);
 	if (ret == 0)
 		r = -EBUSY;
 	else if (ret < 0)
@@ -559,14 +553,14 @@ static void radeon_gem_va_update_vm(struct radeon_device *rdev,
 	INIT_LIST_HEAD(&list);
 
 	tv.bo = &bo_va->bo->tbo;
-	tv.num_shared = 1;
+	tv.shared = true;
 	list_add(&tv.head, &list);
 
 	vm_bos = radeon_vm_get_bos(rdev, bo_va->vm, &list);
 	if (!vm_bos)
 		return;
 
-	r = ttm_eu_reserve_buffers(&ticket, &list, true, NULL, true);
+	r = ttm_eu_reserve_buffers(&ticket, &list, true, NULL);
 	if (r)
 		goto error_free;
 

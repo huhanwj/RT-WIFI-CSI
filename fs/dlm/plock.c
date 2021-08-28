@@ -1,6 +1,9 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2005-2008 Red Hat, Inc.  All rights reserved.
+ *
+ * This copyrighted material is made available to anyone wishing to use,
+ * modify, copy, or redistribute it subject to the terms and conditions
+ * of the GNU General Public License version 2.
  */
 
 #include <linux/fs.h>
@@ -460,15 +463,15 @@ static ssize_t dev_write(struct file *file, const char __user *u, size_t count,
 	return count;
 }
 
-static __poll_t dev_poll(struct file *file, poll_table *wait)
+static unsigned int dev_poll(struct file *file, poll_table *wait)
 {
-	__poll_t mask = 0;
+	unsigned int mask = 0;
 
 	poll_wait(file, &send_wq, wait);
 
 	spin_lock(&ops_lock);
 	if (!list_empty(&send_list))
-		mask = EPOLLIN | EPOLLRDNORM;
+		mask = POLLIN | POLLRDNORM;
 	spin_unlock(&ops_lock);
 
 	return mask;

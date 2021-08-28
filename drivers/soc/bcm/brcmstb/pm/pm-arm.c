@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * ARM-specific support for Broadcom STB S2/S3/S5 power management
  *
@@ -9,6 +8,15 @@
  *     treat this mode like a soft power-off, with wakeup allowed from AON
  *
  * Copyright © 2014-2017 Broadcom
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
  */
 
 #define pr_fmt(fmt) "brcmstb-pm: " fmt
@@ -396,7 +404,7 @@ noinline int brcmstb_pm_s3_finish(void)
 {
 	struct brcmstb_s3_params *params = ctrl.s3_params;
 	dma_addr_t params_pa = ctrl.s3_params_pa;
-	phys_addr_t reentry = virt_to_phys(&cpu_resume_arm);
+	phys_addr_t reentry = virt_to_phys(&cpu_resume);
 	enum bsp_initiate_command cmd;
 	u32 flags;
 
@@ -620,23 +628,7 @@ static const struct of_device_id ddr_shimphy_dt_ids[] = {
 
 static const struct of_device_id brcmstb_memc_of_match[] = {
 	{
-		.compatible = "brcm,brcmstb-memc-ddr-rev-b.2.1",
-		.data = &ddr_seq,
-	},
-	{
 		.compatible = "brcm,brcmstb-memc-ddr-rev-b.2.2",
-		.data = &ddr_seq_b22,
-	},
-	{
-		.compatible = "brcm,brcmstb-memc-ddr-rev-b.2.3",
-		.data = &ddr_seq_b22,
-	},
-	{
-		.compatible = "brcm,brcmstb-memc-ddr-rev-b.3.0",
-		.data = &ddr_seq_b22,
-	},
-	{
-		.compatible = "brcm,brcmstb-memc-ddr-rev-b.3.1",
 		.data = &ddr_seq_b22,
 	},
 	{

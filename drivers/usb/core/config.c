@@ -191,9 +191,7 @@ static const unsigned short full_speed_maxpacket_maxes[4] = {
 static const unsigned short high_speed_maxpacket_maxes[4] = {
 	[USB_ENDPOINT_XFER_CONTROL] = 64,
 	[USB_ENDPOINT_XFER_ISOC] = 1024,
-
-	/* Bulk should be 512, but some devices use 1024: we will warn below */
-	[USB_ENDPOINT_XFER_BULK] = 1024,
+	[USB_ENDPOINT_XFER_BULK] = 512,
 	[USB_ENDPOINT_XFER_INT] = 1024,
 };
 static const unsigned short super_speed_maxpacket_maxes[4] = {
@@ -348,11 +346,6 @@ static int usb_parse_endpoint(struct device *ddev, int cfgno, int inum,
 
 	/* Validate the wMaxPacketSize field */
 	maxp = usb_endpoint_maxp(&endpoint->desc);
-	if (maxp == 0) {
-		dev_warn(ddev, "config %d interface %d altsetting %d endpoint 0x%X has wMaxPacketSize 0, skipping\n",
-		    cfgno, inum, asnum, d->bEndpointAddress);
-		goto skip_to_next_endpoint_or_interface_descriptor;
-	}
 
 	/* Find the highest legal maxpacket size for this endpoint */
 	i = 0;		/* additional transactions per microframe */
@@ -557,7 +550,7 @@ static int usb_parse_configuration(struct usb_device *dev, int cfgidx,
 	unsigned char *buffer2;
 	int size2;
 	struct usb_descriptor_header *header;
-	int retval;
+	int len, retval;
 	u8 inums[USB_MAXINTERFACES], nalts[USB_MAXINTERFACES];
 	unsigned iad_num = 0;
 
@@ -712,8 +705,8 @@ static int usb_parse_configuration(struct usb_device *dev, int cfgidx,
 			nalts[i] = j = USB_MAXALTSETTING;
 		}
 
-		intfc = kzalloc(struct_size(intfc, altsetting, j), GFP_KERNEL);
-		config->intf_cache[i] = intfc;
+		len = sizeof(*intfc) + sizeof(struct usb_host_interface) * j;
+		config->intf_cache[i] = intfc = kzalloc(len, GFP_KERNEL);
 		if (!intfc)
 			return -ENOMEM;
 		kref_init(&intfc->ref);
@@ -805,11 +798,13 @@ int usb_get_configuration(struct usb_device *dev)
 {
 	struct device *ddev = &dev->dev;
 	int ncfg = dev->descriptor.bNumConfigurations;
-	int result = -ENOMEM;
+	int result = 0;
 	unsigned int cfgno, length;
 	unsigned char *bigbuffer;
 	struct usb_config_descriptor *desc;
 
+	cfgno = 0;
+	result = -ENOMEM;
 	if (ncfg > USB_MAXCONFIG) {
 		dev_warn(ddev, "too many configurations: %d, "
 		    "using maximum allowed: %d\n", ncfg, USB_MAXCONFIG);
@@ -835,7 +830,8 @@ int usb_get_configuration(struct usb_device *dev)
 	if (!desc)
 		goto err2;
 
-	for (cfgno = 0; cfgno < ncfg; cfgno++) {
+	result = 0;
+	for (; cfgno < ncfg; cfgno++) {
 		/* We grab just the first descriptor so we know how long
 		 * the whole configuration is */
 		result = usb_get_descriptor(dev, USB_DT_CONFIG, cfgno,
@@ -891,6 +887,7 @@ int usb_get_configuration(struct usb_device *dev)
 			goto err;
 		}
 	}
+	result = 0;
 
 err:
 	kfree(desc);
@@ -926,7 +923,7 @@ int usb_get_bos_descriptor(struct usb_device *dev)
 	struct usb_bos_descriptor *bos;
 	struct usb_dev_cap_header *cap;
 	struct usb_ssp_cap_descriptor *ssp_cap;
-	unsigned char *buffer, *buffer0;
+	unsigned char *buffer;
 	int length, total_len, num, i, ssac;
 	__u8 cap_type;
 	int ret;
@@ -937,8 +934,8 @@ int usb_get_bos_descriptor(struct usb_device *dev)
 
 	/* Get BOS descriptor */
 	ret = usb_get_descriptor(dev, USB_DT_BOS, 0, bos, USB_DT_BOS_SIZE);
-	if (ret < USB_DT_BOS_SIZE || bos->bLength < USB_DT_BOS_SIZE) {
-		dev_err(ddev, "unable to get BOS descriptor or descriptor too short\n");
+	if (ret < USB_DT_BOS_SIZE) {
+		dev_err(ddev, "unable to get BOS descriptor\n");
 		if (ret >= 0)
 			ret = -ENOMSG;
 		kfree(bos);
@@ -971,12 +968,10 @@ int usb_get_bos_descriptor(struct usb_device *dev)
 			ret = -ENOMSG;
 		goto err;
 	}
-
-	buffer0 = buffer;
 	total_len -= length;
-	buffer += length;
 
 	for (i = 0; i < num; i++) {
+		buffer += length;
 		cap = (struct usb_dev_cap_header *)buffer;
 
 		if (total_len < sizeof(*cap) || total_len < cap->bLength) {
@@ -989,6 +984,8 @@ int usb_get_bos_descriptor(struct usb_device *dev)
 			dev->bos->desc->bNumDeviceCaps = i;
 			break;
 		}
+
+		total_len -= length;
 
 		if (cap->bDescriptorType != USB_DT_DEVICE_CAPABILITY) {
 			dev_warn(ddev, "descriptor type invalid, skip\n");
@@ -1024,11 +1021,7 @@ int usb_get_bos_descriptor(struct usb_device *dev)
 		default:
 			break;
 		}
-
-		total_len -= length;
-		buffer += length;
 	}
-	dev->bos->desc->wTotalLength = cpu_to_le16(buffer - buffer0);
 
 	return 0;
 

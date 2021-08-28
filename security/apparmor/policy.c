@@ -1,4 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * AppArmor security module
  *
@@ -6,6 +5,12 @@
  *
  * Copyright (C) 1998-2008 Novell/SUSE
  * Copyright 2009-2010 Canonical Ltd.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation, version 2 of the
+ * License.
+ *
  *
  * AppArmor policy is based around profiles, which contain the rules a
  * task is confined by.  Every task in the system has a profile attached
@@ -77,7 +82,7 @@
 
 #include "include/apparmor.h"
 #include "include/capability.h"
-#include "include/cred.h"
+#include "include/context.h"
 #include "include/file.h"
 #include "include/ipc.h"
 #include "include/match.h"
@@ -205,7 +210,6 @@ static void aa_free_data(void *ptr, void *arg)
 void aa_free_profile(struct aa_profile *profile)
 {
 	struct rhashtable *rht;
-	int i;
 
 	AA_DEBUG("%s(%p)\n", __func__, profile);
 
@@ -223,12 +227,6 @@ void aa_free_profile(struct aa_profile *profile)
 	aa_free_cap_rules(&profile->caps);
 	aa_free_rlimit_rules(&profile->rlimits);
 
-	for (i = 0; i < profile->xattr_count; i++)
-		kzfree(profile->xattrs[i]);
-	kzfree(profile->xattrs);
-	for (i = 0; i < profile->secmark_count; i++)
-		kzfree(profile->secmark[i].label);
-	kzfree(profile->secmark);
 	kzfree(profile->dirname);
 	aa_put_dfa(profile->xmatch);
 	aa_put_dfa(profile->policy.dfa);
@@ -266,7 +264,7 @@ struct aa_profile *aa_alloc_profile(const char *hname, struct aa_proxy *proxy,
 
 	if (!aa_policy_init(&profile->base, NULL, hname, gfp))
 		goto fail;
-	if (!aa_label_init(&profile->label, 1, gfp))
+	if (!aa_label_init(&profile->label, 1))
 		goto fail;
 
 	/* update being set needed by fs interface */
@@ -847,9 +845,8 @@ static struct aa_profile *update_to_newest_parent(struct aa_profile *new)
  * @udata: serialized data stream  (NOT NULL)
  *
  * unpack and replace a profile on the profile list and uses of that profile
- * by any task creds via invalidating the old version of the profile, which
- * tasks will notice to update their own cred.  If the profile does not exist
- * on the profile list it is added.
+ * by any aa_task_ctx.  If the profile does not exist on the profile list
+ * it is added.
  *
  * Returns: size of data consumed else error code on failure.
  */
@@ -1006,9 +1003,6 @@ ssize_t aa_replace_profiles(struct aa_ns *policy_ns, struct aa_label *label,
 			audit_policy(label, op, ns_name, ent->new->base.hname,
 				     "same as current profile, skipping",
 				     error);
-			/* break refcount cycle with proxy. */
-			aa_put_proxy(ent->new->label.proxy);
-			ent->new->label.proxy = NULL;
 			goto skip;
 		}
 
@@ -1086,7 +1080,7 @@ fail:
  * Remove a profile or sub namespace from the current namespace, so that
  * they can not be found anymore and mark them as replaced by unconfined
  *
- * NOTE: removing confinement does not restore rlimits to preconfinement values
+ * NOTE: removing confinement does not restore rlimits to preconfinemnet values
  *
  * Returns: size of data consume else error code if fails
  */

@@ -59,13 +59,13 @@ static const unsigned int tahvo_cable[] = {
 	EXTCON_NONE,
 };
 
-static ssize_t vbus_show(struct device *device,
+static ssize_t vbus_state_show(struct device *device,
 			       struct device_attribute *attr, char *buf)
 {
 	struct tahvo_usb *tu = dev_get_drvdata(device);
 	return sprintf(buf, "%s\n", tu->vbus_state ? "on" : "off");
 }
-static DEVICE_ATTR_RO(vbus);
+static DEVICE_ATTR(vbus, 0444, vbus_state_show, NULL);
 
 static void check_vbus_state(struct tahvo_usb *tu)
 {
@@ -310,14 +310,17 @@ static ssize_t otg_mode_store(struct device *device,
 
 	return r;
 }
-static DEVICE_ATTR_RW(otg_mode);
+static DEVICE_ATTR(otg_mode, 0644, otg_mode_show, otg_mode_store);
 
-static struct attribute *tahvo_attrs[] = {
+static struct attribute *tahvo_attributes[] = {
 	&dev_attr_vbus.attr,
 	&dev_attr_otg_mode.attr,
 	NULL
 };
-ATTRIBUTE_GROUPS(tahvo);
+
+static const struct attribute_group tahvo_attr_group = {
+	.attrs = tahvo_attributes,
+};
 
 static int tahvo_usb_probe(struct platform_device *pdev)
 {
@@ -403,8 +406,17 @@ static int tahvo_usb_probe(struct platform_device *pdev)
 		goto err_remove_phy;
 	}
 
+	/* Attributes */
+	ret = sysfs_create_group(&pdev->dev.kobj, &tahvo_attr_group);
+	if (ret) {
+		dev_err(&pdev->dev, "cannot create sysfs group: %d\n", ret);
+		goto err_free_irq;
+	}
+
 	return 0;
 
+err_free_irq:
+	free_irq(tu->irq, tu);
 err_remove_phy:
 	usb_remove_phy(&tu->phy);
 err_disable_clk:
@@ -418,6 +430,7 @@ static int tahvo_usb_remove(struct platform_device *pdev)
 {
 	struct tahvo_usb *tu = platform_get_drvdata(pdev);
 
+	sysfs_remove_group(&pdev->dev.kobj, &tahvo_attr_group);
 	free_irq(tu->irq, tu);
 	usb_remove_phy(&tu->phy);
 	if (!IS_ERR(tu->ick))
@@ -431,7 +444,6 @@ static struct platform_driver tahvo_usb_driver = {
 	.remove		= tahvo_usb_remove,
 	.driver		= {
 		.name	= "tahvo-usb",
-		.dev_groups = tahvo_groups,
 	},
 };
 module_platform_driver(tahvo_usb_driver);

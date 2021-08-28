@@ -60,7 +60,6 @@ struct nlm_lookup_host_info {
 	const size_t		hostname_len;	/* it's length */
 	const int		noresvport;	/* use non-priv port */
 	struct net		*net;		/* network namespace to bind */
-	const struct cred	*cred;
 };
 
 /*
@@ -115,7 +114,7 @@ static struct nlm_host *nlm_alloc_host(struct nlm_lookup_host_info *ni,
 	unsigned long now = jiffies;
 
 	if (nsm != NULL)
-		refcount_inc(&nsm->sm_count);
+		atomic_inc(&nsm->sm_count);
 	else {
 		host = NULL;
 		nsm = nsm_get_handle(ni->net, ni->sap, ni->salen,
@@ -152,7 +151,7 @@ static struct nlm_host *nlm_alloc_host(struct nlm_lookup_host_info *ni,
 	host->h_state      = 0;
 	host->h_nsmstate   = 0;
 	host->h_pidcount   = 0;
-	refcount_set(&host->h_count, 1);
+	atomic_set(&host->h_count, 1);
 	mutex_init(&host->h_mutex);
 	host->h_nextrebind = now + NLM_HOST_REBIND;
 	host->h_expires    = now + NLM_HOST_EXPIRE;
@@ -163,7 +162,6 @@ static struct nlm_host *nlm_alloc_host(struct nlm_lookup_host_info *ni,
 	host->h_nsmhandle  = nsm;
 	host->h_addrbuf    = nsm->sm_addrbuf;
 	host->net	   = ni->net;
-	host->h_cred	   = get_cred(ni->cred),
 	strlcpy(host->nodename, utsname()->nodename, sizeof(host->nodename));
 
 out:
@@ -190,7 +188,6 @@ static void nlm_destroy_host_locked(struct nlm_host *host)
 	clnt = host->h_rpcclnt;
 	if (clnt != NULL)
 		rpc_shutdown_client(clnt);
-	put_cred(host->h_cred);
 	kfree(host);
 
 	ln->nrhosts--;
@@ -205,8 +202,6 @@ static void nlm_destroy_host_locked(struct nlm_host *host)
  * @version: NLM protocol version
  * @hostname: '\0'-terminated hostname of server
  * @noresvport: 1 if non-privileged port should be used
- * @net: pointer to net namespace
- * @cred: pointer to cred
  *
  * Returns an nlm_host structure that matches the passed-in
  * [server address, transport protocol, NLM version, server hostname].
@@ -219,8 +214,7 @@ struct nlm_host *nlmclnt_lookup_host(const struct sockaddr *sap,
 				     const u32 version,
 				     const char *hostname,
 				     int noresvport,
-				     struct net *net,
-				     const struct cred *cred)
+				     struct net *net)
 {
 	struct nlm_lookup_host_info ni = {
 		.server		= 0,
@@ -232,7 +226,6 @@ struct nlm_host *nlmclnt_lookup_host(const struct sockaddr *sap,
 		.hostname_len	= strlen(hostname),
 		.noresvport	= noresvport,
 		.net		= net,
-		.cred		= cred,
 	};
 	struct hlist_head *chain;
 	struct nlm_host	*host;
@@ -297,11 +290,12 @@ void nlmclnt_release_host(struct nlm_host *host)
 
 	WARN_ON_ONCE(host->h_server);
 
-	if (refcount_dec_and_mutex_lock(&host->h_count, &nlm_host_mutex)) {
+	if (atomic_dec_and_test(&host->h_count)) {
 		WARN_ON_ONCE(!list_empty(&host->h_lockowners));
 		WARN_ON_ONCE(!list_empty(&host->h_granted));
 		WARN_ON_ONCE(!list_empty(&host->h_reclaim));
 
+		mutex_lock(&nlm_host_mutex);
 		nlm_destroy_host_locked(host);
 		mutex_unlock(&nlm_host_mutex);
 	}
@@ -347,7 +341,7 @@ struct nlm_host *nlmsvc_lookup_host(const struct svc_rqst *rqstp,
 	};
 	struct lockd_net *ln = net_generic(net, lockd_net_id);
 
-	dprintk("lockd: %s(host='%.*s', vers=%u, proto=%s)\n", __func__,
+	dprintk("lockd: %s(host='%*s', vers=%u, proto=%s)\n", __func__,
 			(int)hostname_len, hostname, rqstp->rq_vers,
 			(rqstp->rq_prot == IPPROTO_UDP ? "udp" : "tcp"));
 
@@ -394,8 +388,6 @@ struct nlm_host *nlmsvc_lookup_host(const struct svc_rqst *rqstp,
 	ln->nrhosts++;
 	nrhosts++;
 
-	refcount_inc(&host->h_count);
-
 	dprintk("lockd: %s created host %s (%s)\n",
 		__func__, host->h_name, host->h_addrbuf);
 
@@ -418,7 +410,7 @@ void nlmsvc_release_host(struct nlm_host *host)
 	dprintk("lockd: release server host %s\n", host->h_name);
 
 	WARN_ON_ONCE(!host->h_server);
-	refcount_dec(&host->h_count);
+	atomic_dec(&host->h_count);
 }
 
 /*
@@ -465,7 +457,6 @@ nlm_bind_host(struct nlm_host *host)
 			.authflavor	= RPC_AUTH_UNIX,
 			.flags		= (RPC_CLNT_CREATE_NOPING |
 					   RPC_CLNT_CREATE_AUTOBIND),
-			.cred		= host->h_cred,
 		};
 
 		/*
@@ -513,7 +504,7 @@ struct nlm_host * nlm_get_host(struct nlm_host *host)
 {
 	if (host) {
 		dprintk("lockd: get host %s\n", host->h_name);
-		refcount_inc(&host->h_count);
+		atomic_inc(&host->h_count);
 		host->h_expires = jiffies + NLM_HOST_EXPIRE;
 	}
 	return host;
@@ -602,7 +593,7 @@ static void nlm_complain_hosts(struct net *net)
 		if (net && host->net != net)
 			continue;
 		dprintk("       %s (cnt %d use %d exp %ld net %x)\n",
-			host->h_name, refcount_read(&host->h_count),
+			host->h_name, atomic_read(&host->h_count),
 			host->h_inuse, host->h_expires, host->net->ns.inum);
 	}
 }
@@ -671,16 +662,16 @@ nlm_gc_hosts(struct net *net)
 	for_each_host_safe(host, next, chain, nlm_server_hosts) {
 		if (net && host->net != net)
 			continue;
-		if (host->h_inuse || time_before(jiffies, host->h_expires)) {
+		if (atomic_read(&host->h_count) || host->h_inuse
+		 || time_before(jiffies, host->h_expires)) {
 			dprintk("nlm_gc_hosts skipping %s "
 				"(cnt %d use %d exp %ld net %x)\n",
-				host->h_name, refcount_read(&host->h_count),
+				host->h_name, atomic_read(&host->h_count),
 				host->h_inuse, host->h_expires,
 				host->net->ns.inum);
 			continue;
 		}
-		if (refcount_dec_if_one(&host->h_count))
-			nlm_destroy_host_locked(host);
+		nlm_destroy_host_locked(host);
 	}
 
 	if (net) {

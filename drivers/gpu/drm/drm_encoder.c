@@ -21,9 +21,7 @@
  */
 
 #include <linux/export.h>
-
-#include <drm/drm_device.h>
-#include <drm/drm_drv.h>
+#include <drm/drmP.h>
 #include <drm/drm_encoder.h>
 
 #include "drm_crtc_internal.h"
@@ -111,10 +109,6 @@ int drm_encoder_init(struct drm_device *dev,
 		     int encoder_type, const char *name, ...)
 {
 	int ret;
-
-	/* encoder index is used with 32bit bitmasks */
-	if (WARN_ON(dev->mode_config.num_encoder >= 32))
-		return -EINVAL;
 
 	ret = drm_mode_object_add(dev, &encoder->base, DRM_MODE_OBJECT_ENCODER);
 	if (ret)
@@ -224,7 +218,7 @@ int drm_mode_getencoder(struct drm_device *dev, void *data,
 	struct drm_crtc *crtc;
 
 	if (!drm_core_check_feature(dev, DRIVER_MODESET))
-		return -EOPNOTSUPP;
+		return -EINVAL;
 
 	encoder = drm_encoder_find(dev, file_priv, enc_resp->encoder_id);
 	if (!encoder)

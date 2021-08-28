@@ -1,10 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0-only
 /*
  * hwmon.c - part of lm_sensors, Linux kernel modules for hardware monitoring
  *
  * This file defines the sysfs class "hwmon", for use by sensors drivers.
  *
  * Copyright (C) 2005 Mark M. Hoffman <mhoffman@lightlink.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -20,9 +23,6 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/thermal.h>
-
-#define CREATE_TRACE_POINTS
-#include <trace/events/hwmon.h>
 
 #define HWMON_ID_PREFIX "hwmon"
 #define HWMON_ID_FORMAT HWMON_ID_PREFIX "%d"
@@ -115,7 +115,9 @@ static DEFINE_IDA(hwmon_ida);
  * The complex conditional is necessary to avoid a cyclic dependency
  * between hwmon and thermal_sys modules.
  */
-#ifdef CONFIG_THERMAL_OF
+#if IS_REACHABLE(CONFIG_THERMAL) && defined(CONFIG_THERMAL_OF) && \
+	(!defined(CONFIG_THERMAL_HWMON) || \
+	 !(defined(MODULE) && IS_MODULE(CONFIG_THERMAL)))
 static int hwmon_thermal_get_temp(void *data, int *temp)
 {
 	struct hwmon_thermal_data *tdata = data;
@@ -169,13 +171,6 @@ static int hwmon_thermal_add_sensor(struct device *dev,
 }
 #endif /* IS_REACHABLE(CONFIG_THERMAL) && ... */
 
-static int hwmon_attr_base(enum hwmon_sensor_types type)
-{
-	if (type == hwmon_in)
-		return 0;
-	return 1;
-}
-
 /* sysfs attribute management */
 
 static ssize_t hwmon_attr_show(struct device *dev,
@@ -190,9 +185,6 @@ static ssize_t hwmon_attr_show(struct device *dev,
 	if (ret < 0)
 		return ret;
 
-	trace_hwmon_attr_show(hattr->index + hwmon_attr_base(hattr->type),
-			      hattr->name, val);
-
 	return sprintf(buf, "%ld\n", val);
 }
 
@@ -201,7 +193,6 @@ static ssize_t hwmon_attr_show_string(struct device *dev,
 				      char *buf)
 {
 	struct hwmon_device_attribute *hattr = to_hwmon_attr(devattr);
-	enum hwmon_sensor_types type = hattr->type;
 	const char *s;
 	int ret;
 
@@ -209,9 +200,6 @@ static ssize_t hwmon_attr_show_string(struct device *dev,
 				      hattr->index, &s);
 	if (ret < 0)
 		return ret;
-
-	trace_hwmon_attr_show_string(hattr->index + hwmon_attr_base(type),
-				     hattr->name, s);
 
 	return sprintf(buf, "%s\n", s);
 }
@@ -233,10 +221,14 @@ static ssize_t hwmon_attr_store(struct device *dev,
 	if (ret < 0)
 		return ret;
 
-	trace_hwmon_attr_store(hattr->index + hwmon_attr_base(hattr->type),
-			       hattr->name, val);
-
 	return count;
+}
+
+static int hwmon_attr_base(enum hwmon_sensor_types type)
+{
+	if (type == hwmon_in)
+		return 0;
+	return 1;
 }
 
 static bool is_string_attr(enum hwmon_sensor_types type, u32 attr)
@@ -262,7 +254,7 @@ static struct attribute *hwmon_genattr(struct device *dev,
 	struct device_attribute *dattr;
 	struct attribute *a;
 	umode_t mode;
-	const char *name;
+	char *name;
 	bool is_string = is_string_attr(type, attr);
 
 	/* The attribute is invisible if there is no template string */
@@ -273,10 +265,10 @@ static struct attribute *hwmon_genattr(struct device *dev,
 	if (!mode)
 		return ERR_PTR(-ENOENT);
 
-	if ((mode & 0444) && ((is_string && !ops->read_string) ||
+	if ((mode & S_IRUGO) && ((is_string && !ops->read_string) ||
 				 (!is_string && !ops->read)))
 		return ERR_PTR(-EINVAL);
-	if ((mode & 0222) && !ops->write)
+	if ((mode & S_IWUGO) && !ops->write)
 		return ERR_PTR(-EINVAL);
 
 	hattr = devm_kzalloc(dev, sizeof(*hattr), GFP_KERNEL);
@@ -284,7 +276,7 @@ static struct attribute *hwmon_genattr(struct device *dev,
 		return ERR_PTR(-ENOMEM);
 
 	if (type == hwmon_chip) {
-		name = template;
+		name = (char *)template;
 	} else {
 		scnprintf(hattr->name, sizeof(hattr->name), template,
 			  index + hwmon_attr_base(type));
@@ -319,11 +311,6 @@ static const char * const hwmon_chip_attrs[] = {
 	[hwmon_chip_power_reset_history] = "power_reset_history",
 	[hwmon_chip_update_interval] = "update_interval",
 	[hwmon_chip_alarms] = "alarms",
-	[hwmon_chip_samples] = "samples",
-	[hwmon_chip_curr_samples] = "curr_samples",
-	[hwmon_chip_in_samples] = "in_samples",
-	[hwmon_chip_power_samples] = "power_samples",
-	[hwmon_chip_temp_samples] = "temp_samples",
 };
 
 static const char * const hwmon_temp_attr_templates[] = {
@@ -369,7 +356,6 @@ static const char * const hwmon_in_attr_templates[] = {
 	[hwmon_in_max_alarm] = "in%d_max_alarm",
 	[hwmon_in_lcrit_alarm] = "in%d_lcrit_alarm",
 	[hwmon_in_crit_alarm] = "in%d_crit_alarm",
-	[hwmon_in_enable] = "in%d_enable",
 };
 
 static const char * const hwmon_curr_attr_templates[] = {
@@ -408,16 +394,12 @@ static const char * const hwmon_power_attr_templates[] = {
 	[hwmon_power_cap_hyst] = "power%d_cap_hyst",
 	[hwmon_power_cap_max] = "power%d_cap_max",
 	[hwmon_power_cap_min] = "power%d_cap_min",
-	[hwmon_power_min] = "power%d_min",
 	[hwmon_power_max] = "power%d_max",
-	[hwmon_power_lcrit] = "power%d_lcrit",
 	[hwmon_power_crit] = "power%d_crit",
 	[hwmon_power_label] = "power%d_label",
 	[hwmon_power_alarm] = "power%d_alarm",
 	[hwmon_power_cap_alarm] = "power%d_cap_alarm",
-	[hwmon_power_min_alarm] = "power%d_min_alarm",
 	[hwmon_power_max_alarm] = "power%d_max_alarm",
-	[hwmon_power_lcrit_alarm] = "power%d_lcrit_alarm",
 	[hwmon_power_crit_alarm] = "power%d_crit_alarm",
 };
 
@@ -633,7 +615,7 @@ __hwmon_device_register(struct device *dev, const char *name, void *drvdata,
 	if (err)
 		goto free_hwmon;
 
-	if (dev && dev->of_node && chip && chip->ops->read &&
+	if (dev && chip && chip->ops->read &&
 	    chip->info[0]->type == hwmon_chip &&
 	    (chip->info[0]->config[0] & HWMON_C_REGISTER_TZ)) {
 		const struct hwmon_channel_info **info = chip->info;
@@ -649,16 +631,8 @@ __hwmon_device_register(struct device *dev, const char *name, void *drvdata,
 				if (info[i]->config[j] & HWMON_T_INPUT) {
 					err = hwmon_thermal_add_sensor(dev,
 								hwdev, j);
-					if (err) {
-						device_unregister(hdev);
-						/*
-						 * Don't worry about hwdev;
-						 * hwmon_dev_release(), called
-						 * from device_unregister(),
-						 * will free it.
-						 */
-						goto ida_remove;
-					}
+					if (err)
+						goto free_device;
 				}
 			}
 		}
@@ -666,6 +640,8 @@ __hwmon_device_register(struct device *dev, const char *name, void *drvdata,
 
 	return hdev;
 
+free_device:
+	device_unregister(hdev);
 free_hwmon:
 	kfree(hwdev);
 ida_remove:
@@ -702,7 +678,7 @@ EXPORT_SYMBOL_GPL(hwmon_device_register_with_groups);
  * @dev: the parent device
  * @name: hwmon name attribute
  * @drvdata: driver data to attach to created device
- * @chip: pointer to hwmon chip information
+ * @info: pointer to hwmon chip information
  * @extra_groups: pointer to list of additional non-standard attribute groups
  *
  * hwmon_device_unregister() must be called when the device is no
@@ -720,9 +696,6 @@ hwmon_device_register_with_info(struct device *dev, const char *name,
 		return ERR_PTR(-EINVAL);
 
 	if (chip && (!chip->ops || !chip->ops->is_visible || !chip->info))
-		return ERR_PTR(-EINVAL);
-
-	if (chip && !dev)
 		return ERR_PTR(-EINVAL);
 
 	return __hwmon_device_register(dev, name, drvdata, chip, extra_groups);
@@ -812,11 +785,11 @@ EXPORT_SYMBOL_GPL(devm_hwmon_device_register_with_groups);
 
 /**
  * devm_hwmon_device_register_with_info - register w/ hwmon
- * @dev:	the parent device
- * @name:	hwmon name attribute
- * @drvdata:	driver data to attach to created device
- * @chip:	pointer to hwmon chip information
- * @groups:	pointer to list of driver specific attribute groups
+ * @dev: the parent device
+ * @name: hwmon name attribute
+ * @drvdata: driver data to attach to created device
+ * @info: Pointer to hwmon chip information
+ * @groups - pointer to list of driver specific attribute groups
  *
  * Returns the pointer to the new device. The new device is automatically
  * unregistered with the parent device.

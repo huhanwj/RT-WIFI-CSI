@@ -1,14 +1,13 @@
-// SPDX-License-Identifier: GPL-2.0
 #include <linux/idr.h>
 #include <linux/mutex.h>
 #include <linux/device.h>
 #include <linux/sysfs.h>
+#include <linux/gpio.h>
 #include <linux/gpio/consumer.h>
 #include <linux/gpio/driver.h>
 #include <linux/interrupt.h>
 #include <linux/kdev_t.h>
 #include <linux/slab.h>
-#include <linux/ctype.h>
 
 #include "gpiolib.h"
 
@@ -107,14 +106,8 @@ static ssize_t value_show(struct device *dev,
 
 	mutex_lock(&data->mutex);
 
-	status = gpiod_get_value_cansleep(desc);
-	if (status < 0)
-		goto err;
+	status = sprintf(buf, "%d\n", gpiod_get_value_cansleep(desc));
 
-	buf[0] = '0' + status;
-	buf[1] = '\n';
-	status = 2;
-err:
 	mutex_unlock(&data->mutex);
 
 	return status;
@@ -125,7 +118,7 @@ static ssize_t value_store(struct device *dev,
 {
 	struct gpiod_data *data = dev_get_drvdata(dev);
 	struct gpio_desc *desc = data->desc;
-	ssize_t status = 0;
+	ssize_t			status;
 
 	mutex_lock(&data->mutex);
 
@@ -134,11 +127,7 @@ static ssize_t value_store(struct device *dev,
 	} else {
 		long		value;
 
-		if (size <= 2 && isdigit(buf[0]) &&
-		    (size == 1 || buf[1] == '\n'))
-			value = buf[0] - '0';
-		else
-			status = kstrtol(buf, 0, &value);
+		status = kstrtol(buf, 0, &value);
 		if (status == 0) {
 			gpiod_set_value_cansleep(desc, value);
 			status = size;
@@ -149,7 +138,7 @@ static ssize_t value_store(struct device *dev,
 
 	return status;
 }
-static DEVICE_ATTR_PREALLOC(value, S_IWUSR | S_IRUGO, value_show, value_store);
+static DEVICE_ATTR_RW(value);
 
 static irqreturn_t gpio_sysfs_irq(int irq, void *priv)
 {
@@ -444,6 +433,11 @@ static struct attribute *gpiochip_attrs[] = {
 };
 ATTRIBUTE_GROUPS(gpiochip);
 
+static struct gpio_desc *gpio_to_valid_desc(int gpio)
+{
+	return gpio_is_valid(gpio) ? gpio_to_desc(gpio) : NULL;
+}
+
 /*
  * /sys/class/gpio/export ... write-only
  *	integer N ... number of GPIO to export (full access)
@@ -462,7 +456,7 @@ static ssize_t export_store(struct class *class,
 	if (status < 0)
 		goto done;
 
-	desc = gpio_to_desc(gpio);
+	desc = gpio_to_valid_desc(gpio);
 	/* reject invalid GPIOs */
 	if (!desc) {
 		pr_warn("%s: invalid GPIO %ld\n", __func__, gpio);
@@ -480,15 +474,11 @@ static ssize_t export_store(struct class *class,
 			status = -ENODEV;
 		goto done;
 	}
-
-	status = gpiod_set_transitory(desc, false);
-	if (!status) {
-		status = gpiod_export(desc, true);
-		if (status < 0)
-			gpiod_free(desc);
-		else
-			set_bit(FLAG_SYSFS, &desc->flags);
-	}
+	status = gpiod_export(desc, true);
+	if (status < 0)
+		gpiod_free(desc);
+	else
+		set_bit(FLAG_SYSFS, &desc->flags);
 
 done:
 	if (status)
@@ -509,7 +499,7 @@ static ssize_t unexport_store(struct class *class,
 	if (status < 0)
 		goto done;
 
-	desc = gpio_to_desc(gpio);
+	desc = gpio_to_valid_desc(gpio);
 	/* reject bogus commands (gpio_unexport ignores them) */
 	if (!desc) {
 		pr_warn("%s: invalid GPIO %ld\n", __func__, gpio);
