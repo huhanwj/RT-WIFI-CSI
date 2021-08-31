@@ -49,7 +49,7 @@
 /* Uncomment the following flags to enable the corresponding logging.*/
 /* Please note that logging may influence system performance. */
 /* For low prioirty logging, please use trace_printk() instead. */
- //#define RT_WIFI_DEBUG_ENABLE
-//#define RT_WIFI_ALERT_ENABLE
+#define RT_WIFI_DEBUG_ENABLE
+#define RT_WIFI_ALERT_ENABLE
 
 #endif /* RT_WIFI_LOCAL_H */
