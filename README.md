@@ -41,7 +41,7 @@ This also integrates three userspace tools for CSI collection and analysis.
 Namely,
 
 ##### UserTool for Atheros CSI Tool
-https://github.com/xieyaxiongfly/Atheros-CSI-Tool-UserSpace-APP
+https://github.com/wands-wireless/Atheros-CSI-Tool-UserSpace-APP
    * Note: To correctly analyze the CSI, you need to use *mex* provided by MATLAB to compile the C source code (tested under ubuntu 14.04/20.04, Windows 10 Pro 2004/20H2, macOS Catalina 10.15.6/BigSur 11.1, diff os will output diff mex output files) to use the *read_csi* function. 
    * Change the `"ieee-be"` to `"ieee-le"` in Line 46 of *read_log_file.m* if you cannot read the packets correctly. 
 ##### csi-server-openwrt
@@ -53,7 +53,7 @@ https://github.com/citysu/csiread
    * Parse channel state information from raw CSI data file in Python.
 ## Source of this project
 
-**Atheros CSI Tool**: https://github.com/xieyaxiongfly/Atheros-CSI-Tool
+**Atheros CSI Tool**: https://github.com/wands-wireless/Atheros-CSI-Tool
 
 *Manual for Atheros CSI Tool*: https://wands.sg/research/wifi/AtherosCSI/document/Atheros-CSI-Tool-User-Guide.pdf
 
