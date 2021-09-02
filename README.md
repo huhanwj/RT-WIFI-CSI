@@ -18,7 +18,7 @@ Any Ubuntu system with kernel version being less or equal to 5.4.
 ### Installation of required packages
 Some packages are needed (may still have missing packages when compiling, add the missing packages yourself depending on what error you encounter)
 
-`sudo apt-get install build-essential bison bc flex libncurses5-dev libncursesw5-dev libssl-dev`
+`sudo apt-get install build-essential bison bc flex libncurses5-dev libncursesw5-dev libssl-dev libelf-dev`
 
 Then, run the following command in this folder
 
@@ -29,7 +29,6 @@ The default config is configured installing CSI Tool without RT-WIFI, you may ch
 Next compile the kernel modules
 ```
 make -j4
-make modules
 sudo make modules_install
 sudo make install
 ```
@@ -66,4 +65,22 @@ https://github.com/citysu/csiread
 
 Do NOT put the folder under some folder with space in its name like *Untitled folder*, it will result in a **make error** during the `sudo make modules_install`.
 
-If you find that `uname -r` does not give `5.4.0-CSI`, then you can modify `/etc/default/grub` and deactivate `GRUB_HIDDEN_TIMEOUT=0` by commenting it. Then run `sudo upgrade-grub` to update the grub and reboot the system. You can see the grub menu and select advanced options for ubuntu and select our customized kernel.
+If you find that `uname -r` does not give `5.4.0-Hybrid`, then you can modify `/etc/default/grub` and deactivate `GRUB_HIDDEN_TIMEOUT=0` by commenting it or if there is no `GRUB_HIDDEN_TIMEOUT=0`, just change `GRUB_TIMEOUT` to -1. Then run `sudo upgrade-grub` to update the grub and reboot the system. You can see the grub menu and select advanced options for ubuntu and select our customized kernel.
+
+If you encounter the error stating
+
+`make[1]: *** No rule to make target 'debian/canonical-certs.pem', needed by 'certs/x509_certificate_list'.  Stop.`,
+
+you need to modify `.config` file.
+
+In your kernel configuration file you will find this line:
+
+`CONFIG_SYSTEM_TRUSTED_KEYS="debian/canonical-certs.pem"`
+
+Change it to this:
+
+`CONFIG_SYSTEM_TRUSTED_KEYS=""`
+
+**IMPORTANT**: Disable Secure Boot before installing the kernel.
+
+**Know Issues**: An unknown issue will cause boot failure in Lenovo ThinkCentre M920q (i5-9500T) (Possibly due to Lenovo BIOS or Intel microcode issue, both tested under the newest version).
