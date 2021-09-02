@@ -844,10 +844,10 @@ static void ath9k_tx(struct ieee80211_hw *hw,
 		}
 	}
 #endif
-	ath_info(common, XMIT, "transmitting packet, skb: %p\n", skb);
+	ath_dbg(common, XMIT, "transmitting packet, skb: %p\n", skb);
 
 	if (ath_tx_start(hw, skb, &txctl) != 0) {
-		ath_info(common, XMIT, "TX failed\n");
+		ath_dbg(common, XMIT, "TX failed\n");
 		TX_STAT_INC(sc, txctl.txq->axq_qnum, txfailed);
 		goto exit;
 	}
